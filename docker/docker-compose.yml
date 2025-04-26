@@ -1,0 +1,181 @@
+name: uneeq-miniprem
+include:
+  - ./docker-compose.a2f.yml # a2f services
+services:
+  # Log streamer service
+  log-streamer:
+    build:
+      context: ./log-streamer
+      dockerfile: Dockerfile
+    container_name: log-streamer
+    ports:
+      - "8082:8082"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --spider http://localhost:8082/health || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+  # Redis service for Flowise
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000" # Using 3001 since 3000 is used by Flowise
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    restart: unless-stopped
+    # Fixed healthcheck
+    healthcheck:
+      test: >
+        bash -c '
+        for i in $(seq 2); do
+          if ! curl -s http://localhost:11434/api/tags; then
+            exit 1
+          fi
+          sleep 1
+        done;
+        exit 0
+        '
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+  flowise:
+    build:
+      context: ./flowise
+      dockerfile: Dockerfile
+    container_name: flowise
+    ports:
+      - "3000:3000"
+    volumes:
+      - flowise_data:/usr/src/.flowise
+    environment:
+      # Basic configuration
+      - PORT=3000
+      - DATABASE_TYPE=sqlite
+      - DATABASE_PATH=/usr/src/.flowise/database.sqlite
+      - NODE_ENV=production
+      # Authentication
+      - FLOWISE_USERNAME=user
+      - FLOWISE_PASSWORD=password
+      # API Key for authentication
+      - APIKEY_STORAGE_TYPE=json
+      - APIKEY_PATH=/usr/src/.flowise
+      - FLOWISE_SECRETKEY_OVERWRITE=miniprem_demo_secret_key
+      # File upload limit
+      - FLOWISE_FILE_SIZE_LIMIT=50mb
+      # Redis configuration for queue processing
+      - MODE=queue
+      - QUEUE_NAME=flowise-queue
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      # LangChain tracing
+      - LANGCHAIN_CALLBACKS_BACKGROUND=true
+      - LANGCHAIN_TRACING_V2=true
+      - LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+      - LANGCHAIN_PROJECT=miniprem_demo
+      # Metrics
+      - ENABLE_METRICS=true
+      - METRICS_PROVIDER=prometheus
+      - METRICS_INCLUDE_NODE_METRICS=true
+      - METRICS_SERVICE_NAME=FlowiseAI
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/v1/ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+  renny:
+    container_name: renny
+    command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
+    env_file:
+      - docker-compose.env
+    extra_hosts:
+      - audio2face-gateway:host-gateway
+    image: "facemeproduction/renny:0.443-ba7eb"
+    network_mode: "host"
+    runtime: nvidia
+    # Interactive shell is required to make sure UE logs are not buffered
+    tty: true
+    volumes:
+      - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
+    healthcheck:
+      test: "curl -f http://localhost:8081/health"
+      interval: 10s
+      timeout: 500ms
+      start_interval: 15s
+      retries: 3
+    depends_on:
+      audio2face_with_emotion:
+        condition: service_healthy
+      audio2face_controller:
+        condition: service_started
+    restart: unless-stopped
+volumes:
+  ollama_data:
+  flowise_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

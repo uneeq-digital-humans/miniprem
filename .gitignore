@@ -1,0 +1,12 @@
+docker/nlp-service.env
+docker/*.env
+docker/notes_for_myself
+logs/
+docker/*.log
+*.log
+docker/docker-compose.miniprem.services.yml
+docker/docker-compose.multiple.yml
+docker/docker-compose.single.yml
+docker/get_eleven_labs_voices.py
+docker/configuration.dat
+install_miniprem_updated.sh

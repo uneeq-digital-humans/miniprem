@@ -1,0 +1,13 @@
+stages:
+  - pages
+
+pages:
+  stage: pages
+  script:
+    - mkdir -p public
+    - cp -r docs/* public/
+  artifacts:
+    paths:
+      - public
+  only:
+    - main  # or 'master' depending on your default branch name
