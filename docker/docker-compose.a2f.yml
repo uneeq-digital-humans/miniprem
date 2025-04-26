@@ -1,0 +1,34 @@
+services:
+  audio2face_with_emotion:
+    container_name: audio2face_with_emotion
+    environment:
+      LOG_JSON: false
+    image: facemeproduction/audio2face_with_emotion:local-dev
+    ports:
+      - 50000:50000
+    runtime: nvidia
+    volumes:
+      - a2f_model_cache:/tmp/a2f_pipeline:rw
+
+    restart: unless-stopped
+
+  audio2face_controller:
+    container_name: audio2face_controller
+    command: /opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+    entrypoint: ./service/launch_service.py
+    environment:
+      LOG_JSON: false
+    image: facemeproduction/audio2face_anim_controller:local-dev
+    ports:
+      - 52000:52000
+      - 52100:52100
+    volumes:
+      - ./a2f-config.yml:/opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+
+    depends_on:
+      audio2face_with_emotion:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  a2f_model_cache:
