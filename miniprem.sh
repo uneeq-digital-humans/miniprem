@@ -27,7 +27,7 @@ EOF
 
 start_services() {
     log_section "Starting MiniPrem Services"
-    cd docker && docker compose -f docker-compose.miniprem.services.yml up -d
+    cd docker && docker compose -f docker-compose.yml up -d
     if [ $? -eq 0 ]; then
         success "$CHECKMARK MiniPrem services started successfully"
     else
@@ -37,7 +37,7 @@ start_services() {
 
 stop_services() {
     log_section "Stopping MiniPrem Services"
-    cd docker && docker compose -f docker-compose.miniprem.services.yml down
+    cd docker && docker compose -f docker-compose.yml down
     if [ $? -eq 0 ]; then
         success "$CHECKMARK MiniPrem services stopped successfully"
     else
@@ -53,12 +53,12 @@ restart_services() {
 
 check_status() {
     log_section "MiniPrem Services Status"
-    cd docker && docker compose -f docker-compose.miniprem.services.yml ps
+    cd docker && docker compose -f docker-compose.yml ps
 }
 
 view_logs() {
     log_section "MiniPrem Services Logs"
-    cd docker && docker compose -f docker-compose.miniprem.services.yml logs -f
+    cd docker && docker compose -f docker-compose.yml logs -f
 }
 
 setup_flowise() {
