@@ -173,9 +173,34 @@ Use the included `miniprem.sh` script to manage the platform:
 # Restart all services
 ./miniprem.sh restart
 
-# Run Flowise chatflow setup
+# Run Flowise chatflow setup (only available in Full Install)
 ./miniprem.sh setup
 ```
+
+The services started will depend on your installation type (Default or Full) as specified during installation. The installation type is saved in the `.miniprem_install_type` file. To switch between installation types, simply run the installer again and select a different option.
+
+### Default Install Services
+* Renny (Digital Human)
+* Audio2Face (Facial Animation)
+
+### Full Install Services
+* All services in Default Install, plus:
+* Flowise (Workflow Automation) 
+* vLLM (LLM Inference)
+* Prometheus (Metrics Collection)
+* Grafana (Monitoring Dashboard)
+* Redis (Queue Management)
+* RIME (Text-to-Speech API)
+* Log Streamer (Container Log Viewer)
+
+## Docker Configuration
+
+MiniPrem uses two main Docker Compose files:
+
+* `docker/docker-compose.default.yml` - Used for Default Install (Renny + Audio2Face only)
+* `docker/docker-compose.yml` - Used for Full Install (all services)
+
+The appropriate file is automatically selected based on your installation type.
 
 ## Docker Basics
 

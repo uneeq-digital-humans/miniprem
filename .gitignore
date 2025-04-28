@@ -1,14 +1,28 @@
+# Environment and configuration files
 docker/nlp-service.env
 docker/*.env
 docker/notes_for_myself
+docker/configuration.dat
+
+# Logs
 logs/
 docker/*.log
 *.log
+
+# Deprecated or special-purpose compose files
 docker/docker-compose.miniprem.services.yml
 docker/docker-compose.multiple.yml
 docker/docker-compose.single.yml
+
+# Utility scripts and files
 docker/get_eleven_labs_voices.py
-docker/configuration.dat
 install_miniprem_updated.sh
 voice_env/
 speech_input.sh
+
+# OS and temporary files
+.DS_Store
+*.swp
+*.swo
+*~
+.miniprem_install_type
