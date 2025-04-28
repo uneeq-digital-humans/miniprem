@@ -135,32 +135,32 @@ open_browser_prompt() {
     fi
 }
 
-# Function to display setup guidance for Ollama and Flowise
+# Function to display setup guidance for vLLM and Flowise
 display_setup_guidance() {
     echo
-    echo -e "${GREEN}=== FLOWISE AND OLLAMA SETUP GUIDE ===${NC}"
+    echo -e "${GREEN}=== FLOWISE AND vLLM SETUP GUIDE ===${NC}"
     echo
-    echo -e "${YELLOW}CREATING A CHATFLOW WITH OLLAMA:${NC}"
+    echo -e "${YELLOW}CREATING A CHATFLOW WITH vLLM:${NC}"
     echo "1. Go to http://localhost:3000 and log in (default: user/password)"
     echo "2. Click 'Chatflows' in the sidebar and then 'Create New'"
     echo
-    echo -e "${YELLOW}TO USE OLLAMA IN YOUR CHATFLOW:${NC}"
-    echo "1. Search for 'Ollama' in the nodes panel"
-    echo "2. Configure the Ollama node with:"
-    echo "   - Base URL: http://ollama:11434"
-    echo "   - Model: gemma:2b, llama2, etc. (must be downloaded)"
+    echo -e "${YELLOW}TO USE vLLM IN YOUR CHATFLOW:${NC}"
+    echo "1. Search for 'OpenAI Compatible' or 'Custom LLM' in the nodes panel"
+    echo "2. Configure the node with:"
+    echo "   - Base URL: http://vllm:8000/v1"
+    echo "   - Model: gemma-3-4b (or your chosen model)"
     echo
-    echo -e "${YELLOW}DOWNLOADING MODELS IN OLLAMA:${NC}"
-    echo "You can download models using these commands:"
-    echo "docker exec -it ollama ollama pull gemma:2b"
-    echo "docker exec -it ollama ollama pull llama2"
+    echo -e "${YELLOW}DOWNLOADING MODELS IN vLLM:${NC}"
+    echo "vLLM will automatically download the model the first time it is requested."
+    echo "To pre-download the model, you can run:"
+    echo "docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model gemma-3-4b"
     echo
     echo -e "${YELLOW}CONNECTING NODES:${NC}"
     echo "1. Add 'Chat Message' and 'Memory' nodes"
     echo "2. Connect them to create a conversation flow"
     echo "3. Save and test your chatflow"
     echo
-    echo -e "${BLUE}For more help, visit: https://github.com/FlowiseAI/Flowise/blob/main/docs/${NC}"
+    echo -e "${BLUE}For more help, visit: https://vllm.readthedocs.io/en/latest/${NC}"
     echo
 }
 
@@ -206,8 +206,8 @@ EOF
 # Construct the POST payload JSON string
 CREATE_PAYLOAD=$(cat <<EOF
 {
-  "name": "My Ollama Chatflow",
-  "description": "An empty chatflow for Ollama integration",
+  "name": "My vLLM Chatflow",
+  "description": "An empty chatflow for vLLM integration",
   "flowData": $(echo "$EMPTY_FLOWDATA" | jq -c .),
   "deployed": false,
   "isPublic": false,

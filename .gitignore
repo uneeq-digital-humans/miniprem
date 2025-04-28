@@ -10,3 +10,5 @@ docker/docker-compose.single.yml
 docker/get_eleven_labs_voices.py
 docker/configuration.dat
 install_miniprem_updated.sh
+voice_env/
+speech_input.sh

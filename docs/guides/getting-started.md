@@ -46,11 +46,11 @@ You'll need the following information during installation:
 | Configuration         | Description                                 | Example                                      |
 |-----------------------|---------------------------------------------|----------------------------------------------|
 | UneeQ Platform Address | Address of the UneeQ signaling service      | api.uneeq.io                                 |
-| UneeQ Platform API Key | API key for UneeQ platform                  | XH3sE315BfCW3xs1PyuckYr8O1vYDM+D7H1u...     |
-| Tenant ID             | Your UneeQ tenant identifier                | 63ff79fc-2a38-4b46-b0e3-013a45c6613e        |
-| Azure Region          | Azure region for speech services            | eastus                                       |
-| Azure Speech Key      | Azure speech service API key                | your-azure-speech-key-here            |
-| Renny Image           | Docker image for Renny digital human        | facemeproduction/renny:0.477-c3972          |
+| UneeQ Platform API Key | API key for UneeQ platform                  | your_uneeq_api_key_here                      |
+| Tenant ID             | Your UneeQ tenant identifier                | your_tenant_id_here                          |
+| Azure Region          | Azure region for speech services            | your_azure_region                            |
+| Azure Speech Key      | Azure speech service API key                | your_azure_speech_key_here                   |
+| Renny Image           | Docker image for Renny digital human        | facemeproduction/renny:latest                |
 
 ### 4. Verify Installation
 
@@ -87,7 +87,7 @@ You can also view logs for a specific service:
 ```bash
 ./miniprem.sh logs renny
 ./miniprem.sh logs flowise
-./miniprem.sh logs ollama
+./miniprem.sh logs vllm
 ```
 
 ### Restarting Services

@@ -7,7 +7,7 @@
 > A comprehensive digital human platform with LLM integration.
 
 - 🤖 Digital Human Interface
-- 🧠 LLM Integration with Ollama
+- 🧠 LLM Integration with vLLM
 - 📊 Monitoring with Prometheus & Grafana
 - 🔄 Workflow Automation with Flowise
 

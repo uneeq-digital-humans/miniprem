@@ -4,7 +4,7 @@
 * [Getting Started](guides/getting-started.md)
 * [Services](guides/services.md)
   * [Flowise](guides/flowise.md)
-  * [Ollama](guides/ollama.md)
+  * [vLLM](guides/vllm.md)
   * [Prometheus & Grafana](guides/monitoring.md)
   * [Renny](guides/renny.md)
 * [API Reference](api/README.md)

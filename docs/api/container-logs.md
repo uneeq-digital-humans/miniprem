@@ -8,7 +8,7 @@ Select a container from the dropdown to view its logs:
 
 ```container-logs
 flowise
-ollama
+vllm
 redis
 prometheus
 grafana

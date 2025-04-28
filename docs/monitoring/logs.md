@@ -9,7 +9,7 @@ Select a service from the dropdown to view its logs:
 ```terminal
 ```container-logs
 flowise
-ollama
+vllm
 redis
 prometheus
 grafana

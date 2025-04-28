@@ -10,7 +10,7 @@ The Flowise API allows you to interact with your chatflows programmatically.
 
 Add the following header to your API requests:
 ```
-Authorization: Bearer miniprem_demo_secret_key
+Authorization: Bearer your_api_key_here
 ```
 
 ### Endpoints
@@ -78,8 +78,8 @@ GET /api/v1/chatflows
 [
   {
     "id": "chatflow-123",
-    "name": "Ollama Gemma3 Chatflow",
-    "description": "Chatflow using Gemma3:4b via Ollama with Buffer Memory"
+    "name": "vLLM Gemma3 Chatflow",
+    "description": "Chatflow using Gemma3:4b via vLLM with Buffer Memory"
   }
 ]
 ```
@@ -90,9 +90,9 @@ Get a specific chatflow.
 GET /api/v1/chatflows/{CHATFLOW_ID}
 ```
 
-## Ollama API
+## vLLM API
 
-Ollama provides a simple API for generating text and chat completions.
+vLLM provides a simple API for generating text and chat completions.
 
 ### Endpoints
 

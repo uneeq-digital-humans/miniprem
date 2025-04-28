@@ -7,7 +7,7 @@ The MiniPrem platform consists of several integrated services that work together
 | Service | Purpose | Port | Documentation |
 |---------|---------|------|---------------|
 | Renny | Digital human avatar | 8081 | [Renny Guide](renny.md) |
-| Ollama | Large language model | 11434 | [Ollama Guide](ollama.md) |
+| vLLM | Large language model | 8000 | [vLLM Guide](vllm.md) |
 | Flowise | Workflow automation | 3000 | [Flowise Guide](flowise.md) |
 | Redis | Queue management | 6379 | - |
 | Prometheus | Metrics collection | 9090 | [Monitoring Guide](monitoring.md) |
@@ -30,7 +30,7 @@ The MiniPrem platform consists of several integrated services that work together
               │             │             │
               ▼             ▼             ▼
     ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-    │   Ollama    │ │    Redis    │ │ Prometheus  │
+    │   vLLM      │ │    Redis    │ │ Prometheus  │
     │  LLM Engine │ │   Queue     │ │   Metrics   │
     └─────────────┘ └─────────────┘ └──────┬──────┘
                                            │
@@ -49,7 +49,7 @@ The MiniPrem platform consists of several integrated services that work together
   - UneeQ platform for avatar rendering (external)
 
 - **Flowise** depends on:
-  - Ollama for language model capabilities
+  - vLLM for language model capabilities
   - Redis for queue management
   - SQLite for database storage (embedded)
 
@@ -71,14 +71,14 @@ Each service is configured via environment variables in the Docker Compose file.
   - `FLOWISE_USERNAME` & `FLOWISE_PASSWORD`: Authentication credentials
   - `REDIS_HOST` & `REDIS_PORT`: Redis connection details
 
-- **Ollama**:
+- **vLLM**:
   - `NVIDIA_VISIBLE_DEVICES`: GPU allocation for model inference
 
 ## Volumes
 
 Persistent data is stored in Docker volumes:
 
-- **ollama_data**: Stores downloaded language models
+- **vllm_data**: Stores downloaded language models
 - **flowise_data**: Stores Flowise configurations and database
 - **redis_data**: Stores Redis queue data
 - **prometheus_data**: Stores metrics history
@@ -89,7 +89,7 @@ Persistent data is stored in Docker volumes:
 Most services use the default Docker network for communication, with these exceptions:
 
 - **Renny** uses `network_mode: "host"` for optimal performance
-- Services reference each other by container name (e.g., `http://ollama:11434`) within the Docker network
+- Services reference each other by container name (e.g., `http://vllm:8000`) within the Docker network
 
 ## Service Health Checks
 

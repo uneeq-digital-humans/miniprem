@@ -26,11 +26,11 @@ This guide provides solutions for common issues you might encounter when running
    docker stats
    ```
 
-## Ollama Issues
+## vLLM Issues
 
-### Ollama Container Fails to Start
+### vLLM Container Fails to Start
 
-**Symptoms**: Ollama container stops immediately after starting
+**Symptoms**: vLLM container stops immediately after starting
 
 **Solutions**:
 1. Check GPU availability:
@@ -45,12 +45,12 @@ This guide provides solutions for common issues you might encounter when running
 
 3. Check for port conflicts:
    ```bash
-   sudo lsof -i :11434
+   sudo lsof -i :8000
    ```
 
-4. Check Ollama logs:
+4. Check vLLM logs:
    ```bash
-   docker logs ollama
+   docker logs vllm
    ```
 
 ### Model Loading Issues
@@ -60,12 +60,12 @@ This guide provides solutions for common issues you might encounter when running
 **Solutions**:
 1. Check if model is downloaded:
    ```bash
-   docker exec -it ollama ollama list
+   docker exec -it vllm ls /root/.cache/huggingface
    ```
 
 2. Re-pull the model:
    ```bash
-   docker exec -it ollama ollama pull Gemma3:4b
+   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model gemma-3-4b
    ```
 
 3. Check for sufficient GPU memory:
@@ -75,7 +75,7 @@ This guide provides solutions for common issues you might encounter when running
 
 4. Try a smaller model for testing:
    ```bash
-   docker exec -it ollama ollama pull tinyllama
+   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model tinyllama
    ```
 
 ## Flowise Issues
@@ -254,7 +254,7 @@ This guide provides solutions for common issues you might encounter when running
 
 2. Verify container connectivity:
    ```bash
-   docker exec -it flowise ping ollama
+   docker exec -it flowise ping vllm
    ```
 
 3. Restart Docker:
@@ -303,7 +303,7 @@ This guide provides solutions for common issues you might encounter when running
 
 2. Use a smaller model:
    ```bash
-   docker exec -it ollama ollama pull tinyllama
+   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model tinyllama
    ```
 
 3. Prevent other applications from using the GPU during MiniPrem operation
