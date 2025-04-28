@@ -238,6 +238,60 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+  rime-api:
+    image: quay.io/rimelabs/api:v0.0.2-20250407
+    container_name: rime-api
+    depends_on:
+      - rime-model
+    ports:
+      - "8100:8000"
+    restart: unless-stopped
+    environment:
+      - MODEL_URL=http://rime-model:8080/invocations
+    networks:
+      - miniprem_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+  rime-model:
+    image: quay.io/rimelabs/mistv2:v0.0.1-20250403
+    container_name: rime-model
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              capabilities: [gpu]
+              count: all
+    ports:
+      - "8101:8080"
+    restart: unless-stopped
+    networks:
+      - miniprem_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    runtime: nvidia
 volumes:
   flowise_data:
   redis_data:

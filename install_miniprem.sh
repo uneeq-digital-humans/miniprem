@@ -703,10 +703,21 @@ setup_rime_credentials() {
         success "$CHECKMARK RIME API key already configured"
     fi
 
+    # Prompt for quay.io password for RIME images
+    local RIME_QUAY_PASSWORD=""
+    while [ -z "$RIME_QUAY_PASSWORD" ]; do
+        read -s -p "Enter the quay.io password for RIME (rimelabs+uneeq): " RIME_QUAY_PASSWORD
+        echo
+        if [ -z "$RIME_QUAY_PASSWORD" ]; then
+            warning "No password entered. Please provide the quay.io password for RIME."
+        fi
+    done
+
     # Login to quay.io for RIME images
     info "Logging in to quay.io for RIME images..."
-    # This would need to be replaced with actual login credentials
-    # docker login -u <username> -p <password> quay.io
+    docker login -u="rimelabs+uneeq" -p="$RIME_QUAY_PASSWORD" quay.io
+    docker pull quay.io/rimelabs/api:v0.0.2-20250407
+    docker pull quay.io/rimelabs/mistv2:v0.0.1-20250403
 
     info "RIME credential setup complete"
 }
