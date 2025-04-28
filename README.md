@@ -41,6 +41,10 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
    ./install_miniprem.sh
    ```
 
+   The installer will prompt you to select either a **Default Install** (Renny + Audio2Face only) or a **Full Install** (all services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
+
+   You can re-run the installer at any time to upgrade from Default to Full, or to change your selection.
+
 3. The script will prompt you for the following required information:
 
    - **UneeQ platform address**: The base URL for your UneeQ platform
