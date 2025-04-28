@@ -1,0 +1,73 @@
+name: uneeq-miniprem
+networks:
+  miniprem_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+services:
+  renny:
+    container_name: renny
+    command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
+    env_file:
+      - docker-compose.env
+    extra_hosts:
+      - audio2face-gateway:host-gateway
+    image: "facemeproduction/renny:0.443-ba7eb"
+    network_mode: "host"
+    runtime: nvidia
+    tty: true
+    volumes:
+      - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
+    healthcheck:
+      test: "curl -f http://localhost:8081/health"
+      interval: 10s
+      timeout: 500ms
+      start_interval: 15s
+      retries: 3
+    depends_on:
+      audio2face_with_emotion:
+        condition: service_healthy
+      audio2face_controller:
+        condition: service_started
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+  
+  audio2face_with_emotion:
+    container_name: audio2face_with_emotion
+    environment:
+      LOG_JSON: false
+    image: facemeproduction/audio2face_with_emotion:local-dev
+    ports:
+      - 50000:50000
+    runtime: nvidia
+    volumes:
+      - a2f_model_cache:/tmp/a2f_pipeline:rw
+    restart: unless-stopped
+
+  audio2face_controller:
+    container_name: audio2face_controller
+    command: /opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+    entrypoint: ./service/launch_service.py
+    environment:
+      LOG_JSON: false
+    image: facemeproduction/audio2face_anim_controller:local-dev
+    ports:
+      - 52000:52000
+      - 52100:52100
+    volumes:
+      - ./a2f-config.yml:/opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+    depends_on:
+      audio2face_with_emotion:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  a2f_model_cache: 

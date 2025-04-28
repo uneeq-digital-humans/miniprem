@@ -337,29 +337,19 @@ build_log_streamer() {
 # Function to start the Miniprem system with docker compose
 start_miniprem() {
     log_section "Starting Miniprem"
-
-    # Save current directory
-    local current_dir=$(pwd)
-
-    # Build and start the services
-    cd docker && docker compose -f docker-compose.yml up -d
+    docker compose $COMPOSE_FILES up -d
     if [ $? -ne 0 ]; then
-        # Return to original directory before exiting
-        cd "$current_dir"
         fatal "Failed to start Miniprem services"
     else
         success "$CHECKMARK Miniprem services started successfully"
     fi
-
-    # Check if log-streamer is running
-    if ! docker ps | grep -q "log-streamer"; then
-        warning "Log streamer service did not start properly. Container logs might not be available in documentation."
-    else
-        success "$CHECKMARK Log streamer service is running and accessible at http://localhost:8082/health"
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        if ! docker ps | grep -q "log-streamer"; then
+            warning "Log streamer service did not start properly. Container logs might not be available in documentation."
+        else
+            success "$CHECKMARK Log streamer service is running and accessible at http://localhost:8082/health"
+        fi
     fi
-
-    # Return to original directory
-    cd "$current_dir"
 }
 
 # Function to check GPU memory usage periodically for monitoring progress
@@ -863,11 +853,21 @@ main() {
         info "Azure speech key: ${AZURE_SPEECH_KEY:0:8}****${AZURE_SPEECH_KEY: -8}"
         info "Renny image name: $RENNY_IMAGE"
 
-        read -p "All configuration values are already set. Proceed with installation? (Y/n): " confirm
-        if [[ "$confirm" =~ ^[Nn] ]]; then
-            info "Installation aborted by user."
-            exit 0
-        fi
+        while true; do
+            read -p "All configuration values are already set. Proceed with installation? (Y/n): " confirm
+            case "${confirm,,}" in
+                y|yes)
+                    break
+                    ;;
+                n|no)
+                    info "Installation aborted by user."
+                    exit 0
+                    ;;
+                *)
+                    echo "Please enter 'y' or 'n'."
+                    ;;
+            esac
+        done
     else
         # Prompt for missing values
         PLATFORM_ADDRESS=$(check_and_prompt_for_value "Enter the UneeQ platform address" "$PLATFORM_ADDRESS")
@@ -947,32 +947,27 @@ main() {
 }
 
 # Prompt for install type at the start
-INSTALL_TYPE_FILE=".miniprem_install_type"
 INSTALL_TYPE=""
-if [ -f "$INSTALL_TYPE_FILE" ]; then
-    INSTALL_TYPE=$(cat "$INSTALL_TYPE_FILE")
-fi
-if [ -z "$INSTALL_TYPE" ]; then
-    echo "Select installation type:"
-    echo "1) Default Install (Renny + Audio2Face only)"
-    echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.)"
-    read -p "Enter choice [1-2]: " install_choice
-    if [[ "$install_choice" == "1" ]]; then
-        INSTALL_TYPE="default"
-    elif [[ "$install_choice" == "2" ]]; then
-        INSTALL_TYPE="full"
-    else
-        echo "Invalid choice, exiting."
-        exit 1
-    fi
-    echo "$INSTALL_TYPE" > "$INSTALL_TYPE_FILE"
+echo "Select installation type:"
+echo "1) Default Install (Renny + Audio2Face only)"
+echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.)"
+read -p "Enter choice [1-2]: " install_choice
+if [[ "$install_choice" == "1" ]]; then
+    INSTALL_TYPE="default"
+    echo "default" > .miniprem_install_type
+elif [[ "$install_choice" == "2" ]]; then
+    INSTALL_TYPE="full"
+    echo "full" > .miniprem_install_type
+else
+    echo "Invalid choice, exiting."
+    exit 1
 fi
 
-# In all docker compose commands, use the correct compose files
+# In all docker compose commands, use the correct compose files (with docker/ prefix, run from project root)
 if [ "$INSTALL_TYPE" = "default" ]; then
-    COMPOSE_FILES="-f docker/docker-compose.base.yml"
+    COMPOSE_FILES="-f docker/docker-compose.default.yml"
 else
-    COMPOSE_FILES="-f docker/docker-compose.base.yml -f docker/docker-compose.extras.yml"
+    COMPOSE_FILES="-f docker/docker-compose.yml"
 fi
 
 # Only pull images and perform logins for selected services
@@ -982,8 +977,6 @@ if [ "$INSTALL_TYPE" = "full" ]; then
     # ... (other pulls/logins for extras)
 else
     # Only pull images for Renny and Audio2Face
-    # (implement minimal pulls/logins here)
-    # Example:
     info "Pulling Renny and Audio2Face images..."
     docker pull facemeproduction/renny:0.443-ba7eb
     docker pull facemeproduction/audio2face_with_emotion:local-dev
