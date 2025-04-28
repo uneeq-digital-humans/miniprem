@@ -151,9 +151,9 @@ pull_docker_images() {
 
     # Check INSTALL_TYPE from environment or argument
     local install_type="${INSTALL_TYPE:-$1}"
-    local compose_files="-f docker/docker-compose.base.yml"
+    local compose_file="-f docker/docker-compose.default.yml"
     if [ "$install_type" = "full" ]; then
-        compose_files="-f docker/docker-compose.base.yml -f docker/docker-compose.extras.yml"
+        compose_file="-f docker/docker-compose.yml"
     fi
 
     if [ "$install_type" = "full" ]; then
@@ -184,7 +184,7 @@ pull_docker_images() {
     # Pull images for the selected install type
     info "Pulling Docker images for selected install type..."
     {
-        $DOCKER_CMD compose $compose_files pull
+        $DOCKER_CMD compose $compose_file pull
     } &
     show_spinner $!
     success "$CHECKMARK Docker images pulled successfully for selected install type."
