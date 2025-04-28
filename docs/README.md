@@ -27,5 +27,5 @@ MinipRem is an integrated platform that combines a digital human interface (Renn
 1. Clone this repository:
    ```bash
    git clone https://gitlab.com/tgmerritt/miniprem-2025.git
-   cd miniprem
+   cd miniprem-2025
    ```

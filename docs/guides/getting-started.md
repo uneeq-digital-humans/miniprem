@@ -23,7 +23,7 @@ Before you begin, ensure you have the following:
 
 ```bash
 git clone https://gitlab.com/tgmerritt/miniprem-2025.git
-cd miniprem
+cd miniprem-2025
 ```
 
 ### 2. Run the Installation Script
