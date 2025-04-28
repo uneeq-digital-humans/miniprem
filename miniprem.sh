@@ -25,19 +25,33 @@ EOF
     exit 1
 }
 
+# Determine which compose files to use based on .miniprem_install_type
+INSTALL_TYPE_FILE=".miniprem_install_type"
+INSTALL_TYPE="full"
+if [ -f "$INSTALL_TYPE_FILE" ]; then
+    INSTALL_TYPE=$(cat "$INSTALL_TYPE_FILE")
+fi
+if [ "$INSTALL_TYPE" = "default" ]; then
+    COMPOSE_FILES="-f docker/docker-compose.base.yml"
+else
+    COMPOSE_FILES="-f docker/docker-compose.base.yml -f docker/docker-compose.extras.yml"
+fi
+
 start_services() {
     log_section "Starting MiniPrem Services"
-    cd docker && docker compose -f docker-compose.yml up -d
+    cd docker && docker compose $COMPOSE_FILES up -d
     if [ $? -eq 0 ]; then
         success "$CHECKMARK MiniPrem services started successfully"
     else
+        echo "\nSome images may be missing for the selected install type."
+        echo "If you want to add more services, please re-run the installer and select 'Full Install'."
         fatal "$CROSS Failed to start MiniPrem services"
     fi
 }
 
 stop_services() {
     log_section "Stopping MiniPrem Services"
-    cd docker && docker compose -f docker-compose.yml down
+    cd docker && docker compose $COMPOSE_FILES down
     if [ $? -eq 0 ]; then
         success "$CHECKMARK MiniPrem services stopped successfully"
     else
@@ -53,12 +67,12 @@ restart_services() {
 
 check_status() {
     log_section "MiniPrem Services Status"
-    cd docker && docker compose -f docker-compose.yml ps
+    cd docker && docker compose $COMPOSE_FILES ps
 }
 
 view_logs() {
     log_section "MiniPrem Services Logs"
-    cd docker && docker compose -f docker-compose.yml logs -f
+    cd docker && docker compose $COMPOSE_FILES logs -f
 }
 
 setup_flowise() {

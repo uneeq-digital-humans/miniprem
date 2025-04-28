@@ -134,7 +134,7 @@ This guide provides solutions for common issues you might encounter when running
    ```bash
    docker exec -it flowise node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
-   Then update the `FLOWISE_SECRETKEY_OVERWRITE` in docker-compose.yml
+   Then update the `FLOWISE_SECRETKEY_OVERWRITE` in the appropriate compose file (docker-compose.base.yml or docker-compose.extras.yml, depending on your install type).
 
 ## Renny Issues
 
@@ -235,7 +235,7 @@ This guide provides solutions for common issues you might encounter when running
    sudo lsof -i :PORT_NUMBER
    ```
 
-2. Stop the conflicting process or modify the port in docker-compose.yml
+2. Stop the conflicting process or modify the port in the appropriate compose file (docker-compose.base.yml or docker-compose.extras.yml).
 
 3. Check firewall settings:
    ```bash
@@ -307,3 +307,5 @@ This guide provides solutions for common issues you might encounter when running
    ```
 
 3. Prevent other applications from using the GPU during MiniPrem operation
+
+If you want to add more services or change your install type, re-run the installer and select the desired option.

@@ -334,91 +334,6 @@ build_log_streamer() {
     cd "$current_dir"
 }
 
-# Function to setup Docker volumes
-setup_docker_volumes() {
-    log_section "Setting up Docker Volumes"
-
-    local existing_dirs=0
-    local existing_vols=0
-    local miniprem_dirs=(/opt/miniprem/*)
-    local miniprem_vols=$(docker volume ls --format '{{.Name}}' | grep miniprem || true)
-
-    # Check for existing directories
-    if [ -d "/opt/miniprem" ] && [ "$(ls -A /opt/miniprem)" ]; then
-        existing_dirs=1
-    fi
-
-    # Check for existing Docker volumes
-    if [ ! -z "$miniprem_vols" ]; then
-        existing_vols=1
-    fi
-
-    if [ $existing_dirs -eq 1 ] || [ $existing_vols -eq 1 ]; then
-        warning "Existing /opt/miniprem data directories or Docker volumes were found."
-        echo "This may cause installation to fail if the configuration has changed."
-        
-        # Ask user what they want to do
-        echo ""
-        echo "You have three options:"
-        echo "  1) Delete existing volumes and recreate them (recommended for fresh installs)"
-        echo "  2) Keep existing volumes and continue (use if upgrading)" 
-        echo "  3) Exit the installer"
-        echo ""
-        read -p "Enter your choice [1-3]: " vol_choice
-        
-        case $vol_choice in
-            1)
-                # Delete and recreate
-                if [ $existing_dirs -eq 1 ]; then
-                    info "Deleting existing /opt/miniprem data directories..."
-                    sudo rm -rf /opt/miniprem/*
-                fi
-                if [ $existing_vols -eq 1 ]; then
-                    info "Deleting existing Docker volumes: $miniprem_vols"
-                    for v in $miniprem_vols; do
-                        docker volume rm $v || true
-                    done
-                fi
-                success "$CHECKMARK Old data directories and Docker volumes deleted."
-                
-                # Always ensure all required subdirectories exist
-                local required_dirs=(ollama_data flowise_data redis_data prometheus_data grafana_data vllm_data a2f_model_cache)
-                for d in "${required_dirs[@]}"; do
-                    sudo mkdir -p "/opt/miniprem/$d"
-                done
-                sudo chmod -R 777 /opt/miniprem
-                
-                success "$CHECKMARK Docker volume directories created and configured"
-                ;;
-            2)
-                # Keep existing and continue
-                info "Keeping existing volumes and continuing with installation."
-                sudo chmod -R 777 /opt/miniprem
-                success "$CHECKMARK Using existing Docker volume directories (permissions set to 777)"
-                ;;
-            3|*)
-                # Exit installer
-                info "Installation aborted by user due to existing volumes."
-                exit 0
-                ;;
-        esac
-    else
-        # No existing volumes found, create fresh ones
-        info "Creating Docker volume directories at /opt/miniprem..."
-        sudo mkdir -p /opt/miniprem
-        sudo mkdir -p /opt/miniprem/{ollama_data,flowise_data,redis_data,prometheus_data,grafana_data}
-
-        # Always ensure all required subdirectories exist
-        local required_dirs=(ollama_data flowise_data redis_data prometheus_data grafana_data vllm_data a2f_model_cache)
-        for d in "${required_dirs[@]}"; do
-            sudo mkdir -p "/opt/miniprem/$d"
-        done
-        sudo chmod -R 777 /opt/miniprem
-
-        success "$CHECKMARK Docker volume directories created and configured"
-    fi
-}
-
 # Function to start the Miniprem system with docker compose
 start_miniprem() {
     log_section "Starting Miniprem"
@@ -1000,10 +915,9 @@ main() {
     check_cloud_services "$DHOP_ADDRESS" "$DHOP_PS_ADDRESS"
 
     # Setup RIME credentials
-    setup_rime_credentials
-
-    # Setup Docker volumes
-    setup_docker_volumes
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        setup_rime_credentials
+    fi
 
     # Build the log streamer service
     build_log_streamer
@@ -1015,10 +929,14 @@ main() {
     start_miniprem
 
     # Prepare Gemma3:4b inside the vLLM container
-    prepare_vllm_model
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        prepare_vllm_model
+    fi
 
     # Setup Flowise chatflow
-    setup_flowise_chatflow
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        setup_flowise_chatflow
+    fi
 
     success "$CHECKMARK Installation and configuration complete."
     info "Miniprem is now running. You can access:"
@@ -1027,5 +945,53 @@ main() {
     info "- Documentation with logs viewer at http://localhost:3000/docs/ (if you've set up the documentation server)"
     info "To stop the services, use: cd docker && docker compose down"
 }
+
+# Prompt for install type at the start
+INSTALL_TYPE_FILE=".miniprem_install_type"
+INSTALL_TYPE=""
+if [ -f "$INSTALL_TYPE_FILE" ]; then
+    INSTALL_TYPE=$(cat "$INSTALL_TYPE_FILE")
+fi
+if [ -z "$INSTALL_TYPE" ]; then
+    echo "Select installation type:"
+    echo "1) Default Install (Renny + Audio2Face only)"
+    echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.)"
+    read -p "Enter choice [1-2]: " install_choice
+    if [[ "$install_choice" == "1" ]]; then
+        INSTALL_TYPE="default"
+    elif [[ "$install_choice" == "2" ]]; then
+        INSTALL_TYPE="full"
+    else
+        echo "Invalid choice, exiting."
+        exit 1
+    fi
+    echo "$INSTALL_TYPE" > "$INSTALL_TYPE_FILE"
+fi
+
+# In all docker compose commands, use the correct compose files
+if [ "$INSTALL_TYPE" = "default" ]; then
+    COMPOSE_FILES="-f docker/docker-compose.base.yml"
+else
+    COMPOSE_FILES="-f docker/docker-compose.base.yml -f docker/docker-compose.extras.yml"
+fi
+
+# Only pull images and perform logins for selected services
+if [ "$INSTALL_TYPE" = "full" ]; then
+    # Pull all images and perform all logins (including RIME)
+    setup_rime_credentials
+    # ... (other pulls/logins for extras)
+else
+    # Only pull images for Renny and Audio2Face
+    # (implement minimal pulls/logins here)
+    # Example:
+    info "Pulling Renny and Audio2Face images..."
+    docker pull facemeproduction/renny:0.443-ba7eb
+    docker pull facemeproduction/audio2face_with_emotion:local-dev
+    docker pull facemeproduction/audio2face_anim_controller:local-dev
+fi
+
+# Use $COMPOSE_FILES in all docker compose up/down commands
+# Example:
+# docker compose $COMPOSE_FILES up -d
 
 main "$@"

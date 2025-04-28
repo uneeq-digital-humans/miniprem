@@ -11,7 +11,7 @@ RIME AI provides high-quality text-to-speech (TTS) services for MiniPrem. This g
    docker pull quay.io/rimelabs/mistv2:v0.0.1-20250403
    ```
 2. **Start services with Docker Compose:**
-   RIME API and model containers are included in the main `docker-compose.yml`.
+   RIME API and model containers are included in the **Full Install** option of the installer (using modular Docker Compose files).
 
 3. **API Key:**
    Obtain your RIME API key from the RIME dashboard. All requests require this key in the `Authorization` header.
