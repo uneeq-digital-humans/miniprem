@@ -144,20 +144,29 @@ check_docker_installation() {
 pull_docker_images() {
     log_section "Pulling Docker Images"
 
-    # Change to the docker directory
-    cd docker > /dev/null 2>&1 || { fatal "$CROSS Failed to change directory to 'docker'"; }
+    # Change to the project root (if not already there)
+    cd "$(dirname "$0")/.." > /dev/null 2>&1 || { fatal "$CROSS Failed to change directory to project root"; }
 
     DOCKER_CMD=$(get_docker_command)
 
-    # First, pull public images (Grafana, Prometheus, Redis)
-    info "Pulling public images (Grafana, Prometheus, Redis)..."
-    {
-        $DOCKER_CMD pull grafana/grafana:latest
-        $DOCKER_CMD pull prom/prometheus:latest
-        $DOCKER_CMD pull redis:latest
-    } &
-    show_spinner $!
-    success "$CHECKMARK Public Docker images pulled successfully."
+    # Check INSTALL_TYPE from environment or argument
+    local install_type="${INSTALL_TYPE:-$1}"
+    local compose_files="-f docker/docker-compose.base.yml"
+    if [ "$install_type" = "full" ]; then
+        compose_files="-f docker/docker-compose.base.yml -f docker/docker-compose.extras.yml"
+    fi
+
+    if [ "$install_type" = "full" ]; then
+        # First, pull public images (Grafana, Prometheus, Redis)
+        info "Pulling public images (Grafana, Prometheus, Redis)..."
+        {
+            $DOCKER_CMD pull grafana/grafana:latest
+            $DOCKER_CMD pull prom/prometheus:latest
+            $DOCKER_CMD pull redis:latest
+        } &
+        show_spinner $!
+        success "$CHECKMARK Public Docker images pulled successfully."
+    fi
 
     # Docker login for UneeQ images
     info "Logging in to UneeQ Docker registry for Renny and Audio2Face images..."
@@ -172,61 +181,39 @@ pull_docker_images() {
     fi
     success "$CHECKMARK Successfully logged in to UneeQ Docker registry."
     
-    # Pull remaining images from docker-compose
-    info "Pulling remaining Docker images, this may take some time..."
+    # Pull images for the selected install type
+    info "Pulling Docker images for selected install type..."
     {
-        $DOCKER_CMD compose -f docker-compose.yml pull
+        $DOCKER_CMD compose $compose_files pull
     } &
     show_spinner $!
-    success "$CHECKMARK All Docker images pulled successfully."
+    success "$CHECKMARK Docker images pulled successfully for selected install type."
 
     cd - > /dev/null 2>&1 || { fatal "$CROSS Failed to change back to the original directory"; }
 }
 
 start_docker_compose() {
     log_section "Starting Docker Compose Services"
-
-    # Get the appropriate Docker command with or without sudo depending on who is running it (prefers non-sudo)
     DOCKER_CMD=$(get_docker_command)
-
-    # Change to the docker directory
-    cd docker > /dev/null 2>&1 || { fatal "$CROSS Failed to change directory to 'docker'"; }
-
-    # Start Docker Compose services in detached mode
+    local compose_file="${1:-"-f docker/docker-compose.yml"}"
     info "Starting Docker Compose services..."
-    $DOCKER_CMD compose -f docker-compose.yml up -d
+    $DOCKER_CMD compose $compose_file up -d
     if [ $? -ne 0 ]; then
         fatal "$CROSS Failed to start Docker Compose services."
     fi
-
     success "$CHECKMARK Docker Compose services started successfully."
-
-    # Change back to the original directory
-    cd - > /dev/null 2>&1 || { fatal "$CROSS Failed to change back to the original directory"; }
 }
 
-
-# Function to stop Docker Compose services
 stop_docker_compose() {
     log_section "Stopping Docker Compose Services"
-
-    # Get the appropriate Docker command with or without sudo depending on who is running it (prefers non-sudo)
     DOCKER_CMD=$(get_docker_command)
-
-    # Change to the docker directory
-    cd docker > /dev/null 2>&1 || { fatal "$CROSS Failed to change directory to 'docker'"; }
-
-    # Stop Docker Compose services
+    local compose_file="${1:-"-f docker/docker-compose.yml"}"
     info "Stopping Docker Compose services..."
-    $DOCKER_CMD compose -f docker-compose.yml down
+    $DOCKER_CMD compose $compose_file down
     if [ $? -ne 0 ]; then
         fatal "$CROSS Failed to stop Docker Compose services."
     fi
-
     success "$CHECKMARK Docker Compose services stopped successfully."
-
-    # Change back to the original directory
-    cd - > /dev/null 2>&1 || { fatal "$CROSS Failed to change back to the original directory"; }
 }
 
 update_docker_compose_image() {
