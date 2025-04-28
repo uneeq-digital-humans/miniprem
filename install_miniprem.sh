@@ -13,7 +13,7 @@ source scripts/prerequisites.sh
 usage() {
     echo -e $WHITE
     cat <<EOF
-`basename $0` --platform-address <UneeQ platform address> --platform-key <UneeQ platform API key> --tenant <Tenant ID> --renny-image <Docker image name for Renny> [--azure-region <Azure region>] [--azure-speech-key <Azure speech key>] --renny-image <Docker image name for Renny> [h]
+$(basename "$0") --platform-address <UneeQ platform address> --platform-key <UneeQ platform API key> --tenant <Tenant ID> --renny-image <Docker image name for Renny> [--azure-region <Azure region>] [--azure-speech-key <Azure speech key>] --renny-image <Docker image name for Renny> [h]
 Install and configure Renny and A2F services on a laptop/kiosk
 
 Options:
@@ -334,6 +334,91 @@ build_log_streamer() {
     cd "$current_dir"
 }
 
+# Function to setup Docker volumes
+setup_docker_volumes() {
+    log_section "Setting up Docker Volumes"
+
+    local existing_dirs=0
+    local existing_vols=0
+    local miniprem_dirs=(/opt/miniprem/*)
+    local miniprem_vols=$(docker volume ls --format '{{.Name}}' | grep miniprem || true)
+
+    # Check for existing directories
+    if [ -d "/opt/miniprem" ] && [ "$(ls -A /opt/miniprem)" ]; then
+        existing_dirs=1
+    fi
+
+    # Check for existing Docker volumes
+    if [ ! -z "$miniprem_vols" ]; then
+        existing_vols=1
+    fi
+
+    if [ $existing_dirs -eq 1 ] || [ $existing_vols -eq 1 ]; then
+        warning "Existing /opt/miniprem data directories or Docker volumes were found."
+        echo "This may cause installation to fail if the configuration has changed."
+        
+        # Ask user what they want to do
+        echo ""
+        echo "You have three options:"
+        echo "  1) Delete existing volumes and recreate them (recommended for fresh installs)"
+        echo "  2) Keep existing volumes and continue (use if upgrading)" 
+        echo "  3) Exit the installer"
+        echo ""
+        read -p "Enter your choice [1-3]: " vol_choice
+        
+        case $vol_choice in
+            1)
+                # Delete and recreate
+                if [ $existing_dirs -eq 1 ]; then
+                    info "Deleting existing /opt/miniprem data directories..."
+                    sudo rm -rf /opt/miniprem/*
+                fi
+                if [ $existing_vols -eq 1 ]; then
+                    info "Deleting existing Docker volumes: $miniprem_vols"
+                    for v in $miniprem_vols; do
+                        docker volume rm $v || true
+                    done
+                fi
+                success "$CHECKMARK Old data directories and Docker volumes deleted."
+                
+                # Always ensure all required subdirectories exist
+                local required_dirs=(ollama_data flowise_data redis_data prometheus_data grafana_data vllm_data a2f_model_cache)
+                for d in "${required_dirs[@]}"; do
+                    sudo mkdir -p "/opt/miniprem/$d"
+                done
+                sudo chmod -R 777 /opt/miniprem
+                
+                success "$CHECKMARK Docker volume directories created and configured"
+                ;;
+            2)
+                # Keep existing and continue
+                info "Keeping existing volumes and continuing with installation."
+                sudo chmod -R 777 /opt/miniprem
+                success "$CHECKMARK Using existing Docker volume directories (permissions set to 777)"
+                ;;
+            3|*)
+                # Exit installer
+                info "Installation aborted by user due to existing volumes."
+                exit 0
+                ;;
+        esac
+    else
+        # No existing volumes found, create fresh ones
+        info "Creating Docker volume directories at /opt/miniprem..."
+        sudo mkdir -p /opt/miniprem
+        sudo mkdir -p /opt/miniprem/{ollama_data,flowise_data,redis_data,prometheus_data,grafana_data}
+
+        # Always ensure all required subdirectories exist
+        local required_dirs=(ollama_data flowise_data redis_data prometheus_data grafana_data vllm_data a2f_model_cache)
+        for d in "${required_dirs[@]}"; do
+            sudo mkdir -p "/opt/miniprem/$d"
+        done
+        sudo chmod -R 777 /opt/miniprem
+
+        success "$CHECKMARK Docker volume directories created and configured"
+    fi
+}
+
 # Function to start the Miniprem system with docker compose
 start_miniprem() {
     log_section "Starting Miniprem"
@@ -400,36 +485,36 @@ show_progress_spinner() {
     printf "\r"
 }
 
-# Function to pull the required Ollama model after the container is up
-pull_ollama_model() {
-    log_section "Preparing Ollama LLM"
+# Function to prepare the required vLLM model after the container is up
+prepare_vllm_model() {
+    log_section "Preparing vLLM LLM"
 
     info "NOTE: This is a multi-step process that may take 5-15 minutes depending on your hardware."
-    info "      - First, we need to wait for Ollama to start"
-    info "      - Then, we'll download the Gemma3:4b model (if not already downloaded)"
+    info "      - First, we need to wait for vLLM to start"
+    info "      - Then, we'll trigger the download of the Gemma3:4b model (if not already downloaded)"
     info "      - Finally, the model needs to load completely into GPU memory"
     info "Please be patient as we go through these steps."
 
     echo ""
-    info "Step 1: Waiting for Ollama service to start..."
+    info "Step 1: Waiting for vLLM service to start..."
 
     local max_attempts=120 # Wait up to 10 minutes for service to start
     local attempt=1
-    local ollama_started=0
+    local vllm_started=0
 
     while [ $attempt -le $max_attempts ]; do
-        # Check if ollama is running by querying the API version endpoint
-        if curl --output /dev/null --silent --fail http://localhost:11434/api/version; then
-            success "$CHECKMARK Ollama service is running (API accessible)"
-            ollama_started=1
+        # Check if vLLM is running by querying the /v1/completions endpoint
+        if curl --output /dev/null --silent --fail http://localhost:8000/v1/completions; then
+            success "$CHECKMARK vLLM service is running (API accessible)"
+            vllm_started=1
             break
         fi
 
         # Show progress every 10 attempts
         if [ $((attempt % 10)) -eq 0 ]; then
-            info "Still waiting for Ollama to start... ($attempt/$max_attempts)"
+            info "Still waiting for vLLM to start... ($attempt/$max_attempts)"
             # Show the container status
-            docker ps --filter "name=ollama" --format "{{.Status}}"
+            docker ps --filter "name=vllm" --format "{{.Status}}"
         else
             printf '.'
         fi
@@ -438,58 +523,47 @@ pull_ollama_model() {
         attempt=$((attempt+1))
     done
 
-    if [ $ollama_started -eq 0 ]; then
-        warning "Ollama service did not start within the expected timeframe (10 minutes)."
-        warning "You may need to troubleshoot by checking: docker logs ollama"
+    if [ $vllm_started -eq 0 ]; then
+        warning "vLLM service did not start within the expected timeframe (10 minutes)."
+        warning "You may need to troubleshoot by checking: docker logs vllm"
         read -p "Do you want to continue anyway? (y/n): " continue_anyway
         if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-            fatal "Installation aborted due to Ollama startup issues."
+            fatal "Installation aborted due to vLLM startup issues."
         fi
     fi
 
     echo ""
-    info "Step 2: Downloading and preparing the Gemma3:4b model..."
+    info "Step 2: Triggering download and preparation of the Gemma3:4b model..."
     info "(This is a large model and may take several minutes to download and prepare)"
-    info "You can monitor progress by running 'docker logs -f ollama' in another terminal"
+    info "You can monitor progress by running 'docker logs -f vllm' in another terminal"
     echo ""
 
-    DOCKER_CMD=$(get_docker_command) # Get docker or sudo docker
-
-    # Check if model is already pulled
-    model_exists=$($DOCKER_CMD exec ollama ollama list 2>/dev/null | grep -c "gemma3:4b")
-
-    if [ "$model_exists" -gt 0 ]; then
-        info "Model Gemma3:4b is already pulled, skipping download"
-    else
-        info "Starting model pull... (this may take 5-10 minutes)"
-
-        # Run the pull command in background and capture PID
-        ($DOCKER_CMD exec ollama ollama pull gemma3:4b) &
-        pull_pid=$!
-
-        # Show spinner with progress message
-        show_progress_spinner "Downloading and preparing Gemma3:4b model" $pull_pid
-
-        # Check if pull was successful
-        wait $pull_pid
-        pull_status=$?
-
-        if [ $pull_status -ne 0 ]; then
-            warning "Failed to pull Ollama model automatically."
-            warning "You can try running 'docker exec ollama ollama pull gemma3:4b' manually later."
-            read -p "Do you want to continue with the installation anyway? (y/n): " continue_anyway
-            if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-                fatal "Installation aborted due to model pull failure."
-            fi
+    # Poll until the model is fully loaded and ready
+    info "Waiting for Gemma3:4b model to be fully loaded in vLLM..."
+    local poll_attempt=1
+    local poll_max_attempts=40  # Wait up to 10 minutes (40*15s)
+    while [ $poll_attempt -le $poll_max_attempts ]; do
+        response=$(curl -s -X POST http://localhost:8000/v1/chat/completions \
+            -H 'Content-Type: application/json' \
+            -d '{
+                "model": "gemma-3-4b",
+                "messages": [
+                    { "role": "user", "content": "Hello!" }
+                ]
+            }')
+        if ! echo "$response" | grep -q 'error'; then
+            success "$CHECKMARK Gemma3:4b model is fully loaded and ready in vLLM."
+            break
         else
-            success "$CHECKMARK Ollama model pulled successfully."
+            info "Model not ready yet, still waiting... ($poll_attempt/$poll_max_attempts)"
+            sleep 15
+            poll_attempt=$((poll_attempt+1))
         fi
+    done
+    if [ $poll_attempt -gt $poll_max_attempts ]; then
+        warning "Timed out waiting for Gemma3:4b model to be ready in vLLM."
+        warning "You may need to check the vLLM logs or try again later."
     fi
-
-    echo ""
-    info "Ollama with Gemma3:4b model is now ready to use"
-    info "You can test it directly with:"
-    info "  docker exec -it ollama ollama run gemma3:4b \"Tell me a joke\""
 }
 
 # Function to setup Flowise chatflow
@@ -637,7 +711,133 @@ setup_rime_credentials() {
     info "RIME credential setup complete"
 }
 
+# UneeQ ASCII Logo
+print_logo() {
+    echo ""
+    echo -e "\e[38;5;208m  #     #  #    #  #######  #######  #######   "
+    echo -e "\e[38;5;209m  #     #  ##   #  #        #        #     #   "
+    echo -e "\e[38;5;210m  #     #  # #  #  #######  #######  #     #   "
+    echo -e "\e[38;5;211m  #     #  #  # #  #        #        #     #   "
+    echo -e "\e[38;5;212m  #     #  #   ##  #        #        #   # #   "
+    echo -e "\e[38;5;213m   #####   #    #  #######  #######  #######   "
+    echo ""
+    echo -e "\e[38;5;208m  ################################################  "
+    echo -e "\e[38;5;255m               DIGITALHUMANS.COM                    "
+    echo -e "\e[0m"
+    echo ""
+}
+
+# Function to check if required ports are in use and stop existing containers
+check_environment() {
+    log_section "Checking Environment"
+    
+    # First, stop any existing miniprem containers
+    info "Stopping any existing Miniprem containers..."
+    
+    if [ -f "./miniprem.sh" ]; then
+        ./miniprem.sh stop >/dev/null 2>&1
+        success "$CHECKMARK Existing Miniprem containers stopped using miniprem.sh"
+    elif [ -d "./docker" ]; then
+        (cd docker && docker compose down) >/dev/null 2>&1
+        success "$CHECKMARK Existing Miniprem containers stopped using docker compose"
+    else
+        info "No existing Miniprem containers found"
+    fi
+    
+    # Only check for common local daemon ports that might conflict
+    local port_map=(
+        "6379:Redis" 
+        "11434:Ollama"
+    )
+    local found=0
+    local box_width=65  # Fixed width for the box
+    
+    for port_entry in "${port_map[@]}"; do
+        # Split entry into port and service name
+        local port="${port_entry%%:*}"
+        local service="${port_entry#*:}"
+        
+        # Try lsof first, fallback to ss
+        if command -v lsof >/dev/null 2>&1; then
+            proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
+        else
+            proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
+        fi
+        if [ ! -z "$proc_info" ]; then
+            proc_name=$(echo $proc_info | awk '{print $1}')
+            proc_pid=$(echo $proc_info | awk '{print $2}')
+            # Special handling for redis-server on 6379
+            if [ "$port" = "6379" ] && [ "$proc_name" = "redis-server" ]; then
+                echo -e "\nRedis appears to be running locally on port 6379."
+                read -p "Would you like to try stopping it automatically? [y/N]: " stop_redis
+                if [[ "$stop_redis" =~ ^[Yy]$ ]]; then
+                    sudo service redis-server stop || true
+                    sudo systemctl stop redis || true
+                    # Re-check if port is still in use
+                    if command -v lsof >/dev/null 2>&1; then
+                        proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
+                    else
+                        proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
+                    fi
+                    if [ -z "$proc_info" ]; then
+                        success "$CHECKMARK Successfully stopped redis-server on port 6379."
+                        continue
+                    else
+                        warning "redis-server is still running on port 6379. Please stop it manually."
+                    fi
+                fi
+            fi
+            # Special handling for ollama on 11434
+            if [ "$port" = "11434" ] && [[ "${proc_name,,}" == *ollama* ]]; then
+                echo -e "\nOllama appears to be running locally on port 11434."
+                read -p "Would you like to try stopping it automatically? [y/N]: " stop_ollama
+                if [[ "$stop_ollama" =~ ^[Yy]$ ]]; then
+                    sudo systemctl stop ollama || true
+                    # Re-check if port is still in use
+                    if command -v lsof >/dev/null 2>&1; then
+                        proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
+                    else
+                        proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
+                    fi
+                    if [ -z "$proc_info" ]; then
+                        success "$CHECKMARK Successfully stopped ollama on port 11434."
+                        continue
+                    else
+                        warning "Ollama is still running on port 11434. Please stop it manually."
+                    fi
+                fi
+            fi
+            found=1
+            # Create horizontal border line with consistent width
+            local border=$(printf "%${box_width}s" | tr ' ' '-')
+            
+            echo -e "\n+${border}+"
+            printf "| %-${box_width}s |\n" "⚠️  LOCAL SERVICE CONFLICT DETECTED"
+            echo "+${border}+"
+            
+            # Format each line with proper right alignment
+            printf "| Port %-5s is in use by local process '%-12s' (PID %-6s) |\n" "$port" "$proc_name" "$proc_pid"
+            printf "| %-${box_width}s |\n" ""
+            printf "| %-${box_width}s |\n" "This will prevent the $service service from starting"
+            printf "| %-${box_width}s |\n" "correctly. You appear to have a local instance of $service"
+            printf "| %-${box_width}s |\n" "running on your system."
+            printf "| %-${box_width}s |\n" ""
+            printf "| %-${box_width}s |\n" "To resolve:"
+            printf "| %-${box_width}s |\n" "    sudo kill $proc_pid"
+            printf "| %-${box_width}s |\n" "Then re-run this installer."
+            echo "+${border}+"
+        fi
+    done
+    if [ $found -eq 1 ]; then
+        echo -e "\n\e[1;33m[WARNING] Local service conflicts detected.\e[0m"
+        read -p "\nPress Enter to exit and resolve the conflict(s)..." _
+        exit 1
+    fi
+}
+
 main() {
+    print_logo
+    check_environment
     # Parse command line arguments using getopt
     OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image: -- "$@")
     if [ $? -ne 0 ]; then
@@ -791,6 +991,9 @@ main() {
     # Setup RIME credentials
     setup_rime_credentials
 
+    # Setup Docker volumes
+    setup_docker_volumes
+
     # Build the log streamer service
     build_log_streamer
 
@@ -800,8 +1003,8 @@ main() {
     # Start the Miniprem system
     start_miniprem
 
-    # Pull Gemma3:4b inside the Ollama container
-    pull_ollama_model
+    # Prepare Gemma3:4b inside the vLLM container
+    prepare_vllm_model
 
     # Setup Flowise chatflow
     setup_flowise_chatflow

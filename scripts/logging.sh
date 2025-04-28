@@ -58,12 +58,20 @@ log_message() {
 log_section() {
     local section_name=$1
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-
+    local box_width=65  # Same width as in the port conflict warnings
+    
+    # Create horizontal border line with consistent width
+    local border=$(printf "%${box_width}s" | tr ' ' '=')
+    
     # Log to console
-    echo -e "\n${BLUE}${BOLD}========== ${section_name} ==========${NC}\n"
-
+    echo -e "\n\e[1;34m+${border}+\e[0m"
+    printf "\e[1;34m| %-${box_width}s |\e[0m\n" "$section_name"
+    echo -e "\e[1;34m+${border}+\e[0m\n"
+    
     # Log to file
-    echo -e "\n${timestamp} ========== ${section_name} ==========\n" >> "$LOG_FILE"
+    echo -e "\n${timestamp} +${border}+" >> "$LOG_FILE"
+    printf "${timestamp} | %-${box_width}s |\n" "$section_name" >> "$LOG_FILE"
+    echo -e "${timestamp} +${border}+\n" >> "$LOG_FILE"
 }
 
 # Function to initialize the log file with a timestamp

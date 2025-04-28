@@ -75,7 +75,7 @@ This ensures smooth animation and facial expressions.
 The integration between Renny and the LLM (via Flowise) works as follows:
 
 1. User input is captured (text or audio)
-2. The input is processed by the Flowise/Ollama pipeline
+2. The input is processed by the Flowise/vLLM pipeline
 3. The response is converted to speech via Azure TTS
 4. Audio2Face generates facial animations synchronized with the speech
 5. Renny renders the animated avatar speaking the response

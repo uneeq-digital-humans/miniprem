@@ -1,6 +1,6 @@
 # Flowise Configuration Guide
 
-Flowise provides a visual interface for creating and managing AI workflows. This guide will help you set up and use Flowise with Ollama integration.
+Flowise provides a visual interface for creating and managing AI workflows. This guide will help you set up and use Flowise with vLLM integration.
 
 ## Accessing Flowise
 
@@ -16,7 +16,7 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 - **Edges**: Connections between nodes that define how data flows
 - **API**: RESTful endpoints to interact with your chatflows programmatically
 
-## Creating a Chatflow with Ollama
+## Creating a Chatflow with vLLM
 
 ### 1. Access Flowise UI
 
@@ -27,7 +27,7 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 
 1. Click on "Chatflows" in the sidebar
 2. Click the "+" button to create a new Chatflow
-3. Name your Chatflow (e.g., "Ollama Gemma3 Chatflow")
+3. Name your Chatflow (e.g., "vLLM Gemma3 Chatflow")
 
 ### 3. Add and Configure Nodes
 
@@ -37,12 +37,12 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 2. Configure the node with:
    - Prompt: "You are a helpful assistant powered by Gemma3. Provide concise and accurate responses."
 
-#### Ollama Node
+#### vLLM Node
 
-1. From the nodes panel, drag and drop an "Ollama" node onto the canvas
+1. From the nodes panel, drag and drop a "vLLM" or "OpenAI Compatible" node onto the canvas
 2. Configure the node with:
-   - Base URL: `http://ollama:11434` (use the docker container name, not localhost)
-   - Model: `Gemma3:4b`
+   - Base URL: `http://vllm:8000/v1` (use the docker container name, not localhost)
+   - Model: `gemma-3-4b`
    - Temperature: `0.7`
    - Max Tokens: `1000`
    - Leave other settings at default values
@@ -70,7 +70,7 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 Connect the nodes with the following connections:
 
 1. System Prompt → Conversation Chain (from "prompt" to "systemPrompt")
-2. Ollama → Conversation Chain (from "model" to "llm")
+2. vLLM → Conversation Chain (from "model" to "llm")
 3. Buffer Memory → Conversation Chain (from "memory" to "memory")
 4. Conversation Chain → Chat Trigger (from "output" to "input")
 

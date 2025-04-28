@@ -1,6 +1,13 @@
 name: uneeq-miniprem
 include:
   - ./docker-compose.a2f.yml # a2f services
+networks:
+  miniprem_net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
 services:
   # Log streamer service
   log-streamer:
@@ -13,30 +20,50 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
+    networks:
+      - miniprem_net
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --spider http://localhost:8082/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8082/health || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 6
       start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
   # Redis service for Flowise
   redis:
-    image: redis:alpine
+    image: redis:latest
     container_name: redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    networks:
+      - miniprem_net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
   # Prometheus for metrics collection
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v2.45.0
     container_name: prometheus
     ports:
       - "9090:9090"
@@ -44,18 +71,33 @@ services:
       - prometheus_data:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     restart: unless-stopped
+    networks:
+      - miniprem_net
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
   # Grafana for metrics visualization
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:10.2.0
     container_name: grafana
     ports:
-      - "3001:3000" # Using 3001 since 3000 is used by Flowise
+      - "3001:3000"
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
@@ -65,35 +107,18 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     restart: unless-stopped
+    networks:
+      - miniprem_net
     depends_on:
-      - prometheus
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-    restart: unless-stopped
-    # Fixed healthcheck
-    healthcheck:
-      test: >
-        bash -c '
-        for i in $(seq 2); do
-          if ! curl -s http://localhost:11434/api/tags; then
-            exit 1
-          fi
-          sleep 1
-        done;
-        exit 0
-        '
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
+      prometheus:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
   flowise:
     build:
       context: ./flowise
@@ -133,20 +158,28 @@ services:
       - METRICS_PROVIDER=prometheus
       - METRICS_INCLUDE_NODE_METRICS=true
       - METRICS_SERVICE_NAME=FlowiseAI
+      - METRICS_PORT=9090
     restart: unless-stopped
+    networks:
+      - miniprem_net
     depends_on:
-      ollama:
-        condition: service_started
       redis:
         condition: service_healthy
       prometheus:
-        condition: service_started
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/v1/ping"]
-      interval: 15s
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/v1/ping || exit 1"]
+      interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 10
       start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
   renny:
     container_name: renny
     command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
@@ -157,7 +190,6 @@ services:
     image: "facemeproduction/renny:0.443-ba7eb"
     network_mode: "host"
     runtime: nvidia
-    # Interactive shell is required to make sure UE logs are not buffered
     tty: true
     volumes:
       - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
@@ -173,9 +205,42 @@ services:
       audio2face_controller:
         condition: service_started
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: vllm
+    ports:
+      - "8000:8000"
+    volumes:
+      - vllm_data:/root/.cache/huggingface
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    restart: unless-stopped
+    networks:
+      - miniprem_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/completions"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
 volumes:
-  ollama_data:
   flowise_data:
   redis_data:
   prometheus_data:
   grafana_data:
+  vllm_data:
