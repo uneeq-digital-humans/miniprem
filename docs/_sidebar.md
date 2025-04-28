@@ -7,6 +7,7 @@
   * [vLLM](guides/vllm.md)
   * [Prometheus & Grafana](guides/monitoring.md)
   * [Renny](guides/renny.md)
+  * [RIME AI Integration](guides/rime.md)
 * [API Reference](api/README.md)
   * [Health API](api/health.md)
 * [Monitoring](monitoring/logs.md)

@@ -15,6 +15,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 - **Workflow Automation**: Flowise for building and managing AI workflows
 - **Metrics & Monitoring**: Prometheus and Grafana for real-time performance tracking
 - **Queue Management**: Redis for reliable message processing
+- **RIME AI**: High-quality text-to-speech via a simple API
 
 ## Quick Start
 
@@ -75,6 +76,7 @@ Once installation is complete, you can access the following services:
 | vLLM API | http://localhost:8000 | N/A |
 | Renny Health | http://localhost:8081/health | N/A |
 | Log Viewer | http://localhost:8082 | N/A |
+| RIME API | http://localhost:8100 | Requires API Key |
 
 ### Using Flowise
 
@@ -104,6 +106,48 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 2. Log in with the default credentials (admin / admin)
 3. Navigate to Dashboards to view the pre-configured Flowise monitoring dashboard
 4. Create custom dashboards as needed to monitor specific metrics
+
+### Using RIME AI (Text-to-Speech)
+
+RIME provides high-quality text-to-speech via a simple API. You must supply your RIME API key in the Authorization header.
+
+**Example: JSON response**
+```bash
+curl -X POST "http://localhost:8100" \
+  -H "Authorization: Bearer <API KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "I would love to have a conversation with you. The new model is out.",
+    "speaker": "joy",
+    "modelId": "mist"
+  }' -o result_mist.txt
+```
+
+**Example: MP3 response**
+```bash
+curl -X POST "http://localhost:8100" \
+  -H "Authorization: Bearer <API KEY>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: audio/mp3" \
+  -d '{
+    "text": "I would love to have a conversation with you.",
+    "speaker": "joy",
+    "modelId": "mist"
+  }' -o result.mp3
+```
+
+**Example: PCM response**
+```bash
+curl -X POST "http://localhost:8100" \
+  -H "Authorization: Bearer <API KEY>" \
+  -H "Content-Type: application/json" \
+  -H "Accept: audio/pcm" \
+  -d '{
+    "text": "I would love to have a conversation with you.",
+    "speaker": "joy",
+    "modelId": "mist"
+  }' -o result.pcm
+```
 
 ## Managing MiniPrem
 
