@@ -16,6 +16,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 - **Metrics & Monitoring**: Prometheus and Grafana for real-time performance tracking
 - **Queue Management**: Redis for reliable message processing
 - **RIME AI**: High-quality text-to-speech via a simple API
+- **Whisper**: OpenAI's speech recognition for accurate audio transcription
 
 ## Quick Start
 
