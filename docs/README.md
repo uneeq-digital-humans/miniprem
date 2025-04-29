@@ -1,10 +1,10 @@
-# MinipRem Platform
+# MiniPrem Platform
 
 > A comprehensive digital human platform with LLM integration, real-time facial animation, and monitoring capabilities.
 
 ## Overview
 
-MinipRem is an integrated platform that combines a digital human interface (Renny) with LLM capabilities (vLLM), workflow automation (Flowise), and comprehensive monitoring tools (Prometheus + Grafana). This setup allows you to deploy and manage advanced AI interactions through a virtual human interface.
+MiniPrem is an integrated platform that combines a digital human interface (Renny) with LLM capabilities (vLLM), workflow automation (Flowise), and comprehensive monitoring tools (Prometheus + Grafana). This setup allows you to deploy and manage advanced AI interactions through a virtual human interface.
 
 ## Features
 
@@ -13,6 +13,7 @@ MinipRem is an integrated platform that combines a digital human interface (Renn
 - **Workflow Automation**: Flowise for building and managing AI workflows
 - **Metrics & Monitoring**: Prometheus and Grafana for real-time performance tracking
 - **Queue Management**: Redis for reliable message processing
+- **RIME AI**: High-quality text-to-speech via a simple API
 
 ## Quick Start
 
@@ -21,6 +22,8 @@ MinipRem is an integrated platform that combines a digital human interface (Renn
 - Docker and Docker Compose
 - NVIDIA GPU with appropriate drivers
 - Ubuntu Linux (recommended)
+- Required credentials from UneeQ (platform address, API key, tenant ID)
+- Azure Speech service credentials (region and API key)
 
 ### Installation
 
