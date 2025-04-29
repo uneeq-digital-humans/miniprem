@@ -27,8 +27,21 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 
 ### Installation
 
-1. Clone this repository:
-   ```bash
-   git clone https://gitlab.com/tgmerritt/miniprem-2025.git
-   cd miniprem-2025
-   ```
+For complete installation instructions, see our [Getting Started Guide](guides/getting-started.md).
+
+## Platform Components
+
+MiniPrem includes the following components:
+
+- **Renny**: Digital human interface with real-time facial animation
+- **vLLM**: Large Language Model serving with Gemma3
+- **Flowise**: Visual workflow builder for AI applications
+- **Prometheus & Grafana**: Real-time monitoring and dashboards
+- **Redis**: Message queue for reliable processing
+- **RIME**: High-quality text-to-speech engine
+
+## Next Steps
+
+- [Getting Started](guides/getting-started.md): Installation and basic setup
+- [Services Overview](guides/services.md): Details on each component
+- [Troubleshooting](troubleshooting.md): Solutions to common issues
