@@ -13,6 +13,8 @@ The MiniPrem platform consists of several integrated services that work together
 | Prometheus | Metrics collection | 9090 | [Monitoring Guide](monitoring.md) |
 | Grafana | Metrics visualization | 3001 | [Monitoring Guide](monitoring.md) |
 | Audio2Face | Facial animation | 50000, 52000 | [Renny Guide](renny.md) |
+| RIME | Text-to-speech API | 8100 | [RIME Guide](rime.md) |
+| Whisper | Speech recognition | 9000 | [Whisper Guide](whisper.md) |
 
 ## Service Architecture
 

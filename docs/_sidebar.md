@@ -8,6 +8,7 @@
   * [Prometheus & Grafana](guides/monitoring.md)
   * [Renny](guides/renny.md)
   * [RIME AI Integration](guides/rime.md)
+  * [Whisper Speech Recognition](guides/whisper.md)
 * [API Reference](api/README.md)
   * [Health API](api/health.md)
 * [Monitoring](monitoring/logs.md)
