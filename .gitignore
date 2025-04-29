@@ -2,6 +2,7 @@
 docker/nlp-service.env
 docker/*.env
 docker/*.bak
+docker/*.example
 docker/notes_for_myself
 docker/configuration.dat
 
@@ -27,3 +28,4 @@ speech_input.sh
 *.swo
 *~
 .miniprem_install_type
+fresh_installation_steps.md
