@@ -950,7 +950,7 @@ main() {
 INSTALL_TYPE=""
 echo "Select installation type:"
 echo "1) Default Install (Renny + Audio2Face only)"
-echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.)"
+echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, Whisper etc.)"
 read -p "Enter choice [1-2]: " install_choice
 if [[ "$install_choice" == "1" ]]; then
     INSTALL_TYPE="default"
@@ -974,11 +974,10 @@ fi
 if [ "$INSTALL_TYPE" = "full" ]; then
     # Pull all images and perform all logins (including RIME)
     setup_rime_credentials
-    # ... (other pulls/logins for extras)
 else
     # Only pull images for Renny and Audio2Face
     info "Pulling Renny and Audio2Face images..."
-    docker pull facemeproduction/renny:0.443-ba7eb
+    docker pull facemeproduction/renny:0.484-37235
     docker pull facemeproduction/audio2face_with_emotion:local-dev
     docker pull facemeproduction/audio2face_anim_controller:local-dev
 fi
