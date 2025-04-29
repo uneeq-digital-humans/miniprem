@@ -144,17 +144,21 @@ check_docker_installation() {
 pull_docker_images() {
     log_section "Pulling Docker Images"
 
-    # Change to the project root (if not already there)
-    cd "$(dirname "$0")/.." > /dev/null 2>&1 || { fatal "$CROSS Failed to change directory to project root"; }
-
-    DOCKER_CMD=$(get_docker_command)
-
+    # Store the current directory
+    local current_dir=$(pwd)
+    
     # Check INSTALL_TYPE from environment or argument
     local install_type="${INSTALL_TYPE:-$1}"
-    local compose_file="-f docker/docker-compose.default.yml"
+    local compose_file=""
+    
+    # Use the correct path for the docker-compose file
     if [ "$install_type" = "full" ]; then
-        compose_file="-f docker/docker-compose.yml"
+        compose_file="-f $current_dir/docker/docker-compose.yml"
+    else
+        compose_file="-f $current_dir/docker/docker-compose.default.yml"
     fi
+
+    DOCKER_CMD=$(get_docker_command)
 
     if [ "$install_type" = "full" ]; then
         # First, pull public images (Grafana, Prometheus, Redis)
@@ -184,12 +188,12 @@ pull_docker_images() {
     # Pull images for the selected install type
     info "Pulling Docker images for selected install type..."
     {
+        # Change to the directory containing the docker-compose file
+        cd $current_dir
         $DOCKER_CMD compose $compose_file pull
     } &
     show_spinner $!
     success "$CHECKMARK Docker images pulled successfully for selected install type."
-
-    cd - > /dev/null 2>&1 || { fatal "$CROSS Failed to change back to the original directory"; }
 }
 
 start_docker_compose() {

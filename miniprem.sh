@@ -7,6 +7,9 @@ cd "$(dirname "$0")" || { echo "Failed to change directory to script location"; 
 source scripts/logging.sh
 source scripts/docker.sh
 
+# Add this line after changing to the script's directory
+PROJECT_ROOT=$(pwd)
+
 # Load the install type from the file
 if [ -f .miniprem_install_type ]; then
     INSTALL_TYPE=$(cat .miniprem_install_type)
@@ -16,9 +19,9 @@ fi
 
 # Set the compose file based on install type
 if [ "$INSTALL_TYPE" = "default" ]; then
-    COMPOSE_FILE="-f docker/docker-compose.default.yml"
+    COMPOSE_FILE="-f $PROJECT_ROOT/docker/docker-compose.default.yml"
 else
-    COMPOSE_FILE="-f docker/docker-compose.yml"
+    COMPOSE_FILE="-f $PROJECT_ROOT/docker/docker-compose.yml"
 fi
 
 # Function to display usage
@@ -101,7 +104,7 @@ setup_flowise() {
     fi
 
     # Run the chatflow setup script
-    bash docker/setup-chatflow-post-deployment.sh
+    bash "$PROJECT_ROOT/docker/setup-chatflow-post-deployment.sh"
 }
 
 # Check if the user provided an argument

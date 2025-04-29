@@ -187,7 +187,7 @@ services:
       - docker-compose.env
     extra_hosts:
       - audio2face-gateway:host-gateway
-    image: "facemeproduction/renny:0.443-ba7eb"
+    image: "facemeproduction/renny:0.484-37235"
     network_mode: "host"
     runtime: nvidia
     tty: true
