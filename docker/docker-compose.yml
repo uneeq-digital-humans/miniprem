@@ -292,19 +292,51 @@ services:
     security_opt:
       - no-new-privileges:true
     runtime: nvidia
-  whisper:
-    image: onerahmet/openai-whisper-asr-webservice:latest
-    container_name: whisper
+  # --- Speech-to-Text Backend: Only enable ONE of the following ---
+  # The install script will uncomment your choice based on the WHISPER_TYPE environment variable
+
+  # whisper:
+  #   image: onerahmet/openai-whisper-asr-webservice:latest
+  #   container_name: whisper
+  #   ports:
+  #     - "9000:9000"
+  #   volumes:
+  #     - whisper_data:/root/.cache/whisper
+  #   runtime: nvidia
+  #   environment:
+  #     - ASR_MODEL=medium
+  #     - ASR_ENGINE=openai_whisper
+  #     - NVIDIA_VISIBLE_DEVICES=all
+  #     - INTERVAL=5
+  #   restart: unless-stopped
+  #   networks:
+  #     - miniprem_net
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 60s
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #   security_opt:
+  #     - no-new-privileges:true
+
+  fastwhisper:
+    image: fast-whisper-optimized:latest
+    container_name: fastwhisper
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
     ports:
       - "9000:9000"
     volumes:
-      - whisper_data:/root/.cache/whisper
-    runtime: nvidia
-    environment:
-      - ASR_MODEL=medium
-      - ASR_ENGINE=openai_whisper
-      - NVIDIA_VISIBLE_DEVICES=all
-      - INTERVAL=5
+      - ./fast-whisper/app:/app
+      - ./fast-whisper/models:/app/models
+    command: ["/app/start.sh"]
     restart: unless-stopped
     networks:
       - miniprem_net

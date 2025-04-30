@@ -775,6 +775,33 @@ check_environment() {
     fi
 }
 
+# Function to configure whisper service
+configure_whisper_service() {
+    local whisper_type
+    echo "Please choose your preferred speech-to-text service:"
+    echo "1. OpenAI Whisper (slower but more accurate)"
+    echo "2. Faster Whisper (faster but slightly less accurate)"
+    read -p "Enter your choice (1 or 2): " whisper_type
+
+    case $whisper_type in
+        1)
+            echo "Configuring OpenAI Whisper..."
+            sed -i '/^  # whisper:/s/^  # //' docker/docker-compose.yml
+            ;;
+        2)
+            echo "Configuring Faster Whisper..."
+            sed -i '/^  # fastwhisper:/s/^  # //' docker/docker-compose.yml
+            # Create necessary directories
+            mkdir -p docker/fast-whisper/app
+            mkdir -p docker/fast-whisper/models
+            ;;
+        *)
+            echo "Invalid choice. Defaulting to OpenAI Whisper."
+            sed -i '/^  # whisper:/s/^  # //' docker/docker-compose.yml
+            ;;
+    esac
+}
+
 main() {
     print_logo
     check_environment
@@ -941,6 +968,9 @@ main() {
         setup_flowise_chatflow
     fi
 
+    # Configure whisper service
+    configure_whisper_service
+
     success "$CHECKMARK Installation and configuration complete."
     info "Miniprem is now running. You can access:"
     info "- Flowise at http://localhost:3000"
@@ -983,6 +1013,28 @@ else
     docker pull facemeproduction/renny:0.484-37235
     docker pull facemeproduction/audio2face_with_emotion:local-dev
     docker pull facemeproduction/audio2face_anim_controller:local-dev
+fi
+
+# After determining INSTALL_TYPE and before pulling images or starting services, add:
+if [ "$INSTALL_TYPE" = "full" ]; then
+    echo "\nChoose your speech-to-text backend (only one will be enabled):"
+    echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
+    echo "2) FastWhisper (SYSTRAN, GPU-optimized, systran/faster-whisper)"
+    read -p "Enter choice [1-2]: " stt_choice
+    if [[ "$stt_choice" == "1" ]]; then
+        info "Enabling Whisper backend in docker-compose.yml..."
+        # Uncomment whisper, comment fastwhisper
+        sed -i '/^# whisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
+        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
+    elif [[ "$stt_choice" == "2" ]]; then
+        info "Enabling FastWhisper backend in docker-compose.yml..."
+        # Uncomment fastwhisper, comment whisper
+        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
+        sed -i '/^# whisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
+    else
+        echo "Invalid choice, exiting."
+        exit 1
+    fi
 fi
 
 # Use $COMPOSE_FILES in all docker compose up/down commands
