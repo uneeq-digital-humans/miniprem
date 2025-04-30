@@ -2,7 +2,6 @@
 docker/nlp-service.env
 docker/*.env
 docker/*.bak
-docker/*.example
 docker/notes_for_myself
 docker/configuration.dat
 

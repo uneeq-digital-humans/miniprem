@@ -227,13 +227,37 @@ ensure_configuration_file_exists() {
     fi
 }
 
-# Function to ensure docker-compose.env exists
+# Function to get required variables from the example env file (those with empty values)
+get_required_env_vars_from_example() {
+    local example_file="docker/docker-compose.env.example"
+    grep -E '^[A-Z0-9_]+=$' "$example_file" | cut -d= -f1
+}
+
+# Function to ensure docker-compose.env exists by copying from example if needed
 ensure_env_file_exists() {
     local env_file="docker/docker-compose.env"
+    local example_file="docker/docker-compose.env.example"
     if [[ ! -f "$env_file" ]]; then
-        touch "$env_file"
-        info "Created new environment file at $env_file"
+        cp "$example_file" "$env_file"
+        info "Created $env_file from $example_file."
     fi
+}
+
+# Function to check and prompt for required env variables dynamically
+check_and_prompt_required_env_vars() {
+    local env_file="docker/docker-compose.env"
+    local required_vars=( $(get_required_env_vars_from_example) )
+    for var in "${required_vars[@]}"; do
+        local value=$(read_env_variable "$var")
+        if [[ -z "$value" ]]; then
+            warning "$var is missing or empty in $env_file."
+            read -p "Enter value for $var: " value
+            if [[ -z "$value" ]]; then
+                fatal "$var is required. Exiting."
+            fi
+            update_env_variable "$var" "$value"
+        fi
+    done
 }
 
 # Function to check if all required values are provided
@@ -766,6 +790,9 @@ main() {
     # Ensure docker-compose.env exists
     ensure_env_file_exists
 
+    # Check and prompt for required env variables
+    check_and_prompt_required_env_vars
+
     # Check if the required software prerequisites are installed so installer can run
     check_installer_prequisites
 
@@ -884,35 +911,11 @@ main() {
         fi
     fi
 
-    # now use the platform address provided to form the DHOP address and pixelstreaming address
-    DHOP_ADDRESS=$(format_dhop_address "$PLATFORM_ADDRESS" "/signalling-service/v1/ws/renderer")
-    read protocol address port path < <(extract_url_components "$PLATFORM_ADDRESS")
-    DHOP_PS_ADDRESS=$(format_dhop_address "$address" ":443/signalling-service/v1/ws/pixelstreaming") # form the pixel streaming address using the address part of the platform address
-
-    info "DHOP address: $DHOP_ADDRESS"
-
-    # update the .env file with the provided values
-    update_env_variable "DHOP_ADDRESS" "$DHOP_ADDRESS"
-    update_env_variable "DHOP_APIKEY" "\"$PLATFORM_KEY\""
-    update_env_variable "DHOP_PIXELSTREAMING_ADDRESS" "$DHOP_PS_ADDRESS"
-    update_env_variable "DHOP_TENANTID" "$TENANT_ID"
-    update_env_variable "AZURE_REGION" "$AZURE_REGION"
-
-    # Check which Azure speech key variable is used in the file
-    if grep -q "AZURE_SPEECH=" "docker/docker-compose.env"; then
-        update_env_variable "AZURE_SPEECH" "$AZURE_SPEECH_KEY"
-    else
-        update_env_variable "AZURE_SPEECH_KEY" "$AZURE_SPEECH_KEY"
-    fi
-
-    # Update the Docker image in docker-compose.yml if provided
-    update_docker_compose_image "$RENNY_IMAGE"
-
     # Check and update configuration.dat
     check_and_update_configuration "$TENANT_ID" "$PLATFORM_KEY"
 
     # check to make sure the cloud services are reachable
-    check_cloud_services "$DHOP_ADDRESS" "$DHOP_PS_ADDRESS"
+    check_cloud_services "$PLATFORM_ADDRESS" "$PLATFORM_ADDRESS"
 
     # Setup RIME credentials
     if [ "$INSTALL_TYPE" = "full" ]; then
