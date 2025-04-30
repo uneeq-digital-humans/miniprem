@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fast Whisper Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .mic-button {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #f0f0f0;
+            border: 2px solid #ccc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px auto;
+            transition: all 0.3s;
+        }
+        .mic-button.recording {
+            background-color: #ff4444;
+            border-color: #cc0000;
+        }
+        .mic-icon {
+            font-size: 40px;
+        }
+        .transcript {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            min-height: 100px;
+            white-space: pre-wrap;
+        }
+        .status {
+            margin-top: 10px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <h1>Fast Whisper Test</h1>
+    <div class="mic-button" id="micButton">
+        <span class="mic-icon">🎤</span>
+    </div>
+    <div class="status" id="status">Click the microphone to start recording</div>
+    <div class="transcript" id="transcript"></div>
+
+    <script>
+        const micButton = document.getElementById('micButton');
+        const status = document.getElementById('status');
+        const transcript = document.getElementById('transcript');
+        let mediaRecorder;
+        let audioChunks = [];
+        let socket;
+        let isRecording = false;
+
+        // Connect to WebSocket
+        function connectWebSocket() {
+            socket = new WebSocket('ws://localhost:9000/ws');
+            
+            socket.onopen = () => {
+                status.textContent = 'Connected to server';
+            };
+
+            socket.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'transcription') {
+                    transcript.textContent += data.text + ' ';
+                }
+            };
+
+            socket.onclose = () => {
+                status.textContent = 'Disconnected from server';
+                setTimeout(connectWebSocket, 1000);
+            };
+
+            socket.onerror = (error) => {
+                status.textContent = 'WebSocket error: ' + error.message;
+            };
+        }
+
+        // Initialize WebSocket connection
+        connectWebSocket();
+
+        // Request microphone access
+        async function setupMicrophone() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            const base64Audio = reader.result.split(',')[1];
+                            if (socket.readyState === WebSocket.OPEN) {
+                                socket.send(JSON.stringify({
+                                    type: 'audio',
+                                    data: base64Audio
+                                }));
+                            }
+                        };
+                        reader.readAsDataURL(audioBlob);
+                    }
+                };
+
+                mediaRecorder.onstop = () => {
+                    audioChunks = [];
+                };
+
+                status.textContent = 'Microphone ready';
+            } catch (error) {
+                status.textContent = 'Error accessing microphone: ' + error.message;
+            }
+        }
+
+        // Toggle recording
+        micButton.addEventListener('click', () => {
+            if (!mediaRecorder) {
+                setupMicrophone();
+                return;
+            }
+
+            if (!isRecording) {
+                mediaRecorder.start(1000); // Collect data every second
+                micButton.classList.add('recording');
+                status.textContent = 'Recording...';
+                isRecording = true;
+            } else {
+                mediaRecorder.stop();
+                micButton.classList.remove('recording');
+                status.textContent = 'Stopped recording';
+                isRecording = false;
+            }
+        });
+    </script>
+</body>
+</html> 

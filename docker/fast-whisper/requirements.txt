@@ -1,0 +1,15 @@
+ctranslate2>=4.0,<5
+huggingface_hub>=0.13
+tokenizers>=0.13,<1
+onnxruntime>=1.14,<2 
+av>=11
+tqdm
+faster-whisper==0.10.0
+pynput>=1.8.1
+numpy==1.24.3
+torch==2.1.0
+sounddevice==0.4.6
+keyboard==0.13.5
+pyperclip==1.8.2
+torchaudio==2.1.0
+pyaudio==0.2.14

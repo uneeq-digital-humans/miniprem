@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  voice-input:
+    build: .
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - DISPLAY=${DISPLAY}
+      # Audio configuration
+      - SAMPLE_RATE=16000
+      - CHANNELS=1
+      - CHUNK_SIZE=1024
+      # Silence detection
+      - SILENCE_THRESHOLD=0.01
+      - SILENCE_DURATION=1.0
+      # Whisper model configuration
+      - MODEL_SIZE=small.en
+      - COMPUTE_TYPE=int8_float16
+      - LANGUAGE=en
+    devices:
+      - /dev/snd:/dev/snd
+    volumes:
+      - /tmp:/tmp
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ${HOME}/.Xauthority:/root/.Xauthority
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu, utility, compute] 
