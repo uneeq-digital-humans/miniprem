@@ -28,8 +28,13 @@
         newPath = lang + '/' + pathWithoutLang;
       }
       
-      // Navigate to the new path
+      // Update URL without the query parameter
       window.location.hash = '#/' + newPath;
+      
+      // Force reload to ensure everything is consistent
+      setTimeout(() => {
+        window.location.reload();
+      }, 100);
     });
     
     // Add options for all languages
@@ -47,6 +52,21 @@
   
   // Add hook to insert language selector after navigation is ready
   document.addEventListener('DOMContentLoaded', function() {
+    // Apply stored language immediately on page load
+    const language = getCurrentLanguage();
+    
+    // If we have a URL param but it doesn't match the stored language,
+    // update the stored language
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlLang = urlParams.get('lang');
+    if (urlLang && urlLang !== language && ['en', 'es', 'de', 'ja', 'ko'].includes(urlLang)) {
+      localStorage.setItem('language', urlLang);
+      window.$docsify.language = urlLang;
+    }
+    
+    // Ensure URL structure matches selected language
+    redirectToCorrectLanguage();
+    
     // Wait for Docsify to initialize
     setTimeout(() => {
       const sidebar = document.querySelector('.sidebar');
@@ -55,14 +75,18 @@
         sidebar.insertBefore(langSelector, sidebar.firstChild);
       }
     }, 500);
-    
-    // Apply stored language on initial load
-    redirectToCorrectLanguage();
   });
   
   // Extract language from URL or localStorage
   function getCurrentLanguage() {
-    // First try from URL hash
+    // First check URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlLang = urlParams.get('lang');
+    if (urlLang && ['en', 'es', 'de', 'ja', 'ko'].includes(urlLang)) {
+      return urlLang;
+    }
+    
+    // Then check URL hash for language path
     const hash = window.location.hash;
     if (hash.startsWith('#/')) {
       const path = hash.substring(2); // Remove #/
@@ -70,7 +94,6 @@
       if (match && match[1]) {
         const lang = match[1];
         if (['en', 'es', 'de', 'ja', 'ko'].includes(lang)) {
-          localStorage.setItem('language', lang);
           return lang;
         }
       }
@@ -86,25 +109,27 @@
     return 'en';
   }
   
-  // Function to redirect to the correct language version on initial load
+  // Function to redirect to the correct language version
   function redirectToCorrectLanguage() {
-    const storedLang = localStorage.getItem('language');
-    if (!storedLang || storedLang === 'en') {
-      return; // No redirection needed for English
-    }
-    
+    const language = getCurrentLanguage();
     const currentHash = window.location.hash;
     
-    // Only redirect if we're not already on a localized path
-    if (currentHash.startsWith('#/') && !currentHash.match(/#\/[a-z]{2}\//)) {
+    // Remove the query parameter from URL
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('lang')) {
+      console.log(`Removing lang parameter from URL`);
+      url.searchParams.delete('lang');
+      window.history.replaceState({}, document.title, url.toString());
+    }
+    
+    // Only redirect if necessary
+    if (language !== 'en' && currentHash.startsWith('#/') && !currentHash.match(new RegExp(`^#/${language}/`))) {
       const path = currentHash.substring(2); // Remove #/
-      const newPath = storedLang + '/' + path;
+      const pathWithoutLang = path.replace(/^[a-z]{2}\//, '');
+      const newPath = language + '/' + pathWithoutLang;
       
-      // Use timeout to ensure this happens after Docsify initialization
-      setTimeout(() => {
-        console.log(`Redirecting to stored language (${storedLang}): #/${newPath}`);
-        window.location.hash = '#/' + newPath;
-      }, 100);
+      console.log(`Redirecting to language (${language}): #/${newPath}`);
+      window.location.hash = '#/' + newPath;
     }
   }
   
@@ -116,6 +141,13 @@
     // Run this once at startup to handle initial page load
     hook.init(function() {
       console.log('Docsify init with language:', window.$docsify.language);
+      
+      // Fix sidebar loading for non-English languages
+      const language = window.$docsify.language;
+      if (language !== 'en') {
+        // Setup a proper sidebar path for the current language
+        window.$docsify.loadSidebar = `${language}/_sidebar.md`;
+      }
     });
     
     hook.beforeEach(function(content) {
