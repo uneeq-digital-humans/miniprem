@@ -55,6 +55,9 @@
         sidebar.insertBefore(langSelector, sidebar.firstChild);
       }
     }, 500);
+    
+    // Apply stored language on initial load
+    redirectToCorrectLanguage();
   });
   
   // Extract language from URL or localStorage
@@ -83,11 +86,38 @@
     return 'en';
   }
   
+  // Function to redirect to the correct language version on initial load
+  function redirectToCorrectLanguage() {
+    const storedLang = localStorage.getItem('language');
+    if (!storedLang || storedLang === 'en') {
+      return; // No redirection needed for English
+    }
+    
+    const currentHash = window.location.hash;
+    
+    // Only redirect if we're not already on a localized path
+    if (currentHash.startsWith('#/') && !currentHash.match(/#\/[a-z]{2}\//)) {
+      const path = currentHash.substring(2); // Remove #/
+      const newPath = storedLang + '/' + path;
+      
+      // Use timeout to ensure this happens after Docsify initialization
+      setTimeout(() => {
+        console.log(`Redirecting to stored language (${storedLang}): #/${newPath}`);
+        window.location.hash = '#/' + newPath;
+      }, 100);
+    }
+  }
+  
   // Set the current language for Docsify
   window.$docsify.language = getCurrentLanguage();
   
   // Handle content loading based on language
   window.$docsify.plugins = [].concat(window.$docsify.plugins, function(hook, vm) {
+    // Run this once at startup to handle initial page load
+    hook.init(function() {
+      console.log('Docsify init with language:', window.$docsify.language);
+    });
+    
     hook.beforeEach(function(content) {
       const currentLang = window.$docsify.language;
       
