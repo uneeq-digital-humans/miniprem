@@ -358,9 +358,14 @@ build_log_streamer() {
     cd "$current_dir"
 }
 
-# Function to start the Miniprem system with docker compose
 start_miniprem() {
     log_section "Starting Miniprem"
+    
+    # Stop any local Redis instances that might be running
+    info "Stopping any local Redis instances..."
+    sudo systemctl stop redis-server || true
+    sudo systemctl stop redis || true
+    
     docker compose $COMPOSE_FILES up -d
     if [ $? -ne 0 ]; then
         fatal "Failed to start Miniprem services"
@@ -414,26 +419,62 @@ show_progress_spinner() {
     printf "\r"
 }
 
-# Function to prepare the required vLLM model after the container is up
 prepare_vllm_model() {
     log_section "Preparing vLLM LLM"
 
     info "NOTE: This is a multi-step process that may take 5-15 minutes depending on your hardware."
-    info "      - First, we need to wait for vLLM to start"
-    info "      - Then, we'll trigger the download of the Gemma3:4b model (if not already downloaded)"
+    info "      - First, we need to authenticate with HuggingFace"
+    info "      - Then, we need to wait for vLLM to start"
+    info "      - Next, we'll download Mistral-7B-Instruct-v0.3"
     info "      - Finally, the model needs to load completely into GPU memory"
     info "Please be patient as we go through these steps."
 
+     echo ""
+    info "Step 1: Setting up HuggingFace authentication..."
+    
+    DOCKER_CMD=$(get_docker_command)
+    
+    # Check if user already has a token configured
+    if ! $DOCKER_CMD exec vllm huggingface-cli whoami >/dev/null 2>&1; then
+        info "HuggingFace authentication required to download Mistral model."
+        echo ""
+        info "Press Enter to open the HuggingFace token page in your browser."
+        info "1. Log in or sign up to HuggingFace"
+        info "2. Accept the Mistral model terms of use"
+        info "3. Create a token with 'read' access"
+        info "4. Copy the token and return to this terminal"
+        read -p "Press Enter to continue..."
+        
+        # Open the HuggingFace tokens page in the default browser
+        xdg-open "https://huggingface.co/settings/tokens" >/dev/null 2>&1 || open "https://huggingface.co/settings/tokens" >/dev/null 2>&1
+        
+        echo ""
+        read -p "Enter your HuggingFace token: " hf_token
+        
+        if [ -z "$hf_token" ]; then
+            fatal "HuggingFace token is required to download the model."
+        fi
+        
+        # Login using the token
+        $DOCKER_CMD exec vllm huggingface-cli login --token "$hf_token"
+        if [ $? -ne 0 ]; then
+            fatal "Failed to authenticate with HuggingFace"
+        fi
+        success "$CHECKMARK Successfully authenticated with HuggingFace"
+    else
+        success "$CHECKMARK HuggingFace authentication already configured"
+    fi
+
     echo ""
-    info "Step 1: Waiting for vLLM service to start..."
+    info "Step 2: Waiting for vLLM service to start..."
 
     local max_attempts=120 # Wait up to 10 minutes for service to start
     local attempt=1
     local vllm_started=0
 
     while [ $attempt -le $max_attempts ]; do
-        # Check if vLLM is running by querying the /v1/completions endpoint
-        if curl --output /dev/null --silent --fail http://localhost:8000/v1/completions; then
+        # Check if vLLM is running by querying the /health endpoint
+        if curl --output /dev/null --silent --fail http://localhost:8000/health; then
             success "$CHECKMARK vLLM service is running (API accessible)"
             vllm_started=1
             break
@@ -462,26 +503,38 @@ prepare_vllm_model() {
     fi
 
     echo ""
-    info "Step 2: Triggering download and preparation of the Gemma3:4b model..."
-    info "(This is a large model and may take several minutes to download and prepare)"
+    info "Step 3: Downloading Mistral-7B-Instruct-v0.3 model into vLLM container..."
+    
+    # Execute huggingface-cli within the vLLM container, using the correct cache path
+    $DOCKER_CMD exec vllm huggingface-cli download --cache-dir /root/.cache/huggingface --resume-download mistralai/Mistral-7B-Instruct-v0.3
+    if [ $? -ne 0 ]; then
+        fatal "Failed to download Mistral model into vLLM container"
+    fi
+    success "$CHECKMARK Mistral-7B-Instruct-v0.3 model downloaded successfully"
+
+    echo ""
+    info "Step 4: Loading model into vLLM..."
     info "You can monitor progress by running 'docker logs -f vllm' in another terminal"
     echo ""
 
-    # Poll until the model is fully loaded and ready
-    info "Waiting for Gemma3:4b model to be fully loaded in vLLM..."
+    # Poll until the model is fully loaded and ready by attempting a completion
+    info "Waiting for Mistral-7B-Instruct-v0.3 model to be fully loaded in vLLM..."
     local poll_attempt=1
     local poll_max_attempts=40  # Wait up to 10 minutes (40*15s)
     while [ $poll_attempt -le $poll_max_attempts ]; do
         response=$(curl -s -X POST http://localhost:8000/v1/chat/completions \
-            -H 'Content-Type: application/json' \
+            -H "Content-Type: application/json" \
             -d '{
-                "model": "gemma-3-4b",
+                "model": "mistralai/Mistral-7B-Instruct-v0.3",
                 "messages": [
-                    { "role": "user", "content": "Hello!" }
-                ]
+                    {"role": "system", "content": "You are a helpful AI assistant."},
+                    {"role": "user", "content": "Hello!"}
+                ],
+                "max_tokens": 1
             }')
+        
         if ! echo "$response" | grep -q 'error'; then
-            success "$CHECKMARK Gemma3:4b model is fully loaded and ready in vLLM."
+            success "$CHECKMARK Mistral-7B-Instruct-v0.3 model is fully loaded and ready in vLLM."
             break
         else
             info "Model not ready yet, still waiting... ($poll_attempt/$poll_max_attempts)"
@@ -490,7 +543,7 @@ prepare_vllm_model() {
         fi
     done
     if [ $poll_attempt -gt $poll_max_attempts ]; then
-        warning "Timed out waiting for Gemma3:4b model to be ready in vLLM."
+        warning "Timed out waiting for Mistral-7B-Instruct-v0.3 model to be ready in vLLM."
         warning "You may need to check the vLLM logs or try again later."
     fi
 }
