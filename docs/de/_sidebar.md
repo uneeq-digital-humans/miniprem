@@ -1,0 +1,16 @@
+<!-- docs/_sidebar.md -->
+
+* [Home](/)
+* [Getting Started](guides/getting-started.md)
+* [Services](guides/services.md)
+  * [Flowise](guides/flowise.md)
+  * [vLLM](guides/vllm.md)
+  * [Prometheus & Grafana](guides/monitoring.md)
+  * [Renny](guides/renny.md)
+  * [RIME AI Integration](guides/rime.md)
+  * [Whisper Speech Recognition](guides/whisper.md)
+* [API Reference](api/README.md)
+  * [Health API](api/health.md)
+* [Monitoring](monitoring/logs.md)
+  * [Container Logs](api/container-logs.md)
+* [Troubleshooting](troubleshooting.md)

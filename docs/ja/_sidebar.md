@@ -1,0 +1,16 @@
+<!-- docs/_sidebar.md -->
+
+* [ホーム](/)
+* [クイックスタート](guides/getting-started.md)
+* [サービス](guides/services.md)
+  * [Flowise](guides/flowise.md)
+  * [vLLM](guides/vllm.md)
+  * [Prometheus & Grafana](guides/monitoring.md)
+  * [Renny](guides/renny.md)
+  * [RIME AI統合](guides/rime.md)
+  * [Whisper音声認識](guides/whisper.md)
+* [APIリファレンス](api/README.md)
+  * [ヘルスAPI](api/health.md)
+* [監視](monitoring/logs.md)
+  * [コンテナログ](api/container-logs.md)
+* [トラブルシューティング](troubleshooting.md)

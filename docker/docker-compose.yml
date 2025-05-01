@@ -326,7 +326,9 @@ services:
   #     - no-new-privileges:true
 
   fastwhisper:
-    image: fast-whisper-optimized:latest
+    build:
+      context: ./fast-whisper
+      dockerfile: Dockerfile
     container_name: fastwhisper
     runtime: nvidia
     environment:
@@ -334,9 +336,8 @@ services:
     ports:
       - "9000:9000"
     volumes:
-      - ./fast-whisper/app:/app
+      - ./fast-whisper/app:/app/app
       - ./fast-whisper/models:/app/models
-    command: ["/app/start.sh"]
     restart: unless-stopped
     networks:
       - miniprem_net

@@ -632,6 +632,12 @@ setup_rime_credentials() {
         success "$CHECKMARK RIME API key already configured"
     fi
 
+    # Check if we've already authenticated with quay.io
+    if docker images | grep -q "quay.io/rimelabs/api" && docker images | grep -q "quay.io/rimelabs/mistv2"; then
+        success "$CHECKMARK Already have RIME Docker images, skipping quay.io login"
+        return 0
+    fi
+
     # Prompt for quay.io password for RIME images
     local RIME_QUAY_PASSWORD=""
     while [ -z "$RIME_QUAY_PASSWORD" ]; do
@@ -801,6 +807,173 @@ configure_whisper_service() {
             ;;
     esac
 }
+
+# Add this function before the main() function:
+
+# Function to build the fast-whisper image locally
+build_fast_whisper_image() {
+    log_section "Building Fast Whisper Docker Image"
+    
+    info "Building fast-whisper image from Dockerfile..."
+    
+    # Check if required directories exist
+    if [ ! -d "docker/fast-whisper" ]; then
+        fatal "Fast Whisper directory not found at docker/fast-whisper"
+    fi
+    
+    if [ ! -f "docker/fast-whisper/Dockerfile" ]; then
+        fatal "Fast Whisper Dockerfile not found at docker/fast-whisper/Dockerfile"
+    fi
+    
+    # Create the requirements.txt file if it doesn't exist
+    if [ ! -f "docker/fast-whisper/requirements.txt" ]; then
+        echo "Creating requirements.txt for fast-whisper..."
+        cat > docker/fast-whisper/requirements.txt << EOF
+faster-whisper==0.10.0
+fastapi==0.103.1
+uvicorn==0.23.2
+python-multipart==0.0.6
+pydantic==2.4.2
+pyaudio==0.2.13
+pyclip==0.7.0
+python-dotenv==1.0.0
+torch>=2.0.0
+EOF
+    fi
+    
+    # Create start.sh if it doesn't exist
+    if [ ! -f "docker/fast-whisper/start.sh" ]; then
+        echo "Creating start.sh for fast-whisper..."
+        cat > docker/fast-whisper/start.sh << EOF
+#!/bin/bash
+cd /app/app
+python3 -m uvicorn main:app --host 0.0.0.0 --port 9000
+EOF
+        chmod +x docker/fast-whisper/start.sh
+    fi
+    
+    # Create app directory and main.py if they don't exist
+    mkdir -p docker/fast-whisper/app
+    if [ ! -f "docker/fast-whisper/app/main.py" ]; then
+        echo "Creating main.py for fast-whisper..."
+        cat > docker/fast-whisper/app/main.py << EOF
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
+import os
+import time
+from faster_whisper import WhisperModel
+import tempfile
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Specify path to model files
+models_path = '/app/models'
+
+# Initialize model (will be loaded when needed)
+model = None
+
+def get_model():
+    global model
+    if model is None:
+        # Check if models directory exists
+        if not os.path.exists(models_path):
+            os.makedirs(models_path, exist_ok=True)
+        
+        # Initialize the model
+        model = WhisperModel("large-v2", device="cuda", compute_type="float16", download_root=models_path)
+    return model
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
+
+@app.post("/v1/audio/transcriptions")
+async def transcribe(file: UploadFile = File(...), model: str = Form("large-v2")):
+    try:
+        start_time = time.time()
+        
+        # Save uploaded file to a temporary file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_file:
+            temp_file_path = temp_file.name
+            content = await file.read()
+            temp_file.write(content)
+        
+        # Get the model
+        whisper_model = get_model()
+        
+        # Transcribe the audio
+        segments, info = whisper_model.transcribe(temp_file_path, beam_size=5)
+        
+        # Collect all segments of transcription
+        full_text = ""
+        for segment in segments:
+            full_text += segment.text + " "
+        
+        # Clean up temporary file
+        os.unlink(temp_file_path)
+        
+        process_time = time.time() - start_time
+        
+        return {
+            "text": full_text.strip(),
+            "processing_time": process_time,
+            "language": info.language,
+            "language_probability": info.language_probability
+        }
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=9000)
+EOF
+    fi
+    
+    # Build the Docker image
+    (cd docker && docker build -t fast-whisper-optimized -f fast-whisper/Dockerfile ./fast-whisper)
+    
+    if [ $? -ne 0 ]; then
+        fatal "Failed to build fast-whisper Docker image"
+    else
+        success "$CHECKMARK Fast Whisper Docker image built successfully"
+    fi
+}
+
+if [ "$INSTALL_TYPE" = "full" ]; then
+    echo -e "\nChoose your speech-to-text backend (only one will be enabled):"
+    echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
+    echo "2) FastWhisper (SYSTRAN, GPU-optimized, locally built)"
+    read -p "Enter choice [1-2]: " stt_choice
+    if [[ "$stt_choice" == "1" ]]; then
+        info "Enabling Whisper backend in docker-compose.yml..."
+        # Uncomment whisper, comment fastwhisper
+        sed -i '/^# whisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
+        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
+    elif [[ "$stt_choice" == "2" ]]; then
+        info "Enabling FastWhisper backend in docker-compose.yml..."
+        # Uncomment fastwhisper, comment whisper
+        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
+        sed -i '/^# whisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
+        
+        # Update the image name in the docker-compose.yml to use the locally built image
+        sed -i 's|image: systran/faster-whisper:latest|image: fast-whisper-optimized:latest|g' docker/docker-compose.yml
+        
+        # Build the fast-whisper image
+        build_fast_whisper_image
+    else
+        echo "Invalid choice, exiting."
+        exit 1
+    fi
+fi
 
 main() {
     print_logo
@@ -1019,7 +1192,7 @@ fi
 if [ "$INSTALL_TYPE" = "full" ]; then
     echo "\nChoose your speech-to-text backend (only one will be enabled):"
     echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
-    echo "2) FastWhisper (SYSTRAN, GPU-optimized, systran/faster-whisper)"
+    echo "2) FastWhisper (GPU-optimized, systran/faster-whisper)"
     read -p "Enter choice [1-2]: " stt_choice
     if [[ "$stt_choice" == "1" ]]; then
         info "Enabling Whisper backend in docker-compose.yml..."

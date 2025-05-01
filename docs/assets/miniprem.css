@@ -350,3 +350,63 @@ section.cover {
 .terminal-output code.command {
   color: #9cdcfe;
 }
+
+.language-selector {
+  padding: 15px;
+  border-bottom: 1px solid rgba(0,0,0,.07);
+}
+
+.language-selector select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background-color: #2c2c2c;
+  color: #fff;
+}
+
+/* Language Switcher Styles */
+.language-select {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  z-index: 100;
+  background: var(--theme-color, #42b983);
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  min-width: 120px;
+}
+
+.language-select option {
+  padding: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.flag-icon {
+  margin-right: 8px;
+  width: 16px;
+  height: 12px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Dark theme adjustments */
+.dark .language-select {
+  background: #2c3e50;
+  color: #ecf0f1;
+}
+
+/* Mobile responsiveness */
+@media screen and (max-width: 768px) {
+  .language-select {
+    bottom: 10px;
+    left: 10px;
+    font-size: 12px;
+    min-width: 100px;
+  }
+}

@@ -1,0 +1,16 @@
+<!-- docs/_sidebar.md -->
+
+* [홈](/)
+* [시작하기](guides/getting-started.md)
+* [서비스](guides/services.md)
+  * [Flowise](guides/flowise.md)
+  * [vLLM](guides/vllm.md)
+  * [Prometheus & Grafana](guides/monitoring.md)
+  * [Renny](guides/renny.md)
+  * [RIME AI 통합](guides/rime.md)
+  * [Whisper 음성 인식](guides/whisper.md)
+* [API 참조](api/README.md)
+  * [상태 API](api/health.md)
+* [모니터링](monitoring/logs.md)
+  * [컨테이너 로그](api/container-logs.md)
+* [문제 해결](troubleshooting.md)

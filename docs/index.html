@@ -9,6 +9,8 @@
 
   <!-- Dark theme -->
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify/themes/dark.css" />
+  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify-select@1.0.0/dist/docsify-select.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/3.5.0/css/flag-icon.min.css">
 
   <!-- Add Swagger UI for API docs -->
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/swagger-ui-dist@5.1.0/swagger-ui.css">
@@ -25,6 +27,14 @@
       grafana: 'http://localhost:3001'
     };
 
+    const languages = {
+      'en': { name: 'English', flag: 'us' },
+      'es': { name: 'Español', flag: 'es' },
+      'de': { name: 'Deutsch', flag: 'de' },
+      'ja': { name: '日本語', flag: 'jp' },
+      'ko': { name: '한국어', flag: 'kr' }
+    };
+
     // Initialize Docsify configuration
     window.$docsify = {
       name: 'MiniPrem',
@@ -33,7 +43,7 @@
       subMaxLevel: 2,
       coverpage: true,
       auto2top: true,
-      themeColor: '#42b983', /* Default Docsify color */
+      themeColor: '#42b983',
       search: {
         maxAge: 86400000,
         paths: 'auto',
@@ -41,8 +51,65 @@
         noData: 'No Results!',
         depth: 6
       },
-      plugins: []
+      plugins: [],
+      
+      // Language switcher configuration
+      selectLanguage: {
+        detectLocale: true,
+        defaultLocale: 'en',
+        availableLocales: Object.keys(languages), 
+        locales: Object.fromEntries(
+          Object.entries(languages).map(([code, {name}]) => [code, name])
+        )
+      },
+      
+      // i18n configuration
+      i18n: {
+        defaultLocale: 'en',
+        locales: {
+          en: {
+            sidebar: '_sidebar.md',
+            coverpage: '_coverpage.md'
+          },
+          es: {
+            sidebar: 'es/_sidebar.md',
+            coverpage: 'es/_coverpage.md'
+          },
+          de: {
+            sidebar: 'de/_sidebar.md',
+            coverpage: 'de/_coverpage.md'
+          },
+          ja: {
+            sidebar: 'ja/_sidebar.md',
+            coverpage: 'ja/_coverpage.md'
+          },
+          ko: {
+            sidebar: 'ko/_sidebar.md',
+            coverpage: 'ko/_coverpage.md'
+          }
+        }
+      },
+      
+      // Add fallback for untranslated pages
+      fallbackLanguages: ['en']
     };
+
+    // Set current language from URL or localStorage
+    const setLanguage = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const storedLang = localStorage.getItem('language');
+      const urlLang = urlParams.get('lang');
+      const lang = urlLang || storedLang || 'en';
+      
+      if (Object.keys(languages).includes(lang)) {
+        localStorage.setItem('language', lang);
+        return lang;
+      }
+      return 'en';
+    };
+  
+    // Current language
+    window.$docsify.language = setLanguage();
   </script>
 </head>
 <body>
@@ -55,6 +122,8 @@
   <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-bash.min.js"></script>
   <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-json.min.js"></script>
   <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-yaml.min.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-select@1.0.0/dist/docsify-select.js"></script>
+  <script src="//cdn.jsdelivr.net/npm/docsify-i18n@1.0.0/dist/docsify-i18n.min.js"></script>
 
   <!-- Swagger UI -->
   <script src="//cdn.jsdelivr.net/npm/swagger-ui-dist@5.1.0/swagger-ui-bundle.js"></script>
@@ -62,5 +131,26 @@
 
   <!-- Custom MiniPrem scripts (after Docsify is loaded) -->
   <script src="assets/miniprem.js"></script>
+  <script src="assets/language-switcher.js"></script>
+
+  <script>
+    // Custom language switcher with flags
+    window.$docsify.plugins = [
+      function(hook) {
+        hook.doneEach(function() {
+          const select = document.querySelector('.language-select');
+          if (select) {
+            select.innerHTML = Object.entries(languages)
+              .map(([code, {name, flag}]) => `
+                <option value="${code}" ${code === window.$docsify.language ? 'selected' : ''}>
+                  <span class="flag-icon flag-icon-${flag}"></span> ${name}
+                </option>
+              `)
+              .join('');
+          }
+        });
+      }
+    ];
+  </script>
 </body>
 </html>
