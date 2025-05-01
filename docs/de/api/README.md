@@ -79,7 +79,7 @@ GET /api/v1/chatflows
   {
     "id": "chatflow-123",
     "name": "vLLM Gemma3 Chatflow",
-    "description": "Chatflow mit Gemma3:4b über vLLM mit Buffer Memory"
+    "description": "Chatflow mit HuggingFaceH4/zephyr-7b-beta über vLLM mit Buffer Memory"
   }
 ]
 ```
@@ -107,7 +107,7 @@ POST /api/generate
 **Anfrage-Body:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "prompt": "Was ist künstliche Intelligenz?",
   "stream": false
 }
@@ -116,7 +116,7 @@ POST /api/generate
 **Antwort:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "response": "Künstliche Intelligenz (KI) bezieht sich auf die Simulation menschlicher Intelligenz in Maschinen...",
   "done": true,
@@ -140,7 +140,7 @@ POST /api/chat
 **Anfrage-Body:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "messages": [
     {
       "role": "user",
@@ -153,7 +153,7 @@ POST /api/chat
 **Antwort:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "message": {
     "role": "assistant",

@@ -79,7 +79,7 @@ GET /api/v1/chatflows
   {
     "id": "chatflow-123",
     "name": "Chatflow vLLM Gemma3",
-    "description": "Chatflow usando Gemma3:4b a través de vLLM con Buffer Memory"
+    "description": "Chatflow usando HuggingFaceH4/zephyr-7b-beta a través de vLLM con Buffer Memory"
   }
 ]
 ```
@@ -107,7 +107,7 @@ POST /api/generate
 **Cuerpo de la Solicitud:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "prompt": "¿Qué es la inteligencia artificial?",
   "stream": false
 }
@@ -116,7 +116,7 @@ POST /api/generate
 **Respuesta:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "response": "La inteligencia artificial (IA) se refiere a la simulación de la inteligencia humana en máquinas...",
   "done": true,
@@ -140,7 +140,7 @@ POST /api/chat
 **Cuerpo de la Solicitud:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "messages": [
     {
       "role": "user",
@@ -153,7 +153,7 @@ POST /api/chat
 **Respuesta:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "message": {
     "role": "assistant",

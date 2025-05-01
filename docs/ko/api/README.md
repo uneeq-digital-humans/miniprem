@@ -79,7 +79,7 @@ GET /api/v1/chatflows
   {
     "id": "chatflow-123",
     "name": "vLLM Gemma3 대화 흐름",
-    "description": "vLLM을 사용한 Gemma3:4b 대화 흐름(Buffer Memory 포함)"
+    "description": "vLLM을 사용한 HuggingFaceH4/zephyr-7b-beta 대화 흐름(Buffer Memory 포함)"
   }
 ]
 ```
@@ -107,7 +107,7 @@ POST /api/generate
 **요청 본문:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "prompt": "인공지능이란 무엇인가?",
   "stream": false
 }
@@ -116,7 +116,7 @@ POST /api/generate
 **응답:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "response": "인공지능(AI)은 기계에서 인간 지능을 시뮬레이션하는 것을 말합니다...",
   "done": true,
@@ -140,7 +140,7 @@ POST /api/chat
 **요청 본문:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "messages": [
     {
       "role": "user",
@@ -153,7 +153,7 @@ POST /api/chat
 **응답:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "message": {
     "role": "assistant",
