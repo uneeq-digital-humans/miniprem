@@ -24,7 +24,7 @@ During installation, the system will:
 
 - **API Endpoint**: http://localhost:8000/v1
 - **Container Name**: `vllm`
-- **Model Path**: `mistralai/Mistral-7B-Instruct-v0.3`
+- **Model Path**: `facebook/opt-125m`
 
 ## Default Model
 
@@ -45,7 +45,7 @@ You can interact with vLLM directly via its OpenAI-compatible API:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "model": "facebook/opt-125m",
     "messages": [
         {"role": "system", "content": "You are a helpful AI assistant."},
         {"role": "user", "content": "What is artificial intelligence?"}

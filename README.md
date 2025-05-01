@@ -100,7 +100,7 @@ You can test the vLLM API directly with a cURL command:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "model": "facebook/opt-125m",
     "messages": [
         {"role": "system", "content": "You are a helpful AI assistant."},
         {"role": "user", "content": "What is artificial intelligence?"}

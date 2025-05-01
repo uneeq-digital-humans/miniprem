@@ -24,7 +24,7 @@
 
 - **APIエンドポイント**: http://localhost:8000/v1
 - **コンテナ名**: `vllm`
-- **モデルパス**: `mistralai/Mistral-7B-Instruct-v0.3`
+- **モデルパス**: `facebook/opt-125m`
 
 ## デフォルトモデル
 
@@ -45,7 +45,7 @@ vLLMとはOpenAI互換APIを介して直接対話できます：
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "model": "facebook/opt-125m",
     "messages": [
         {"role": "system", "content": "あなたは役立つAIアシスタントです。"},
         {"role": "user", "content": "人工知能とは何ですか？"}

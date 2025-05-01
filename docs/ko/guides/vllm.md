@@ -24,7 +24,7 @@
 
 - **API 엔드포인트**: http://localhost:8000/v1
 - **컨테이너 이름**: `vllm`
-- **모델 경로**: `mistralai/Mistral-7B-Instruct-v0.3`
+- **모델 경로**: `facebook/opt-125m`
 
 ## 기본 모델
 
@@ -45,7 +45,7 @@ OpenAI 호환 API를 통해 vLLM과 직접 상호작용할 수 있습니다:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "model": "facebook/opt-125m",
   "messages": [
       {"role": "system", "content": "당신은 도움이 되는 AI 어시스턴트입니다."},
       {"role": "user", "content": "인공지능이란 무엇인가요?"}

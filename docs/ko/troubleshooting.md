@@ -65,7 +65,7 @@
 
 2. 모델을 다시 당깁니다:
    ```bash
-   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model gemma-3-4b
+   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model facebook/opt-125m
    ```
 
 3. 3. GPU 메모리가 충분한지 확인합니다:

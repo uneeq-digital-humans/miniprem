@@ -153,7 +153,7 @@ display_setup_guidance() {
     echo -e "${YELLOW}DOWNLOADING MODELS IN vLLM:${NC}"
     echo "vLLM will automatically download the model the first time it is requested."
     echo "To pre-download the model, you can run:"
-    echo "docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model gemma-3-4b"
+    echo "docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model facebook/opt-125m"
     echo
     echo -e "${YELLOW}CONNECTING NODES:${NC}"
     echo "1. Add 'Chat Message' and 'Memory' nodes"
