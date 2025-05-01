@@ -25,7 +25,7 @@ After starting the Docker containers with `docker compose -f docker-compose.upda
 1. From the nodes panel, drag and drop an "Ollama" node onto the canvas
 2. Configure the node with:
    - Base URL: `http://ollama:11434` (use the docker container name, not localhost)
-   - Model: `Gemma3:4b`
+   - Model: `HuggingFaceH4/zephyr-7b-beta`
    - Temperature: `0.7`
    - Max Tokens: `1000`
    - Leave other settings at default values

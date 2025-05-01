@@ -465,10 +465,10 @@ prepare_vllm_model() {
         fatal "vLLM container failed to start within timeout"
     fi
 
-    info "Step 2: Waiting for vLLM API service to become available..."
+    info "Step 2: Waiting for vLLM API to become available..."
     
-    # Wait for vLLM API to become available
-    local api_max_attempts=40  # About 2 minutes
+    # Wait for API to become available
+    local api_max_attempts=60  # 5 minutes (60 * 5s)
     local api_attempt=1
     
     while [ $api_attempt -le $api_max_attempts ]; do
@@ -477,18 +477,20 @@ prepare_vllm_model() {
             break
         fi
         
-        # Show progress every 5 attempts (15 seconds)
-        if [ $((api_attempt % 5)) -eq 0 ]; then
+        # Show progress every 6 attempts (30 seconds)
+        if [ $((api_attempt % 6)) -eq 0 ]; then
             info "Still waiting for vLLM API... ($api_attempt/$api_max_attempts)"
-            # Check container status
-            docker ps --filter "name=vllm" --format "{{.Status}}"
-            # Peek at recent logs
+            # Show GPU usage
+            info "Current GPU memory usage:"
+            docker exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+            # Show recent logs
+            info "Recent container logs:"
             docker logs --tail 5 vllm
         else
             printf '.'
         fi
         
-        sleep 3
+        sleep 5
         api_attempt=$((api_attempt+1))
     done
     
@@ -498,34 +500,41 @@ prepare_vllm_model() {
         return 1
     fi
     
-    # Get available models - using a simpler approach
-    local models_info=$(curl -s http://localhost:8000/v1/models)
-    info "Available models: $models_info"
+    # Do a final validation test using chat completions endpoint
+    info "Step 3: Validating chat completions functionality..."
     
-    # Do a final validation test to ensure the model is actually usable
-    info "Step 3: Validating model is usable..."
-    
-    # Use a hard-coded model name since we know what's available from your test
-    local response=$(curl -s -X POST http://localhost:8000/v1/completions \
+    local response=$(curl -s -X POST http://localhost:8000/v1/chat/completions \
         -H "Content-Type: application/json" \
         -d '{
-            "model": "facebook/opt-125m",
-            "prompt": "Hello, how are you?",
-            "max_tokens": 5
+            "model": "HuggingFaceH4/zephyr-7b-beta",
+            "messages": [
+                {"role": "system", "content": "You are a helpful AI assistant."},
+                {"role": "user", "content": "Hello! Are you working?"}
+            ],
+            "max_tokens": 50,
+            "temperature": 0.7
         }')
     
     if echo "$response" | grep -q 'error'; then
         error_msg=$(echo "$response" | jq -r '.error.message' 2>/dev/null || echo "$response")
-        warning "Model validation failed: $error_msg"
-        warning "LLM services may not work correctly."
+        warning "Chat completions validation failed: $error_msg"
+        warning "LLM services may not work correctly with Flowise."
+        # Show the full response for debugging
+        info "Full response:"
+        echo "$response" | jq '.'
         return 1
     else
-        success "$CHECKMARK Model validation successful - LLM is ready to use"
-        # Show final GPU usage
-        info "GPU memory usage:"
+        success "$CHECKMARK Chat completions validated successfully"
+        # Show a snippet of the response
+        info "Sample response:"
+        echo "$response" | jq -r '.choices[0].message.content' | head -n 1
+        
+        # Show final GPU memory usage
+        info "Final GPU memory usage:"
         docker exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
     fi
     
+    info "vLLM is ready for use with Flowise (use /v1/chat/completions endpoint)"
     return 0
 }
 

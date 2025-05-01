@@ -79,7 +79,7 @@ GET /api/v1/chatflows
   {
     "id": "chatflow-123",
     "name": "vLLM Gemma3 Chatflow",
-    "description": "vLLMを介したGemma3:4bを使用したチャットフロー"
+    "description": "vLLMを介したHuggingFaceH4/zephyr-7b-betaを使用したチャットフロー"
   }
 ]
 ```
@@ -107,7 +107,7 @@ POST /api/generate
 **リクエストボディ:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "prompt": "人工知能とは何ですか?",
   "stream": false
 }
@@ -116,7 +116,7 @@ POST /api/generate
 **レスポンス:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "response": "人工知能（AI）とは、機械における人間の知能のシミュレーションを指します...",
   "done": true,
@@ -140,7 +140,7 @@ POST /api/chat
 **リクエストボディ:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "messages": [
     {
       "role": "user",
@@ -153,7 +153,7 @@ POST /api/chat
 **レスポンス:**
 ```json
 {
-  "model": "Gemma3:4b",
+  "model": "HuggingFaceH4/zephyr-7b-beta",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "message": {
     "role": "assistant",

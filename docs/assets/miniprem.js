@@ -194,7 +194,7 @@ function simulateContainerLogs(containerId, outputElementId) {
     ],
     ollama: [
       'INFO: Ollama server listening on :11434',
-      'INFO: Loaded model: Gemma3:4b',
+      'INFO: Loaded model: HuggingFaceH4/zephyr-7b-beta',
       'DEBUG: CUDA device initialized',
       'INFO: Ready for inference',
       'DEBUG: Temperature set to 0.7',
