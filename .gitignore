@@ -28,3 +28,12 @@ speech_input.sh
 *~
 .miniprem_install_type
 fresh_installation_steps.md
+
+docs/translate_docs.py
+docs/requirements.txt
+docs/venv
+
+docker/fast-whisper/voice-input.sh
+temp_venv/
+voice_input.sh
+voice_input_vosk.sh
