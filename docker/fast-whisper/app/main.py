@@ -18,7 +18,14 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Initialize the model
-model = WhisperModel("large-v3", device="cuda", compute_type="float16")
+model = WhisperModel(
+    "large-v3",
+    device="cuda",
+    compute_type="float16",
+    cpu_threads=4,           # Use CPU threads for non-GPU operations
+    num_workers=1,           # Limit worker threads
+    download_root="/app/models"  # Cache models in volume
+)
 
 @app.get("/")
 async def read_root():

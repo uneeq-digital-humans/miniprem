@@ -72,5 +72,15 @@ RUN chmod +x /app/start.sh
 # Set LD_LIBRARY_PATH
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
+# Add core memory optimization environment variables
+ENV PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=256
+ENV CUDA_LAUNCH_BLOCKING=1
+
+# These are defaults that can be overridden by docker-compose
+ENV COMPUTE_TYPE=float16
+ENV MODEL_SIZE=large-v3
+ENV NUM_WORKERS=1
+ENV CPU_THREADS=4
+
 EXPOSE 9000
-CMD ["/app/start.sh"] 
+CMD ["/app/start.sh"]

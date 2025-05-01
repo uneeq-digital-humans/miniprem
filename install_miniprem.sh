@@ -366,12 +366,38 @@ start_miniprem() {
     sudo systemctl stop redis-server || true
     sudo systemctl stop redis || true
     
-    docker compose $COMPOSE_FILES up -d
+    # First, start just vLLM since it needs significant GPU memory
+    info "Starting vLLM service first..."
+    docker compose $COMPOSE_FILES up -d vllm
     if [ $? -ne 0 ]; then
-        fatal "Failed to start Miniprem services"
-    else
-        success "$CHECKMARK Miniprem services started successfully"
+        fatal "Failed to start vLLM service"
     fi
+    
+    # Prepare the model while GPU is clean
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        prepare_vllm_model
+    fi
+    
+    # Now start all other services EXCEPT A2F
+    info "Starting other services..."
+    docker compose $COMPOSE_FILES up -d \
+        redis postgres grafana prometheus \
+        rime rime-api ollama flowise whisper log-streamer
+    if [ $? -ne 0 ]; then
+        fatal "Failed to start support services"
+    fi
+    
+    # Finally start A2F services last since they use lots of GPU
+    info "Starting A2F services..."
+    docker compose $COMPOSE_FILES up -d a2f a2f_anim_controller
+    if [ $? -ne 0 ]; then
+        warning "Failed to start A2F services - may need more GPU memory"
+        warning "You can try starting them manually later with:"
+        warning "docker compose up -d a2f a2f_anim_controller"
+    fi
+    
+    success "$CHECKMARK Miniprem services started successfully"
+    
     if [ "$INSTALL_TYPE" = "full" ]; then
         if ! docker ps | grep -q "log-streamer"; then
             warning "Log streamer service did not start properly. Container logs might not be available in documentation."
@@ -426,36 +452,48 @@ prepare_vllm_model() {
     info "      - First, we need to authenticate with HuggingFace"
     info "      - Then, we need to wait for vLLM to start"
     info "      - Next, we'll download Mistral-7B-Instruct-v0.3"
-    info "      - Finally, the model needs to load completely into GPU memory"
+    info "      - Finally, we'll ensure the model is properly loaded and served"
     info "Please be patient as we go through these steps."
 
-     echo ""
+    echo ""
     info "Step 1: Setting up HuggingFace authentication..."
     
     DOCKER_CMD=$(get_docker_command)
     
     # Check if user already has a token configured
     if ! $DOCKER_CMD exec vllm huggingface-cli whoami >/dev/null 2>&1; then
-        info "HuggingFace authentication required to download Mistral model."
+        local border=$(printf "%80s" | tr ' ' '=')
+        echo -e "\n+${border}+"
+        printf "| %-78s |\n" "⚠️  IMPORTANT: MODEL TERMS ACCEPTANCE REQUIRED"
+        echo "+${border}+"
+        printf "| %-78s |\n" "Before continuing, you MUST:"
+        printf "| %-78s |\n" "1. Visit: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3"
+        printf "| %-78s |\n" "2. Log in to your HuggingFace account (or create one)"
+        printf "| %-78s |\n" "3. Click the 'Accept the model terms' button on the model page"
+        printf "| %-78s |\n" "4. Create an access token at: https://huggingface.co/settings/tokens"
+        printf "| %-78s |\n" ""
+        printf "| %-78s |\n" "The model CANNOT be downloaded without completing these steps!"
+        echo "+${border}+"
         echo ""
-        info "Press Enter to open the HuggingFace token page in your browser."
-        info "1. Log in or sign up to HuggingFace"
-        info "2. Accept the Mistral model terms of use"
-        info "3. Create a token with 'read' access"
-        info "4. Copy the token and return to this terminal"
-        read -p "Press Enter to continue..."
         
-        # Open the HuggingFace tokens page in the default browser
-        xdg-open "https://huggingface.co/settings/tokens" >/dev/null 2>&1 || open "https://huggingface.co/settings/tokens" >/dev/null 2>&1
-        
+        read -p "Have you accepted the model terms on HuggingFace? (y/N): " terms_accepted
+        if [[ ! "$terms_accepted" =~ ^[Yy]$ ]]; then
+            fatal "Please accept the model terms on HuggingFace before continuing."
+        fi
+
         echo ""
-        read -p "Enter your HuggingFace token: " hf_token
+        read -p "Enter your HuggingFace access token: " hf_token
         
         if [ -z "$hf_token" ]; then
             fatal "HuggingFace token is required to download the model."
         fi
         
-        # Login using the token
+        # Save token to the container AND to the host
+        echo "$hf_token" > docker/huggingface_token
+        $DOCKER_CMD cp docker/huggingface_token vllm:/root/.huggingface/token
+        rm docker/huggingface_token  # Clean up temporary file
+        
+        # Login using the token in the container
         $DOCKER_CMD exec vllm huggingface-cli login --token "$hf_token"
         if [ $? -ne 0 ]; then
             fatal "Failed to authenticate with HuggingFace"
@@ -483,7 +521,6 @@ prepare_vllm_model() {
         # Show progress every 10 attempts
         if [ $((attempt % 10)) -eq 0 ]; then
             info "Still waiting for vLLM to start... ($attempt/$max_attempts)"
-            # Show the container status
             docker ps --filter "name=vllm" --format "{{.Status}}"
         else
             printf '.'
@@ -503,22 +540,40 @@ prepare_vllm_model() {
     fi
 
     echo ""
-    info "Step 3: Downloading Mistral-7B-Instruct-v0.3 model into vLLM container..."
+    info "Step 3: Loading Mistral model into vLLM..."
+
+    # Get the HuggingFace token from the container
+    HF_TOKEN=$(docker exec vllm cat /root/.huggingface/token)
     
-    # Execute huggingface-cli within the vLLM container, using the correct cache path
-    $DOCKER_CMD exec vllm huggingface-cli download --cache-dir /root/.cache/huggingface --resume-download mistralai/Mistral-7B-Instruct-v0.3
-    if [ $? -ne 0 ]; then
-        fatal "Failed to download Mistral model into vLLM container"
+    if [ -z "$HF_TOKEN" ]; then
+        warning "No HuggingFace token found in container. Requesting new token..."
+        read -p "Enter your HuggingFace access token: " HF_TOKEN
+        
+        if [ -z "$HF_TOKEN" ]; then
+            fatal "HuggingFace token is required to download the model."
+        fi
+        
+        # Save token to the container
+        echo "$HF_TOKEN" | docker exec -i vllm tee /root/.huggingface/token > /dev/null
     fi
-    success "$CHECKMARK Mistral-7B-Instruct-v0.3 model downloaded successfully"
+    
+    # Tell vLLM to serve the Mistral model with memory optimizations
+    docker exec -e HUGGING_FACE_HUB_TOKEN="$HF_TOKEN" \
+                -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
+                vllm python3 -m vllm.entrypoints.openai.api_server \
+        --model mistralai/Mistral-7B-Instruct-v0.3 \
+        --host 0.0.0.0 \
+        --port 8000 \
+        --gpu-memory-utilization 0.2 \
+        --max-model-len 1024 \
+        --quantization 8bit \
+        --cpu-offload 4 \
+        --hf-token "$HF_TOKEN" &
 
-    echo ""
-    info "Step 4: Loading model into vLLM..."
-    info "You can monitor progress by running 'docker logs -f vllm' in another terminal"
-    echo ""
+    # Give it a moment to start loading
+    sleep 5
 
-    # Poll until the model is fully loaded and ready by attempting a completion
-    info "Waiting for Mistral-7B-Instruct-v0.3 model to be fully loaded in vLLM..."
+    # Poll until the model is fully loaded and ready
     local poll_attempt=1
     local poll_max_attempts=40  # Wait up to 10 minutes (40*15s)
     while [ $poll_attempt -le $poll_max_attempts ]; do
@@ -538,6 +593,9 @@ prepare_vllm_model() {
             break
         else
             info "Model not ready yet, still waiting... ($poll_attempt/$poll_max_attempts)"
+            # Show the actual error message for debugging
+            error_msg=$(echo "$response" | jq -r '.error.message' 2>/dev/null || echo "$response")
+            info "Current status: $error_msg"
             sleep 15
             poll_attempt=$((poll_attempt+1))
         fi

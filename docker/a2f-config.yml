@@ -14,20 +14,20 @@ common:
     # enable or disable the garbage collector
     enabled: true
     # how often the garbage collector should run
-    interval_run_second: 10
+    interval_run_second: 5
     # If when the garbage collector runs, some streams contain
     # more than N second of data then, the data is removed
     # until the storage goes below that number
     # client is supposed to read everything and not make this
     # service hold the data for too long
     # 60 seconds means ~80mb of ram
-    max_size_stored_data_second: 60
+    max_size_stored_data_second: 30
   stream_number: 2
   add-silence-padding-after-audio: true
   export-params-to-animdata: false
   queue-size-after-streammux: 1
-  queue-size-after-a2f: 30
-  queue-size-after-a2e: 3000
+  queue-size-after-a2f: 15
+  queue-size-after-a2e: 1500
 
 audio2x:
   # where audio2X is located
@@ -65,7 +65,7 @@ A2E:
 A2F:
   model_path: "/opt/nvidia/a2x_pipeline/a2f_data/data/networks/claire_v1.3"
   enabled: true
-  max_30_fps: false
+  max_30_fps: true
   emotions:
     a2e-multiplier: 0.5
     external-multiplier: 0.5
