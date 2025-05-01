@@ -12,6 +12,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 
 - **Digital Human Interface**: Powered by Renny, with real-time facial animation
 - **LLM Integration**: vLLM running Gemma3 for natural language understanding
+- **LLM Integration**: vLLM running Mistral-7B-Instruct-v0.3 for natural language understanding
 - **Workflow Automation**: Flowise for building and managing AI workflows
 - **Metrics & Monitoring**: Prometheus and Grafana for real-time performance tracking
 - **Queue Management**: Redis for reliable message processing
@@ -25,6 +26,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 - Docker and Docker Compose
 - NVIDIA GPU with appropriate drivers
 - Ubuntu Linux (recommended)
+- HuggingFace account with API token
 - Required credentials from UneeQ (platform address, API key, tenant ID)
 - Azure Speech service credentials (region and API key)
 
@@ -98,9 +100,10 @@ You can test the vLLM API directly with a cURL command:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "gemma-3-4b",
+    "model": "mistralai/Mistral-7B-Instruct-v0.3",
     "messages": [
-      { "role": "user", "content": "Hello!" }
+        {"role": "system", "content": "You are a helpful AI assistant."},
+        {"role": "user", "content": "What is artificial intelligence?"}
     ]
   }'
 ```

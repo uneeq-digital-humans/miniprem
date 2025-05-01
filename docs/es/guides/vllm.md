@@ -4,32 +4,50 @@ Esta guía cubre la integración del modelo de lenguaje grande (LLM) vLLM en la 
 
 ## Descripción General
 
-[vLLM](https://vllm.ai/) es un motor de inferencia de alto rendimiento y código abierto para modelos de lenguaje grandes. En la plataforma MiniPrem, vLLM impulsa la inteligencia conversacional usando Gemma3:4b, un modelo de lenguaje de código abierto de última generación.
+[vLLM](https://vllm.ai/) es un motor de inferencia de código abierto de alto rendimiento para modelos de lenguaje grandes. En la plataforma MiniPrem, vLLM impulsa la inteligencia conversacional utilizando Mistral-7B-Instruct-v0.3, un modelo de lenguaje de código abierto de última generación optimizado para seguir instrucciones y chatear.
+## Requisitos Previos
+
+- Cuenta de HuggingFace
+- Términos aceptados para el uso del modelo Mistral
+- Token de API de HuggingFace con permisos de lectura
+
+## Configuración Inicial
+
+Durante la instalación, el sistema:
+1. Te guiará a través de la creación/inicio de sesión de una cuenta HuggingFace
+2. Te ayudará a aceptar los términos del modelo Mistral
+3. Te asistirá en la creación y configuración de un token de API de HuggingFace
+4. Descargará y configurará el modelo Mistral
 
 ## Acceso a vLLM
 
-- **Endpoint de API**: http://localhost:8000/v1
+- **Punto Final de API**: http://localhost:8000/v1
 - **Nombre del Contenedor**: `vllm`
+- **Ruta del Modelo**: `mistralai/Mistral-7B-Instruct-v0.3`
 
 ## Modelo Predeterminado
 
 MiniPrem viene preconfigurado con:
-- **Modelo**: `gemma-3-4b` (o tu modelo compatible con HuggingFace elegido)
-- **Longitud de Contexto**: 8,192 tokens (dependiente del modelo)
-- **Parámetros**: 4 mil millones (dependiente del modelo)
+- **Modelo**: `Mistral-7B-Instruct-v0.3`
+- **Longitud de Contexto**: 8,192 tokens
+- **Parámetros**: 7 mil millones
+- **Optimizaciones**: Preconfigurado para inferencia eficiente en GPU
 
 ## Interacción Directa con vLLM
 
-### Usando la API Compatible con OpenAI
+### Uso de la API Compatible con OpenAI
 
 Puedes interactuar con vLLM directamente a través de su API compatible con OpenAI:
 
 ```bash
 # Completado de chat
-curl -X POST http://localhost:8000/v1/chat/completions -H 'Content-Type: application/json' -d '{
-  "model": "gemma-3-4b",
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "model": "mistralai/Mistral-7B-Instruct-v0.3",
   "messages": [
-    { "role": "user", "content": "What is artificial intelligence?" }
+        {"role": "system", "content": "Eres un asistente de IA servicial."},
+      {"role": "user", "content": "¿Qué es la inteligencia artificial?"}
   ]
 }'
 ```

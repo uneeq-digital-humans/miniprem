@@ -222,6 +222,8 @@ services:
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HOME=/data/huggingface
+      - HF_CACHE_DIR=/data/huggingface/cache
     restart: unless-stopped
     networks:
       - miniprem_net
