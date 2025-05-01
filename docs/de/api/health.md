@@ -1,8 +1,8 @@
 # Renny Health API
 
-Check the health status of the Renny service.
+Überprüfen Sie den Gesundheitsstatus des Renny-Dienstes.
 
-## Health Endpoint
+## Health-Endpunkt
 
 ```api-GET-renny
 /health

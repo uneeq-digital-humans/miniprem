@@ -1,10 +1,10 @@
-# Container Logs
+# Container-Protokolle
 
-View real-time logs from containers running in the MiniPrem stack. This feature allows you to monitor services directly from the documentation.
+Zeigen Sie Echtzeit-Protokolle von Containern an, die im MiniPrem-Stack ausgeführt werden. Mit dieser Funktion können Sie Dienste direkt aus der Dokumentation überwachen.
 
-## Available Containers
+## Verfügbare Container
 
-Select a container from the dropdown to view its logs:
+Wählen Sie einen Container aus der Dropdown-Liste, um dessen Protokolle anzuzeigen:
 
 ```container-logs
 flowise
@@ -16,30 +16,30 @@ renny
 log-streamer
 ```
 
-## How It Works
+## Funktionsweise
 
-This feature connects to the Log Streamer service running on port 8082, which provides a WebSocket interface to the Docker logs. When you select a container, a WebSocket connection is established to:
+Diese Funktion stellt eine Verbindung zum Log Streamer-Dienst her, der auf Port 8082 läuft und eine WebSocket-Schnittstelle zu den Docker-Protokollen bereitstellt. Wenn Sie einen Container auswählen, wird eine WebSocket-Verbindung hergestellt zu:
 
 ```
 ws://localhost:8082/logs/{container-name}
 ```
 
-The log streamer service then connects to Docker and streams logs in real-time to your browser.
+Der Log Streamer-Dienst verbindet sich dann mit Docker und streamt Protokolle in Echtzeit in Ihren Browser.
 
-## Troubleshooting
+## Fehlerbehebung
 
-If you don't see logs appearing:
+Wenn Sie keine Protokolle sehen:
 
-1. Make sure the log-streamer service is running:
+1. Stellen Sie sicher, dass der log-streamer-Dienst läuft:
    ```bash
    docker ps | grep log-streamer
    ```
 
-2. Check the log-streamer service logs:
+2. Überprüfen Sie die Protokolle des log-streamer-Dienstes:
    ```bash
    docker logs log-streamer
    ```
 
-3. Ensure your browser supports WebSockets and has access to localhost:8082
+3. Stellen Sie sicher, dass Ihr Browser WebSockets unterstützt und Zugriff auf localhost:8082 hat
 
-4. If logs still don't appear, the service will automatically fall back to simulated logs for demonstration purposes.
+4. Wenn Protokolle immer noch nicht erscheinen, fällt der Dienst automatisch auf simulierte Protokolle für Demonstrationszwecke zurück.

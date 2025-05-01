@@ -1,90 +1,90 @@
-# API Reference
+# API-Referenz
 
-This section provides detailed documentation for the APIs available in the MiniPrem platform.
+Dieser Abschnitt bietet eine detaillierte Dokumentation für die APIs, die auf der MiniPrem-Plattform verfügbar sind.
 
 ## Flowise API
 
-The Flowise API allows you to interact with your chatflows programmatically.
+Die Flowise API ermöglicht es Ihnen, Ihre Chatflows programmgesteuert zu bearbeiten.
 
-### Authentication
+### Authentifizierung
 
-Add the following header to your API requests:
+Fügen Sie dem folgenden Header zu Ihren API-Anfragen hinzu:
 ```
-Authorization: Bearer your_api_key_here
+Authorization: Bearer Ihre_API_Schlüssel_hier
 ```
 
-### Endpoints
+### Endpunkte
 
-#### Prediction API
+#### Vorhersage-API
 
-Make predictions using a specific chatflow.
+Machen Sie Vorhersagen mithilfe eines bestimmten Chatflows.
 
 ```
 POST /api/v1/prediction/{CHATFLOW_ID}
 ```
 
-**Request Body:**
+**Anfrage-Body:**
 ```json
 {
-  "question": "Your question here",
+  "question": "Ihre Frage hier",
   "history": [
     {
       "type": "human",
-      "message": "Previous question"
+      "message": "Vorherige Frage"
     },
     {
       "type": "ai",
-      "message": "Previous answer"
+      "message": "Vorherige Antwort"
     }
   ]
 }
 ```
 
-**Response:**
+**Antwort:**
 ```json
 {
-  "result": "The answer to your question...",
+  "result": "Die Antwort auf Ihre Frage...",
   "history": [
     {
       "type": "human",
-      "message": "Previous question"
+      "message": "Vorherige Frage"
     },
     {
       "type": "ai",
-      "message": "Previous answer"
+      "message": "Vorherige Antwort"
     },
     {
       "type": "human",
-      "message": "Your question here"
+      "message": "Ihre Frage hier"
     },
     {
       "type": "ai",
-      "message": "The answer to your question..."
+      "message": "Die Antwort auf Ihre Frage..."
     }
   ]
 }
 ```
 
-#### Chatflows API
+#### Chatflows-API
 
-List all available chatflows.
+Listen Sie alle verfügbaren Chatflows auf.
 
 ```
 GET /api/v1/chatflows
 ```
 
-**Response:**
+**Antwort:**
 ```json
 [
   {
     "id": "chatflow-123",
     "name": "vLLM Gemma3 Chatflow",
-    "description": "Chatflow using Gemma3:4b via vLLM with Buffer Memory"
+    "description": "Chatflow mit Gemma3:4b über vLLM mit Buffer Memory"
   }
 ]
 ```
 
-Get a specific chatflow.
+Rufen Sie einen bestimmten Chatflow ab.
 
 ```
 GET /api/v1/chatflows/{CHATFLOW_ID}
@@ -92,33 +92,33 @@ GET /api/v1/chatflows/{CHATFLOW_ID}
 
 ## vLLM API
 
-vLLM provides a simple API for generating text and chat completions.
+vLLM bietet eine einfache API für die Generierung von Text und Chat-Komplettierungen.
 
-### Endpoints
+### Endpunkte
 
-#### Generate API
+#### Generieren-API
 
-Generate text completions.
+Generieren Sie Text-Komplettierungen.
 
 ```
 POST /api/generate
 ```
 
-**Request Body:**
+**Anfrage-Body:**
 ```json
 {
   "model": "Gemma3:4b",
-  "prompt": "What is artificial intelligence?",
+  "prompt": "Was ist künstliche Intelligenz?",
   "stream": false
 }
 ```
 
-**Response:**
+**Antwort:**
 ```json
 {
   "model": "Gemma3:4b",
   "created_at": "2023-11-09T14:15:22.339408Z",
-  "response": "Artificial intelligence (AI) refers to the simulation of human intelligence in machines...",
+  "response": "Künstliche Intelligenz (KI) bezieht sich auf die Simulation menschlicher Intelligenz in Maschinen...",
   "done": true,
   "context": [1, 2, 3, ...],
   "total_duration": 2157865125,
@@ -129,35 +129,35 @@ POST /api/generate
 }
 ```
 
-#### Chat API
+#### Chat-API
 
-Generate chat completions.
+Generieren Sie Chat-Komplettierungen.
 
 ```
 POST /api/chat
 ```
 
-**Request Body:**
+**Anfrage-Body:**
 ```json
 {
   "model": "Gemma3:4b",
   "messages": [
     {
       "role": "user",
-      "content": "What is artificial intelligence?"
+      "content": "Was ist künstliche Intelligenz?"
     }
   ]
 }
 ```
 
-**Response:**
+**Antwort:**
 ```json
 {
   "model": "Gemma3:4b",
   "created_at": "2023-11-09T14:15:22.339408Z",
   "message": {
     "role": "assistant",
-    "content": "Artificial intelligence (AI) refers to the simulation of human intelligence in machines..."
+    "content": "Künstliche Intelligenz (KI) bezieht sich auf die Simulation menschlicher Intelligenz in Maschinen..."
   },
   "done": true,
   "total_duration": 2157865125,
@@ -170,43 +170,43 @@ POST /api/chat
 
 ## Renny Health API
 
-Check the health status of the Renny service.
+Überprüfen Sie den Gesundheitsstatus des Renny-Dienstes.
 
 ```
 GET /health
 ```
 
-**Response:**
+**Antwort:**
 ```json
 {
   "status": "ok",
   "version": "0.477-c3972",
   "connections": {
-    "a2f": "connected",
-    "uneeq": "connected",
-    "azure_speech": "connected"
+    "a2f": "verbunden",
+    "uneeq": "verbunden",
+    "azure_speech": "verbunden"
   }
 }
 ```
 
 ## Prometheus API
 
-Query metrics from Prometheus.
+Abfragen Sie Metriken von Prometheus.
 
 ```
 GET /api/v1/query
 ```
 
-**Query Parameters:**
-- `query`: The Prometheus query string
-- `time`: Evaluation timestamp (optional)
+**Abfrage-Parameter:**
+- `query`: Die Prometheus-Abfragezeichenfolge
+- `time`: Auswertungstimestamp (optional)
 
-**Example:**
+**Beispiel:**
 ```
 GET /api/v1/query?query=http_requests_total
 ```
 
-**Response:**
+**Antwort:**
 ```json
 {
   "status": "success",
@@ -228,13 +228,13 @@ GET /api/v1/query?query=http_requests_total
 
 ## Grafana API
 
-Access your dashboards and visualizations via the Grafana API.
+Greifen Sie über die Grafana API auf Ihre Dashboards und Visualisierungen zu.
 
 ```
 GET /api/dashboards/uid/{dashboard-uid}
 ```
 
-**Response:**
+**Antwort:**
 ```json
 {
   "dashboard": {
@@ -252,7 +252,7 @@ GET /api/dashboards/uid/{dashboard-uid}
     "url": "/d/flowise-dashboard",
     "folderId": 0,
     "folderUid": "",
-    "folderTitle": "General",
+    "folderTitle": "Allgemein",
     "folderUrl": ""
   }
 }
