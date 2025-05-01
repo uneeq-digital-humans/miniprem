@@ -46,11 +46,11 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
     "model": "mistralai/Mistral-7B-Instruct-v0.3",
-  "messages": [
-      {"role": "system", "content": "You are a helpful AI assistant."},
-      {"role": "user", "content": "What is artificial intelligence?"}
-  ]
-}'
+    "messages": [
+        {"role": "system", "content": "You are a helpful AI assistant."},
+        {"role": "user", "content": "What is artificial intelligence?"}
+    ]
+  }'
 ```
 
 ## Further Reading
