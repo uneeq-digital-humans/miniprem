@@ -78,7 +78,7 @@ ENV CUDA_LAUNCH_BLOCKING=1
 
 # These are defaults that can be overridden by docker-compose
 ENV COMPUTE_TYPE=float16
-ENV MODEL_SIZE=large-v3
+ENV MODEL_SIZE=small-v3
 ENV NUM_WORKERS=1
 ENV CPU_THREADS=4
 

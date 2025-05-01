@@ -24,7 +24,7 @@ Während der Installation wird das System:
 
 - **API-Endpunkt**: http://localhost:8000/v1
 - **Container-Name**: `vllm`
-- **Modell-Pfad**: `mistralai/Mistral-7B-Instruct-v0.3`
+- **Modell-Pfad**: `facebook/opt-125m`
 
 ## Standardmodell
 
@@ -44,7 +44,7 @@ Sie können direkt über die OpenAI-kompatible API mit vLLM interagieren:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{
-    "model": "mistralai/Mistral-7B-Instruct-v0.3",
+    "model": "facebook/opt-125m",
     "messages": [
         {"role": "system", "content": "Sie sind ein hilfreicher KI-Assistent."},
         {"role": "user", "content": "Was ist künstliche Intelligenz?"}

@@ -378,11 +378,17 @@ start_miniprem() {
         prepare_vllm_model
     fi
     
-    # Now start all other services EXCEPT A2F
+    # Now start other services EXCEPT A2F
     info "Starting other services..."
+    # Use the correct whisper service based on user's choice
+    local whisper_service="whisper"
+    if [[ "$stt_choice" == "2" ]]; then
+        whisper_service="fastwhisper"
+    fi
+    
     docker compose $COMPOSE_FILES up -d \
-        redis postgres grafana prometheus \
-        rime rime-api ollama flowise whisper log-streamer
+        redis grafana prometheus \
+        rime-model rime-api flowise $whisper_service log-streamer
     if [ $? -ne 0 ]; then
         fatal "Failed to start support services"
     fi
@@ -396,15 +402,7 @@ start_miniprem() {
         warning "docker compose up -d a2f a2f_anim_controller"
     fi
     
-    success "$CHECKMARK Miniprem services started successfully"
-    
-    if [ "$INSTALL_TYPE" = "full" ]; then
-        if ! docker ps | grep -q "log-streamer"; then
-            warning "Log streamer service did not start properly. Container logs might not be available in documentation."
-        else
-            success "$CHECKMARK Log streamer service is running and accessible at http://localhost:8082/health"
-        fi
-    fi
+    success "$CHECKMARK MiniPrem services started successfully"
 }
 
 # Function to check GPU memory usage periodically for monitoring progress
@@ -448,162 +446,87 @@ show_progress_spinner() {
 prepare_vllm_model() {
     log_section "Preparing vLLM LLM"
 
-    info "NOTE: This is a multi-step process that may take 5-15 minutes depending on your hardware."
-    info "      - First, we need to authenticate with HuggingFace"
-    info "      - Then, we need to wait for vLLM to start"
-    info "      - Next, we'll download Mistral-7B-Instruct-v0.3"
-    info "      - Finally, we'll ensure the model is properly loaded and served"
-    info "Please be patient as we go through these steps."
-
-    echo ""
-    info "Step 1: Setting up HuggingFace authentication..."
-    
-    DOCKER_CMD=$(get_docker_command)
-    
-    # Check if user already has a token configured
-    if ! $DOCKER_CMD exec vllm huggingface-cli whoami >/dev/null 2>&1; then
-        local border=$(printf "%80s" | tr ' ' '=')
-        echo -e "\n+${border}+"
-        printf "| %-78s |\n" "⚠️  IMPORTANT: MODEL TERMS ACCEPTANCE REQUIRED"
-        echo "+${border}+"
-        printf "| %-78s |\n" "Before continuing, you MUST:"
-        printf "| %-78s |\n" "1. Visit: https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3"
-        printf "| %-78s |\n" "2. Log in to your HuggingFace account (or create one)"
-        printf "| %-78s |\n" "3. Click the 'Accept the model terms' button on the model page"
-        printf "| %-78s |\n" "4. Create an access token at: https://huggingface.co/settings/tokens"
-        printf "| %-78s |\n" ""
-        printf "| %-78s |\n" "The model CANNOT be downloaded without completing these steps!"
-        echo "+${border}+"
-        echo ""
-        
-        read -p "Have you accepted the model terms on HuggingFace? (y/N): " terms_accepted
-        if [[ ! "$terms_accepted" =~ ^[Yy]$ ]]; then
-            fatal "Please accept the model terms on HuggingFace before continuing."
-        fi
-
-        echo ""
-        read -p "Enter your HuggingFace access token: " hf_token
-        
-        if [ -z "$hf_token" ]; then
-            fatal "HuggingFace token is required to download the model."
-        fi
-        
-        # Save token to the container AND to the host
-        echo "$hf_token" > docker/huggingface_token
-        $DOCKER_CMD cp docker/huggingface_token vllm:/root/.huggingface/token
-        rm docker/huggingface_token  # Clean up temporary file
-        
-        # Login using the token in the container
-        $DOCKER_CMD exec vllm huggingface-cli login --token "$hf_token"
-        if [ $? -ne 0 ]; then
-            fatal "Failed to authenticate with HuggingFace"
-        fi
-        success "$CHECKMARK Successfully authenticated with HuggingFace"
-    else
-        success "$CHECKMARK HuggingFace authentication already configured"
-    fi
-
-    echo ""
-    info "Step 2: Waiting for vLLM service to start..."
-
-    local max_attempts=120 # Wait up to 10 minutes for service to start
+    info "Step 1: Waiting for vLLM container to become ready..."
+    local max_attempts=30  # 5 minutes (30 * 10s)
     local attempt=1
-    local vllm_started=0
 
     while [ $attempt -le $max_attempts ]; do
-        # Check if vLLM is running by querying the /health endpoint
-        if curl --output /dev/null --silent --fail http://localhost:8000/health; then
-            success "$CHECKMARK vLLM service is running (API accessible)"
-            vllm_started=1
+        if docker inspect vllm >/dev/null 2>&1; then
+            success "$CHECKMARK vLLM container exists"
             break
         fi
-
-        # Show progress every 10 attempts
-        if [ $((attempt % 10)) -eq 0 ]; then
-            info "Still waiting for vLLM to start... ($attempt/$max_attempts)"
-            docker ps --filter "name=vllm" --format "{{.Status}}"
-        else
-            printf '.'
-        fi
-
-        sleep 5
+        
+        info "Waiting for vLLM container to start... ($attempt/$max_attempts)"
+        sleep 10
         attempt=$((attempt+1))
     done
 
-    if [ $vllm_started -eq 0 ]; then
-        warning "vLLM service did not start within the expected timeframe (10 minutes)."
-        warning "You may need to troubleshoot by checking: docker logs vllm"
-        read -p "Do you want to continue anyway? (y/n): " continue_anyway
-        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-            fatal "Installation aborted due to vLLM startup issues."
-        fi
+    if [ $attempt -gt $max_attempts ]; then
+        fatal "vLLM container failed to start within timeout"
     fi
 
-    echo ""
-    info "Step 3: Loading Mistral model into vLLM..."
-
-    # Get the HuggingFace token from the container
-    HF_TOKEN=$(docker exec vllm cat /root/.huggingface/token)
+    info "Step 2: Waiting for vLLM API service to become available..."
     
-    if [ -z "$HF_TOKEN" ]; then
-        warning "No HuggingFace token found in container. Requesting new token..."
-        read -p "Enter your HuggingFace access token: " HF_TOKEN
-        
-        if [ -z "$HF_TOKEN" ]; then
-            fatal "HuggingFace token is required to download the model."
-        fi
-        
-        # Save token to the container
-        echo "$HF_TOKEN" | docker exec -i vllm tee /root/.huggingface/token > /dev/null
-    fi
+    # Wait for vLLM API to become available
+    local api_max_attempts=40  # About 2 minutes
+    local api_attempt=1
     
-    # Tell vLLM to serve the Mistral model with memory optimizations
-    docker exec -e HUGGING_FACE_HUB_TOKEN="$HF_TOKEN" \
-                -e PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \
-                vllm python3 -m vllm.entrypoints.openai.api_server \
-        --model mistralai/Mistral-7B-Instruct-v0.3 \
-        --host 0.0.0.0 \
-        --port 8000 \
-        --gpu-memory-utilization 0.2 \
-        --max-model-len 1024 \
-        --quantization 8bit \
-        --cpu-offload 4 \
-        --hf-token "$HF_TOKEN" &
-
-    # Give it a moment to start loading
-    sleep 5
-
-    # Poll until the model is fully loaded and ready
-    local poll_attempt=1
-    local poll_max_attempts=40  # Wait up to 10 minutes (40*15s)
-    while [ $poll_attempt -le $poll_max_attempts ]; do
-        response=$(curl -s -X POST http://localhost:8000/v1/chat/completions \
-            -H "Content-Type: application/json" \
-            -d '{
-                "model": "mistralai/Mistral-7B-Instruct-v0.3",
-                "messages": [
-                    {"role": "system", "content": "You are a helpful AI assistant."},
-                    {"role": "user", "content": "Hello!"}
-                ],
-                "max_tokens": 1
-            }')
-        
-        if ! echo "$response" | grep -q 'error'; then
-            success "$CHECKMARK Mistral-7B-Instruct-v0.3 model is fully loaded and ready in vLLM."
+    while [ $api_attempt -le $api_max_attempts ]; do
+        if curl --output /dev/null --silent --fail --max-time 2 http://localhost:8000/v1/models; then
+            success "$CHECKMARK vLLM API is responding"
             break
-        else
-            info "Model not ready yet, still waiting... ($poll_attempt/$poll_max_attempts)"
-            # Show the actual error message for debugging
-            error_msg=$(echo "$response" | jq -r '.error.message' 2>/dev/null || echo "$response")
-            info "Current status: $error_msg"
-            sleep 15
-            poll_attempt=$((poll_attempt+1))
         fi
+        
+        # Show progress every 5 attempts (15 seconds)
+        if [ $((api_attempt % 5)) -eq 0 ]; then
+            info "Still waiting for vLLM API... ($api_attempt/$api_max_attempts)"
+            # Check container status
+            docker ps --filter "name=vllm" --format "{{.Status}}"
+            # Peek at recent logs
+            docker logs --tail 5 vllm
+        else
+            printf '.'
+        fi
+        
+        sleep 3
+        api_attempt=$((api_attempt+1))
     done
-    if [ $poll_attempt -gt $poll_max_attempts ]; then
-        warning "Timed out waiting for Mistral-7B-Instruct-v0.3 model to be ready in vLLM."
-        warning "You may need to check the vLLM logs or try again later."
+    
+    if [ $api_attempt -gt $api_max_attempts ]; then
+        warning "vLLM API did not become available within the expected timeframe."
+        warning "Will attempt to continue anyway, but LLM services might not work properly."
+        return 1
     fi
+    
+    # Get available models - using a simpler approach
+    local models_info=$(curl -s http://localhost:8000/v1/models)
+    info "Available models: $models_info"
+    
+    # Do a final validation test to ensure the model is actually usable
+    info "Step 3: Validating model is usable..."
+    
+    # Use a hard-coded model name since we know what's available from your test
+    local response=$(curl -s -X POST http://localhost:8000/v1/completions \
+        -H "Content-Type: application/json" \
+        -d '{
+            "model": "facebook/opt-125m",
+            "prompt": "Hello, how are you?",
+            "max_tokens": 5
+        }')
+    
+    if echo "$response" | grep -q 'error'; then
+        error_msg=$(echo "$response" | jq -r '.error.message' 2>/dev/null || echo "$response")
+        warning "Model validation failed: $error_msg"
+        warning "LLM services may not work correctly."
+        return 1
+    else
+        success "$CHECKMARK Model validation successful - LLM is ready to use"
+        # Show final GPU usage
+        info "GPU memory usage:"
+        docker exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+    fi
+    
+    return 0
 }
 
 # Function to setup Flowise chatflow
@@ -632,7 +555,7 @@ setup_flowise_chatflow() {
     
     # Wait for Flowise to be ready
     info "Waiting for Flowise to be ready..."
-    info "This may take several minutes as Flowise needs to start up and connect to Ollama"
+    info "This may take several minutes as Flowise needs to start up and connect to vLLM"
 
     # Instead of relying on the health endpoint, check if the web UI is accessible
     local max_attempts=60  # 5 minutes (60 * 5s)
@@ -892,35 +815,6 @@ check_environment() {
     fi
 }
 
-# Function to configure whisper service
-configure_whisper_service() {
-    local whisper_type
-    echo "Please choose your preferred speech-to-text service:"
-    echo "1. OpenAI Whisper (slower but more accurate)"
-    echo "2. Faster Whisper (faster but slightly less accurate)"
-    read -p "Enter your choice (1 or 2): " whisper_type
-
-    case $whisper_type in
-        1)
-            echo "Configuring OpenAI Whisper..."
-            sed -i '/^  # whisper:/s/^  # //' docker/docker-compose.yml
-            ;;
-        2)
-            echo "Configuring Faster Whisper..."
-            sed -i '/^  # fastwhisper:/s/^  # //' docker/docker-compose.yml
-            # Create necessary directories
-            mkdir -p docker/fast-whisper/app
-            mkdir -p docker/fast-whisper/models
-            ;;
-        *)
-            echo "Invalid choice. Defaulting to OpenAI Whisper."
-            sed -i '/^  # whisper:/s/^  # //' docker/docker-compose.yml
-            ;;
-    esac
-}
-
-# Add this function before the main() function:
-
 # Function to build the fast-whisper image locally
 build_fast_whisper_image() {
     log_section "Building Fast Whisper Docker Image"
@@ -1059,32 +953,6 @@ EOF
     fi
 }
 
-if [ "$INSTALL_TYPE" = "full" ]; then
-    echo -e "\nChoose your speech-to-text backend (only one will be enabled):"
-    echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
-    echo "2) FastWhisper (SYSTRAN, GPU-optimized, locally built)"
-    read -p "Enter choice [1-2]: " stt_choice
-    if [[ "$stt_choice" == "1" ]]; then
-        info "Enabling Whisper backend in docker-compose.yml..."
-        # Uncomment whisper, comment fastwhisper
-        sed -i '/^# whisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
-        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
-    elif [[ "$stt_choice" == "2" ]]; then
-        info "Enabling FastWhisper backend in docker-compose.yml..."
-        # Uncomment fastwhisper, comment whisper
-        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
-        sed -i '/^# whisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
-        
-        # Update the image name in the docker-compose.yml to use the locally built image
-        sed -i 's|image: systran/faster-whisper:latest|image: fast-whisper-optimized:latest|g' docker/docker-compose.yml
-        
-        # Build the fast-whisper image
-        build_fast_whisper_image
-    else
-        echo "Invalid choice, exiting."
-        exit 1
-    fi
-fi
 
 main() {
     print_logo
@@ -1233,6 +1101,33 @@ main() {
         setup_rime_credentials
     fi
 
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        echo -e "\nChoose your speech-to-text backend (only one will be enabled):"
+        echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
+        echo "2) FastWhisper (GPU-optimized, locally built)"
+        read -p "Enter choice [1-2]: " stt_choice
+        if [[ "$stt_choice" == "1" ]]; then
+            info "Enabling Whisper backend in docker-compose.yml..."
+            # Uncomment whisper, comment fastwhisper
+            sed -i '/^# whisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
+            sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
+        elif [[ "$stt_choice" == "2" ]]; then
+            info "Enabling FastWhisper backend in docker-compose.yml..."
+            # Uncomment fastwhisper, comment whisper
+            sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
+            sed -i '/^# whisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
+            
+            # Update the image name in the docker-compose.yml to use the locally built image
+            sed -i 's|image: systran/faster-whisper:latest|image: fast-whisper-optimized:latest|g' docker/docker-compose.yml
+            
+            # Build the fast-whisper image
+            build_fast_whisper_image
+        else
+            echo "Invalid choice, exiting."
+            exit 1
+        fi
+    fi
+
     # Build the log streamer service
     build_log_streamer
 
@@ -1242,18 +1137,10 @@ main() {
     # Start the Miniprem system
     start_miniprem
 
-    # Prepare Gemma3:4b inside the vLLM container
-    if [ "$INSTALL_TYPE" = "full" ]; then
-        prepare_vllm_model
-    fi
-
     # Setup Flowise chatflow
     if [ "$INSTALL_TYPE" = "full" ]; then
         setup_flowise_chatflow
     fi
-
-    # Configure whisper service
-    configure_whisper_service
 
     success "$CHECKMARK Installation and configuration complete."
     info "Miniprem is now running. You can access:"
@@ -1297,28 +1184,6 @@ else
     docker pull facemeproduction/renny:0.484-37235
     docker pull facemeproduction/audio2face_with_emotion:local-dev
     docker pull facemeproduction/audio2face_anim_controller:local-dev
-fi
-
-# After determining INSTALL_TYPE and before pulling images or starting services, add:
-if [ "$INSTALL_TYPE" = "full" ]; then
-    echo "\nChoose your speech-to-text backend (only one will be enabled):"
-    echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
-    echo "2) FastWhisper (GPU-optimized, systran/faster-whisper)"
-    read -p "Enter choice [1-2]: " stt_choice
-    if [[ "$stt_choice" == "1" ]]; then
-        info "Enabling Whisper backend in docker-compose.yml..."
-        # Uncomment whisper, comment fastwhisper
-        sed -i '/^# whisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
-        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
-    elif [[ "$stt_choice" == "2" ]]; then
-        info "Enabling FastWhisper backend in docker-compose.yml..."
-        # Uncomment fastwhisper, comment whisper
-        sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
-        sed -i '/^# whisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
-    else
-        echo "Invalid choice, exiting."
-        exit 1
-    fi
 fi
 
 # Use $COMPOSE_FILES in all docker compose up/down commands

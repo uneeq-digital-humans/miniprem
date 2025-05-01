@@ -65,7 +65,7 @@
 
 2. モデルを再プル：
    ```bash
-   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model gemma-3-4b
+   facebook/opt-125mgemma-3-4b
    ```
 
 3. GPUメモリが十分であることを確認：

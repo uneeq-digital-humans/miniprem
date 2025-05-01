@@ -65,7 +65,7 @@ Dieser Leitfaden enthält Lösungen für häufige Probleme, die beim Betrieb der
 
 2. Ziehen Sie das Modell erneut:
    ```bash
-   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model gemma-3-4b
+   docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model facebook/opt-125m
    ```
 
 3. Prüfen Sie, ob genügend GPU-Speicher vorhanden ist:
