@@ -17,7 +17,7 @@ services:
       - SILENCE_THRESHOLD=0.01
       - SILENCE_DURATION=1.0
       # Whisper model configuration
-      - MODEL_SIZE=small.en
+      - MODEL_SIZE=tiny.en
       - COMPUTE_TYPE=int8_float16
       - LANGUAGE=en
     devices:

@@ -13,3 +13,7 @@ keyboard==0.13.5
 pyperclip==1.8.2
 torchaudio==2.1.0
 pyaudio==0.2.14
+fastapi>=0.95.0
+uvicorn>=0.22.0
+python-multipart>=0.0.6
+soundfile>=0.12.1
