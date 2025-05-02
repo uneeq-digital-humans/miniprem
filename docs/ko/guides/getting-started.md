@@ -12,8 +12,8 @@
   - 50GB 이상의 디스크 여유 공간
 
 - 소프트웨어 요구 사항**:
-  - 우분투 20.04 LTS 이상 버전
-  - NVIDIA 드라이버(최소 버전 470.xx)
+  - 우분투 24.04 LTS 이상 버전
+  - NVIDIA 드라이버(최소 버전 550.xx)
   - 도커 및 도커 컴포즈
   - NVIDIA 컨테이너 툴킷
 
@@ -39,6 +39,8 @@ cd miniprem-2025
 
 설치하는 동안 다음 정보가 필요합니다:
 
+Here's the complete Korean table with all the entries:
+
 | 구성 | 설명 | 예제 |
 |-----------------------|---------------------------------------------|----------------------------------------------|
 | UneeQ 플랫폼 주소 | UneeQ 시그널링 서비스 주소 | api.uneeq.io |
@@ -46,7 +48,10 @@ cd miniprem-2025
 | 테넌트 ID | UneeQ 테넌트 식별자 | your_tenant_id_here |
 | Azure 지역 | 음성 서비스용 Azure 지역 | your_azure_region |
 | Azure 음성 키 | Azure 음성 서비스 API 키 | your_azure_speech_key_here |
-| 렌니 이미지 | 렌니 디지털 휴먼용 도커 이미지 | facemeproduction/renny:최신 |
+| 렌니 이미지 | 렌니 디지털 휴먼용 도커 이미지 | facemeproduction/renny:latest |
+| RIME API 키 | RIME 텍스트 음성 변환용 도커 이미지 | your_rime_api_key |
+| Huggingface 토큰 | Huggingface 접근용 토큰 | your_huggingface_token |
+| UneeQ Docker Hub 토큰 | UneeQ 이미지 저장소 접근용 토큰 | your_personal_access_token |
 
 ### 4. 설치 확인
 

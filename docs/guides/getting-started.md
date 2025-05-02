@@ -9,11 +9,11 @@ Before you begin, ensure you have the following:
 - **Hardware Requirements**:
   - NVIDIA GPU with at least 8GB VRAM (16GB+ recommended)
   - 16GB+ RAM
-  - 50GB+ free disk space
+  - 128GB+ free disk space
 
 - **Software Requirements**:
-  - Ubuntu 20.04 LTS or newer
-  - NVIDIA drivers (minimum version 470.xx)
+  - Ubuntu 24.04 LTS or newer
+  - NVIDIA drivers (minimum version 550.xx)
   - Docker and Docker Compose
   - NVIDIA Container Toolkit
 
@@ -47,6 +47,9 @@ You'll need the following information during installation:
 | Azure Region          | Azure region for speech services            | your_azure_region                            |
 | Azure Speech Key      | Azure speech service API key                | your_azure_speech_key_here                   |
 | Renny Image           | Docker image for Renny digital human        | facemeproduction/renny:latest                |
+| RIME API Key          | Docker image for RIME text-to-speech        | your_rime_api_key                            |
+| Huggingface Token     | Token for access to Huggingface             | your_huggingface_token                       |
+| UneeQ Docker Hub Token | Token for access to UneeQ's image repo     | your_personal_access_token                   |
 
 ### 4. Verify Installation
 

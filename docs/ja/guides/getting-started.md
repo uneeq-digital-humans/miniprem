@@ -12,8 +12,8 @@
   - 50GB以上の空きディスク容量
 
 - **ソフトウェア要件**:
-  - Ubuntu 20.04 LTS以降
-  - NVIDIAドライバー（バージョン470.xx以降）
+  - Ubuntu 24.04 LTS以降
+  - NVIDIAドライバー（バージョン550.xx以降）
   - DockerとDocker Compose
   - NVIDIAコンテナツールキット
 
@@ -38,14 +38,17 @@ cd miniprem-2025
 
 インストール時に、以下の情報が必要になります:
 
-| 設定                  | 説明                                          | 例                                           |
+| 設定 | 説明 | 例 |
 |-----------------------|------------------------------------------------|------------------------------------------------|
-| UneeQプラットフォームアドレス | UneeQシグナリングサービスのアドレス              | api.uneeq.io                                  |
-| UneeQプラットフォームAPIキー | UneeQプラットフォームのAPIキー                  | your_uneeq_api_key_here                       |
-| テナントID            | UneeQテナント識別子                              | your_tenant_id_here                           |
-| Azureリージョン       | スピーチサービス用のAzureリージョン              | your_azure_region                             |
-| Azureスピーチキー     | AzureスピーチサービスAPIキー                      | your_azure_speech_key_here                    |
-| Rennyイメージ         | RennyデジタルヒューマンのDockerイメージ          | facemeproduction/renny:latest                 |
+| UneeQプラットフォームアドレス | UneeQシグナリングサービスのアドレス | api.uneeq.io |
+| UneeQプラットフォームAPIキー | UneeQプラットフォームのAPIキー | your_uneeq_api_key_here |
+| テナントID | UneeQテナント識別子 | your_tenant_id_here |
+| Azureリージョン | スピーチサービス用のAzureリージョン | your_azure_region |
+| Azureスピーチキー | AzureスピーチサービスAPIキー | your_azure_speech_key_here |
+| Rennyイメージ | RennyデジタルヒューマンのDockerイメージ | facemeproduction/renny:latest |
+| RIME APIキー | RIMEテキスト読み上げ用のDockerイメージ | your_rime_api_key |
+| Huggingfaceトークン | Huggingfaceアクセス用のトークン | your_huggingface_token |
+| UneeQ Docker Hubトークン | UneeQのイメージリポジトリアクセス用のトークン | your_personal_access_token |
 
 ### 4. インストールを検証する
 
