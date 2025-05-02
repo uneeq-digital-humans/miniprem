@@ -176,6 +176,19 @@
         .hidden {
             display: none;
         }
+        
+        .debug-info {
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 0.8em;
+            color: #888;
+            white-space: pre-wrap;
+            max-height: 100px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 <body>
@@ -207,6 +220,8 @@
             <li>Verify your browser supports WebSockets</li>
         </ul>
     </div>
+    
+    <div class="debug-info" id="debugInfo"></div>
 
     <script>
         const micButton = document.getElementById('micButton');
@@ -215,18 +230,37 @@
         const status = document.getElementById('status');
         const transcript = document.getElementById('transcript');
         const connectionInfo = document.getElementById('connectionInfo');
-        let mediaRecorder;
-        let audioChunks = [];
+        const debugInfo = document.getElementById('debugInfo');
+        
+        let audioContext;
+        let audioStream;
+        let audioWorkletNode;
         let socket;
         let isRecording = false;
         let reconnectAttempts = 0;
         let reconnectTimer = null;
+        let pingInterval = null;
+        
+        // Debug function
+        function debug(message) {
+            const timestamp = new Date().toISOString().substring(11, 23);
+            debugInfo.innerHTML = `[${timestamp}] ${message}\n` + debugInfo.innerHTML;
+            if (debugInfo.innerHTML.length > 5000) {
+                debugInfo.innerHTML = debugInfo.innerHTML.substring(0, 5000) + '...';
+            }
+            console.log(`[${timestamp}] ${message}`);
+        }
 
         // Connect to WebSocket
         function connectWebSocket() {
             if (reconnectTimer) {
                 clearTimeout(reconnectTimer);
                 reconnectTimer = null;
+            }
+            
+            if (pingInterval) {
+                clearInterval(pingInterval);
+                pingInterval = null;
             }
 
             // Get the current hostname dynamically
@@ -250,34 +284,51 @@
                     connectionInfo.textContent = `Connected to ${wsUrl}`;
                     reconnectAttempts = 0;
                     micButton.classList.remove('disabled');
+                    debug("WebSocket connection established");
+                    
+                    // Set up ping interval to keep connection alive
+                    pingInterval = setInterval(() => {
+                        if (socket && socket.readyState === WebSocket.OPEN) {
+                            socket.send(JSON.stringify({ type: 'ping' }));
+                        }
+                    }, 30000); // Send ping every 30 seconds
                 };
 
                 socket.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
                         if (data.type === 'transcription') {
+                            debug(`Received transcription: ${data.text}`);
                             transcript.textContent += data.text + ' ';
+                        } else if (data.type === 'pong') {
+                            debug("Received pong from server");
                         }
                     } catch (e) {
-                        console.error('Error parsing message:', e);
+                        debug(`Error parsing message: ${e.message}`);
                     }
                 };
 
                 socket.onclose = (event) => {
                     if (event.wasClean) {
                         status.textContent = `Connection closed cleanly, code=${event.code}`;
+                        debug(`WebSocket connection closed cleanly: ${event.code}`);
                     } else {
                         status.textContent = 'Connection lost';
+                        debug("WebSocket connection lost");
                     }
                     status.className = 'status error';
                     connectionInfo.textContent = `Connection closed. Reconnect attempt ${reconnectAttempts + 1}`;
                     micButton.classList.add('disabled');
                     
                     // Stop recording if we were recording
-                    if (isRecording && mediaRecorder) {
-                        mediaRecorder.stop();
-                        micButton.classList.remove('recording');
-                        isRecording = false;
+                    if (isRecording) {
+                        stopRecording();
+                    }
+                    
+                    // Clear ping interval
+                    if (pingInterval) {
+                        clearInterval(pingInterval);
+                        pingInterval = null;
                     }
                     
                     // Attempt to reconnect with exponential backoff
@@ -290,71 +341,108 @@
                     status.textContent = 'WebSocket error';
                     status.className = 'status error';
                     connectionInfo.textContent = 'Check server logs for details';
-                    console.error('WebSocket error:', error);
+                    debug("WebSocket error");
                 };
             } catch (error) {
                 status.textContent = 'Failed to connect to server';
                 status.className = 'status error';
                 connectionInfo.textContent = error.message;
                 micButton.classList.add('disabled');
+                debug(`Connection error: ${error.message}`);
             }
         }
 
         // Initialize WebSocket connection
         connectWebSocket();
 
-        // Request microphone access
-        async function setupMicrophone() {
+        // Helper function to convert ArrayBuffer to base64
+        function arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return window.btoa(binary);
+        }
+
+        // Initialize audio processing with modern AudioWorklet API
+        async function setupAudio() {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorder = new MediaRecorder(stream);
+                // Create audio context
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({
+                    sampleRate: 16000  // Set sample rate to match Whisper model
+                });
                 
-                mediaRecorder.ondataavailable = (event) => {
-                    if (event.data.size > 0) {
-                        audioChunks.push(event.data);
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
-                        const reader = new FileReader();
-                        reader.onload = () => {
-                            const base64Audio = reader.result.split(',')[1];
-                            if (socket && socket.readyState === WebSocket.OPEN) {
-                                socket.send(JSON.stringify({
-                                    type: 'audio',
-                                    data: base64Audio
-                                }));
-                            } else {
-                                console.warn('Socket not open, cannot send audio data');
-                                if (isRecording) {
-                                    status.textContent = 'Connection lost while recording';
-                                    status.className = 'status warning';
-                                    stopRecording();
-                                }
-                            }
-                        };
-                        reader.readAsDataURL(audioBlob);
+                // Load audio processor worklet
+                await audioContext.audioWorklet.addModule('audioProcessor.js');
+                
+                // Get microphone stream
+                audioStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        channelCount: 1,
+                        sampleRate: 16000,
+                        autoGainControl: true,
+                        noiseSuppression: true,
+                        echoCancellation: true,
+                    } 
+                });
+                
+                // Create audio source from microphone
+                const source = audioContext.createMediaStreamSource(audioStream);
+                
+                // Create audio worklet node
+                audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+                
+                // Listen for messages from the audio processor
+                audioWorkletNode.port.onmessage = (event) => {
+                    if (isRecording && socket && socket.readyState === WebSocket.OPEN) {
+                        const { audioData } = event.data;
+                        
+                        // Convert to base64
+                        const base64Audio = arrayBufferToBase64(audioData.buffer);
+                        
+                        // Send to server
+                        socket.send(JSON.stringify({
+                            type: 'audio',
+                            data: base64Audio
+                        }));
                     }
                 };
-
-                mediaRecorder.onstop = () => {
-                    audioChunks = [];
-                };
-
+                
+                // Connect the audio graph
+                source.connect(audioWorkletNode);
+                audioWorkletNode.connect(audioContext.destination);
+                
                 status.textContent = 'Microphone ready';
                 status.className = 'status success';
+                debug("Audio system initialized");
                 return true;
             } catch (error) {
                 status.textContent = 'Error accessing microphone: ' + error.message;
                 status.className = 'status error';
+                debug(`Microphone error: ${error.message}`);
                 return false;
             }
         }
 
         function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                mediaRecorder.stop();
+            if (isRecording) {
+                if (audioStream) {
+                    // Stop all audio tracks
+                    audioStream.getTracks().forEach(track => track.stop());
+                    audioStream = null;
+                }
+                
+                if (audioContext) {
+                    audioContext.close();
+                    audioContext = null;
+                }
+                
                 micButton.classList.remove('recording');
                 status.textContent = 'Stopped recording';
                 status.className = 'status';
                 isRecording = false;
+                debug("Recording stopped");
             }
         }
 
@@ -363,6 +451,7 @@
             if (socket?.readyState !== WebSocket.OPEN) {
                 status.textContent = 'Cannot record: Not connected to server';
                 status.className = 'status error';
+                debug("Recording attempted but not connected to server");
                 return;
             }
             
@@ -370,17 +459,15 @@
                 return;
             }
             
-            if (!mediaRecorder) {
-                const success = await setupMicrophone();
-                if (!success) return;
-            }
-
             if (!isRecording) {
-                mediaRecorder.start(1000); // Collect data every second
+                const success = await setupAudio();
+                if (!success) return;
+                
                 micButton.classList.add('recording');
                 status.textContent = 'Recording...';
                 status.className = 'status';
                 isRecording = true;
+                debug("Recording started");
             } else {
                 stopRecording();
             }
@@ -389,10 +476,12 @@
         // Clear transcript
         clearBtn.addEventListener('click', () => {
             transcript.textContent = '';
+            debug("Transcript cleared");
         });
         
         // Manual reconnect
         reconnectBtn.addEventListener('click', () => {
+            debug("Manual reconnection requested");
             if (socket && socket.readyState !== WebSocket.CLOSED) {
                 socket.close();
             }
@@ -406,9 +495,14 @@
                 if (socket?.readyState !== WebSocket.OPEN) {
                     status.textContent = 'Connection lost while away';
                     status.className = 'status warning';
+                    debug("Page became visible, reconnecting");
                     connectWebSocket();
                 }
             }
+        });
+        
+        window.addEventListener('load', () => {
+            debug("Page loaded");
         });
     </script>
 </body>
