@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xclip \
     libcudnn9-cuda-12 \
     libcudnn9-dev-cuda-12 \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
@@ -53,8 +54,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     x11-apps \
     xclip \
     libcudnn9-cuda-12 \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Create symlink from python3 to python if it doesn't exist
+RUN if [ ! -e /usr/bin/python ]; then ln -s /usr/bin/python3 /usr/bin/python; fi
 # Copy Python packages from builder
 COPY --from=builder /usr/local/lib/python3.10/dist-packages /usr/local/lib/python3.10/dist-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
@@ -78,7 +82,7 @@ ENV CUDA_LAUNCH_BLOCKING=1
 
 # These are defaults that can be overridden by docker-compose
 ENV COMPUTE_TYPE=float16
-ENV MODEL_SIZE=small-v3
+ENV MODEL_SIZE=tiny.en
 ENV NUM_WORKERS=1
 ENV CPU_THREADS=4
 
