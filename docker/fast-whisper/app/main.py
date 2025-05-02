@@ -17,15 +17,36 @@ app = FastAPI()
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Initialize the model
-model = WhisperModel(
-    "large-v3",
-    device="cuda",
-    compute_type="float16",
-    cpu_threads=4,           # Use CPU threads for non-GPU operations
-    num_workers=1,           # Limit worker threads
-    download_root="/app/models"  # Cache models in volume
-)
+# Get model configuration from environment variables
+MODEL_SIZE = os.environ.get("MODEL_SIZE", "tiny.en")
+COMPUTE_TYPE = os.environ.get("COMPUTE_TYPE", "float16")
+CPU_THREADS = int(os.environ.get("CPU_THREADS", "4"))
+NUM_WORKERS = int(os.environ.get("NUM_WORKERS", "1"))
+
+# Try to initialize the model with CUDA, fall back to CPU if it fails
+try:
+    print(f"Initializing Whisper model: {MODEL_SIZE} with CUDA and compute type {COMPUTE_TYPE}")
+    model = WhisperModel(
+        MODEL_SIZE,
+        device="cuda", 
+        compute_type=COMPUTE_TYPE,
+        cpu_threads=CPU_THREADS,
+        num_workers=NUM_WORKERS,
+        download_root="/app/models"
+    )
+    print("Successfully loaded model with CUDA")
+except Exception as e:
+    print(f"Failed to initialize with CUDA: {str(e)}")
+    print("Falling back to CPU model")
+    model = WhisperModel(
+        MODEL_SIZE,
+        device="cpu",
+        compute_type="int8",
+        cpu_threads=CPU_THREADS,
+        num_workers=NUM_WORKERS,
+        download_root="/app/models"
+    )
+    print("Successfully loaded model with CPU")
 
 @app.get("/")
 async def read_root():
