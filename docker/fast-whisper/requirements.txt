@@ -19,6 +19,3 @@ python-multipart>=0.0.6
 soundfile>=0.12.1
 websockets>=11.0.3
 wsproto>=1.2.0
-
-websockets>=11.0.3
-wsproto>=1.2.0
