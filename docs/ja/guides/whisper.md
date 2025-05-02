@@ -1,152 +1,118 @@
-# Whisper統合
+# Fast Whisper 統合
 
-MiniPremは、OpenAIのWhisper音声認識モデルを統合して、高精度の文字起こし機能を提供します。このガイドでは、MiniPremプラットフォームでのWhisperサービスの使用方法と設定方法について説明します。
+MiniPremは、OpenAIのWhisperスピーチ認識モデルの最適化された実装であるfaster-whisperを統合して、正確なリアルタイム文字起こし機能を提供します。このガイドでは、MiniPremプラットフォーム内でFast Whisperサービスを使用および設定する方法について説明します。
 
 ## 概要
 
-Whisperは、68万時間の多言語およびマルチタスクの教師付きデータで訓練された自動音声認識（ASR）システムです。
+Fast Whisperは、元のWhisper実装よりも優れたパフォーマンスで自動音声認識（ASR）を提供します：
 
+- WebSocketを介したリアルタイム音声文字起こし
+- ファイルベースの文字起こしのためのREST API
 - 多言語音声認識
-- 音声アクティビティ検出
-- 言語識別
-- 句読点とフォーマット
+- より高速な処理のためのGPUアクセラレーション
+- ダークモードのテストインターフェース
 
-MiniPremプラットフォームでは、Whisperはコンテナ化されたAPIサービスとして展開され、オーディオファイルまたはストリームを文字起こしできます。
+## Webインターフェース
 
-## APIの使用
+Fast Whisperには、次のURLでアクセス可能なブラウザベースのテストインターフェースが含まれています：
 
-### エンドポイント
+```
+http://localhost:9000/static/index.html
+```
 
-Whisper APIは以下で利用できます。
+このインターフェースでは以下が可能です：
+- リアルタイムでマイク入力をテスト
+- 話しながら文字起こし結果を確認
+- 文字起こし履歴のクリア
+- 接続状態の監視
+
+## API使用法
+
+### ベースURL
+
+Fast Whisper APIは次の場所で利用可能です：
 
 ```
 http://localhost:9000
 ```
 
-### オーディオファイルの文字起こし
+### WebSocketリアルタイム文字起こし
 
-POSTリクエストを送信することで、オーディオファイルを文字起こしできます。
+リアルタイム音声認識には、WebSocketエンドポイントに接続します：
 
-```bash
-curl -X 'POST' \
-  'http://localhost:9000/asr' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'audio_file=@your-audio-file.mp3;type=audio/mpeg' \
-  -F 'encode=true'
+```
+ws://localhost:9000/ws
 ```
 
-### APIパラメータ
+音声データをbase64エンコードされたチャンクとして次の形式で送信します：
+```json
+{
+  \"type\": \"audio\",
+  \"data\": \"<base64エンコードされた音声データ>\"
+}
+```
 
-| パラメータ | 説明 | デフォルト |
-|-----------|-------------|---------|
-| `encode` | レスポンスをbase64エンコードするかどうか | `false` |
-| `task` | 実行するタスク（`transcribe`または`translate`） | `transcribe` |
-| `language` | 言語コード（例：`en`、`fr`） | 自動検出 |
-| `initial_prompt` | 文字起こしをガイドするためのオプションのプロンプト | なし |
-| `vad_filter` | 音声アクティビティ検出フィルター | `false` |
-| `word_timestamps` | 各単語のタイムスタンプを含めるかどうか | `false` |
+文字起こしは利用可能になると受信されます：
+```json
+{
+  \"type\": \"transcription\",
+  \"text\": \"文字起こしされたテキストがここに表示されます。\",
+  \"language\": \"ja\"
+}
+```
+
+### ファイル文字起こしAPI
+
+POSTリクエストを送信して音声ファイルを文字起こしできます：
+
+```bash
+curl -X 'POST' \\
+  'http://localhost:9000/transcribe' \\
+  -H 'accept: application/json' \\
+  -H 'Content-Type: multipart/form-data' \\
+  -F 'file=@あなたの音声ファイル.wav' \\
+  -F 'language=ja'
+```
 
 ## 設定
 
-Whisperサービスは、`docker-compose.yml`ファイルで以下のオプションを使用して設定されます。
+Fast Whisperサービスは`docker-compose.yml`ファイルで次のオプションで構成されています：
 
 ```yaml
-whisper:
-  image: onerahmet/openai-whisper-asr-webservice:latest
-  container_name: whisper
-  ports:
-    - "9000:9000"
-  volumes:
-    - whisper_data:/root/.cache/whisper
+fastwhisper:
+  build:
+    context: ./fast-whisper
+    dockerfile: Dockerfile
+  container_name: fastwhisper
   runtime: nvidia
   environment:
-    - ASR_MODEL=medium
-    - ASR_ENGINE=openai_whisper
     - NVIDIA_VISIBLE_DEVICES=all
-    - INTERVAL=5
+    - MODEL_SIZE=tiny.en
+    - COMPUTE_TYPE=float16
+    - NUM_WORKERS=1
+    - CPU_THREADS=4
+  ports:
+    - \"9000:9000\"
+  volumes:
+    - ./fast-whisper/app:/app/app
+    - ./fast-whisper/models:/app/models
 ```
-
-### 環境変数
-
-| 変数 | 説明 | デフォルト |
-|----------|-------------|---------|
-| `ASR_MODEL` | Whisperモデルのサイズ（tiny、base、small、medium、large） | `small` |
-| `ASR_ENGINE` | 音声認識エンジン | `openai_whisper` |
-| `INTERVAL` | ログファイルチェック間隔（秒） | `5` |
-
-## モデルのサイズの変更
-
-デフォルトの設定では、`medium`モデルが使用されます。このモデルは、精度とリソース使用量のバランスが取れています。`ASR_MODEL`環境変数を更新することで、モデルのサイズを変更できます。
-
-```yaml
-environment:
-  - ASR_MODEL=large
-```
-
-利用可能なモデルサイズ：
-- `tiny`：最速、低精度（約1GB VRAM）
-- `base`：高速で妥当な精度（約1GB VRAM）
-- `small`：バランスの取れた速度/精度（約2GB VRAM）
-- `medium`：良好な精度（約5GB VRAM）
-- `large`：最高の精度（約10GB VRAM）
-
-## パフォーマンスの監視
-
-Whisperのパフォーマンスは、ログビューアーと一般的なシステムメトリクスを通じて監視できます。音声を文字起こしする際には、GPUリソースを大量に使用する場合があるため、以下のコマンドでGPU使用量を監視できます。
-
-```bash
-nvidia-smi
-```
-
-## Flowiseとの統合
-
-FlowiseワークフローにWhisperを統合するには、HTTPリクエストノードを使用してWhisper APIを呼び出すことができます。これにより、会話フローの一部としてオーディオ入力を処理できます。
 
 ## トラブルシューティング
 
-### サービスが開始しない
+### WebSocket接続の問題
 
-Whisperサービスが開始しない場合：
+インターフェースでWebSocket接続エラーが表示される場合：
 
-1. 利用可能なGPUメモリが十分にあることを確認する
-2. NVIDIAランタイムがDockerに対して適切に構成されていることを確認する
-3. `ASR_MODEL`環境変数を変更して、より小さいモデルを使用してみる
+1. Fast Whisperサービスが実行されているか確認：`docker ps | grep fastwhisper`
+2. サービスを再起動：`docker restart fastwhisper`
+3. エラーのログを確認：`docker logs fastwhisper`
+4. ブラウザがWebSocketsをサポートしているか確認
 
-### 文字起こしの品質が悪い
+### サービスが起動しない
 
-文字起こしの品質が悪い場合：
+Fast Whisperサービスが起動しない場合：
 
-1. より大きなモデル（例：`ASR_MODEL=large`）を使用してみる
-2. オーディオ入力の品質が良く、背景ノイズが少ないことを確認する
-3. `initial_prompt`パラメータを使用して、ドメイン固有の専門用語のコンテキストを提供する
-
-### ログの表示
-
-Whisperサービスのログを表示するには：
-
-```bash
-docker logs whisper
-```
-
-または、ドキュメンテーション portal のログビューアーを使用する。
-
-## 例の統合
-
-以下は、bashスクリプトを使用してWhisperを統合する例です。
-
-```bash
-#!/bin/bash
-
-# オーディオを録音する（ffmpegが必要）
-ffmpeg -f alsa -i default -t 10 -acodec libmp3lame -ab 192k -ac 1 recording.mp3
-
-# Whisper APIで文字起こしする
-curl -X 'POST' \
-  'http://localhost:9000/asr' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'audio_file=@recording.mp3;type=audio/mpeg' \
-  -F 'task=transcribe' \
-  -F 'language=en'
-```
+1. 十分なGPUメモリがあるか確認
+2. NVIDIAランタイムがDockerに適切に設定されているか確認
+3. `MODEL_SIZE`環境変数を変更して小さいモデルを試す

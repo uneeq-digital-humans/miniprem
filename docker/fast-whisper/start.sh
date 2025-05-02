@@ -17,6 +17,6 @@ if [ ! -d "/app/models/${MODEL_SIZE}" ]; then
 fi
 
 echo "Starting FastAPI server..."
-# Start the FastAPI server
+# Start the FastAPI server with WebSocket support
 cd /app
-python3 -m uvicorn app.main:app --host 0.0.0.0 --port 9000
+python3 -m uvicorn app.main:app --host 0.0.0.0 --port 9000 --ws websockets
