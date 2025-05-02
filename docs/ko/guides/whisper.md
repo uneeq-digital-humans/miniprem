@@ -1,152 +1,118 @@
-# 위스퍼 통합
+# Fast Whisper 통합
 
-MiniPrem은 정확한 트랜스크립션 기능을 위해 OpenAI의 Whisper 음성 인식 모델을 통합합니다. 이 가이드는 MiniPrem 플랫폼 내에서 Whisper 서비스를 사용하고 구성하는 방법을 설명합니다.
+MiniPrem은 OpenAI의 Whisper 음성 인식 모델의 최적화된 구현인 faster-whisper를 통합하여 정확한 실시간 전사 기능을 제공합니다. 이 가이드는 MiniPrem 플랫폼 내에서 Fast Whisper 서비스를 사용하고 구성하는 방법을 설명합니다.
 
 ## 개요
 
-Whisper는 68만 시간의 다국어 및 멀티태스크 감독 데이터로 학습된 자동 음성 인식(ASR) 시스템입니다. 다음을 제공합니다:
+Fast Whisper는 원래 Whisper 구현보다 향상된 성능으로 자동 음성 인식(ASR)을 제공합니다:
 
+- WebSocket을 통한 실시간 음성 전사
+- 파일 기반 전사를 위한 REST API
 - 다국어 음성 인식
-- 음성 활동 감지
-- 언어 식별
-- 구두점 및 서식 지정
+- 더 빠른 처리를 위한 GPU 가속
+- 다크 모드 테스트 인터페이스
 
-미니프렘 플랫폼에서 위스퍼는 오디오 파일이나 스트림을 트랜스크립션할 수 있는 컨테이너화된 API 서비스로 배포됩니다.
+## 웹 인터페이스
 
-## API 사용
+Fast Whisper에는 다음 URL에서 접근 가능한 브라우저 기반 테스트 인터페이스가 포함되어 있습니다:
 
-### 엔드포인트
+```
+http://localhost:9000/static/index.html
+```
 
-위스퍼 API는 다음에서 사용할 수 있습니다:
+이 인터페이스에서는 다음이 가능합니다:
+- 실시간으로 마이크 입력 테스트
+- 말하는 동안 전사 결과 확인
+- 전사 기록 지우기
+- 연결 상태 모니터링
+
+## API 사용법
+
+### 기본 URL
+
+Fast Whisper API는 다음에서 사용할 수 있습니다:
 
 ```
 http://localhost:9000
 ```
 
-### 오디오 파일 전사
+### WebSocket 실시간 전사
 
-POST 요청을 보내 오디오 파일을 트랜스크립션할 수 있습니다:
+실시간 음성 인식을 위해 WebSocket 엔드포인트에 연결합니다:
 
-```bash
-curl -X 'POST' \
-  'http://localhost:9000/asr' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'audio_file=@your-audio-file.mp3;type=audio/mpeg' \
-  -F 'encode=true'
+```
+ws://localhost:9000/ws
 ```
 
-API 매개변수 ###
+오디오 데이터를 다음 형식의 base64 인코딩 청크로 보냅니다:
+```json
+{
+  \"type\": \"audio\",
+  \"data\": \"<base64로 인코딩된 오디오 데이터>\"
+}
+```
 
-| 매개변수 | 설명 | 기본값 |
-|-----------|-------------|---------|
-| `encode` | 응답을 base64 인코딩할지 여부 | `false` |
-| `task` | 수행할 작업(`번역` 또는 `번역`) | `번역` |
-| `언어` | 언어 코드(예: `en`, `fr`) | 자동 감지 |
-| `initial_prompt` | 전사를 안내하는 선택적 프롬프트 | 없음 |
-| `vad_filter` | 음성 활동 감지 필터 | `false` |
-| `word_timestamps`` 각 단어에 타임스탬프 포함``false``
+전사는 사용 가능해지면 수신됩니다:
+```json
+{
+  \"type\": \"transcription\",
+  \"text\": \"전사된 텍스트가 여기에 나타납니다.\",
+  \"language\": \"ko\"
+}
+```
+
+### 파일 전사 API
+
+POST 요청을 보내 오디오 파일을 전사할 수 있습니다:
+
+```bash
+curl -X 'POST' \\
+  'http://localhost:9000/transcribe' \\
+  -H 'accept: application/json' \\
+  -H 'Content-Type: multipart/form-data' \\
+  -F 'file=@오디오파일.wav' \\
+  -F 'language=ko'
+```
 
 ## 구성
 
-위스퍼 서비스는 `docker-compose.yml` 파일에서 다음 옵션으로 구성됩니다:
+Fast Whisper 서비스는 `docker-compose.yml` 파일에서 다음 옵션으로 구성됩니다:
 
 ```yaml
-whisper:
-  image: onerahmet/openai-whisper-asr-webservice:latest
-  container_name: whisper
-  ports:
-    - "9000:9000"
-  volumes:
-    - whisper_data:/root/.cache/whisper
+fastwhisper:
+  build:
+    context: ./fast-whisper
+    dockerfile: Dockerfile
+  container_name: fastwhisper
   runtime: nvidia
   environment:
-    - ASR_MODEL=medium
-    - ASR_ENGINE=openai_whisper
     - NVIDIA_VISIBLE_DEVICES=all
-    - INTERVAL=5
+    - MODEL_SIZE=tiny.en
+    - COMPUTE_TYPE=float16
+    - NUM_WORKERS=1
+    - CPU_THREADS=4
+  ports:
+    - \"9000:9000\"
+  volumes:
+    - ./fast-whisper/app:/app/app
+    - ./fast-whisper/models:/app/models
 ```
-
-### 환경 변수
-
-| 변수 | 설명 | 기본값 |
-|----------|-------------|---------|
-| `ASR_MODEL` | 귓속말 모델 크기(작은, 기본, 작은, 중간, 큰) | `작은` |
-| `ASR_ENGINE` | 음성 인식 엔진 | `openai_whisper` |
-| '간격' | 로그 파일 확인 간격(초) | '5' |
-
-## 모델 크기 변경
-
-기본 구성은 정확도와 리소스 사용량 간의 균형이 잘 잡힌 '중간' 모델을 사용합니다. ASR_MODEL` 환경 변수를 업데이트하여 모델 크기를 변경할 수 있습니다:
-
-```yaml
-environment:
-  - ASR_MODEL=large
-```
-
-사용 가능한 모델 크기:
-- '소형': 가장 빠르고 정확도 낮음(~1GB VRAM)
-- 기본`: 빠른 속도와 적당한 정확도(~1GB VRAM)
-- 소형`: 균형 잡힌 속도/정확도(~2GB VRAM)
-- 중간`: 양호한 정확도(~5GB VRAM)
-- 대형`: 최상의 정확도(~10GB VRAM)
-
-## 성능 모니터링
-
-로그 뷰어와 일반 시스템 메트릭을 통해 귓속말 성능을 모니터링할 수 있습니다. 이 서비스는 오디오를 트랜스크립션할 때 상당한 GPU 리소스를 사용할 수 있으므로 GPU 사용량을 모니터링하세요:
-
-```bash
-nvidia-smi
-```
-
-## 플로우이즈와 통합
-
-HTTP 요청 노드를 사용하여 Whisper API를 호출함으로써 Whisper를 플로우이즈 워크플로우와 통합할 수 있습니다. 이를 통해 대화 흐름의 일부로 오디오 입력을 처리할 수 있습니다.
 
 ## 문제 해결
 
+### WebSocket 연결 문제
+
+인터페이스에서 WebSocket 연결 오류가 표시되는 경우:
+
+1. Fast Whisper 서비스가 실행 중인지 확인: `docker ps | grep fastwhisper`
+2. 서비스 재시작: `docker restart fastwhisper`
+3. 오류 로그 확인: `docker logs fastwhisper`
+4. 브라우저가 WebSockets을 지원하는지 확인
+
 ### 서비스가 시작되지 않음
 
-위스퍼 서비스가 시작되지 않는 경우:
+Fast Whisper 서비스가 시작되지 않는 경우:
 
-1. 사용 가능한 GPU 메모리가 충분한지 확인합니다.
-2. NVIDIA 런타임이 Docker에 맞게 올바르게 구성되었는지 확인합니다.
-3. ASR_MODEL` 환경 변수를 변경하여 더 작은 모델을 사용해보십시오.
-
-### 트랜스크립션 품질 불량
-
-전사 품질이 좋지 않은 경우:
-
-1. 더 큰 모델을 사용해 보세요(예: `ASR_MODEL=large`).
-2. 오디오 입력의 품질이 좋고 배경 소음이 최소화되었는지 확인합니다.
-3. 초기_프롬프트` 매개변수를 사용하여 도메인별 용어에 대한 컨텍스트를 제공합니다.
-
-### 로그 보기
-
-Whisper 서비스 로그를 보려면 다음과 같이 하세요:
-
-```bash
-docker logs whisper
-```
-
-또는 문서 포털의 로그 뷰어를 사용하세요.
-
-## 통합 예시
-
-다음은 Whisper를 bash 스크립트와 연동하는 방법의 예시입니다:
-
-```bash
-#!/bin/bash
-
-# Record audio (requires ffmpeg)
-ffmpeg -f alsa -i default -t 10 -acodec libmp3lame -ab 192k -ac 1 recording.mp3
-
-# Transcribe with Whisper API
-curl -X 'POST' \
-  'http://localhost:9000/asr' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'audio_file=@recording.mp3;type=audio/mpeg' \
-  -F 'task=transcribe' \
-  -F 'language=en'
-```
+1. 충분한 GPU 메모리가 있는지 확인
+2. NVIDIA 런타임이 Docker에 올바르게 구성되어 있는지 확인
+3. `MODEL_SIZE` 환경 변수를 변경하여 더 작은 모델 시도

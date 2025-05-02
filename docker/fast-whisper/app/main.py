@@ -14,8 +14,8 @@ import io
 
 app = FastAPI()
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Mount static files with absolute path
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
 
 # Get model configuration from environment variables
 MODEL_SIZE = os.environ.get("MODEL_SIZE", "tiny.en")

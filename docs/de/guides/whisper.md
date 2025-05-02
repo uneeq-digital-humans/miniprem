@@ -1,152 +1,118 @@
-# Whisper Integration
+# Fast Whisper Integration
 
-MiniPrem integriert das Whisper-Spracherkennungsmodell von OpenAI für präzise Transkriptionsfunktionen. Dieser Leitfaden erklärt, wie Sie den Whisper-Dienst innerhalb der MiniPrem-Plattform nutzen und konfigurieren.
+MiniPrem integriert faster-whisper, eine optimierte Implementierung von OpenAIs Whisper-Spracherkennungsmodell für präzise Echtzeit-Transkriptionsfähigkeiten. Dieser Leitfaden erklärt, wie Sie den Fast Whisper-Dienst innerhalb der MiniPrem-Plattform verwenden und konfigurieren können.
 
 ## Überblick
 
-Whisper ist ein automatisches Spracherkennungssystem (ASR), das auf 680.000 Stunden mehrsprachiger und multitasking-überwachter Daten trainiert wurde. Es bietet:
+Fast Whisper bietet automatische Spracherkennung (ASR) mit verbesserter Leistung gegenüber der ursprünglichen Whisper-Implementierung:
 
+- Echtzeit-Sprachtranskription über WebSocket
+- REST-API für dateibasierte Transkription
 - Mehrsprachige Spracherkennung
-- Erkennung von Sprachaktivitäten
-- Identifizierung der Sprache
-- Interpunktion und Formatierung
+- GPU-Beschleunigung für schnellere Verarbeitung
+- Testoberfläche im Dunkelmodus
 
-Auf der MiniPrem-Plattform wird Whisper als containerisierter API-Dienst bereitgestellt, der Audiodateien oder -ströme transkribieren kann.
+## Weboberfläche
+
+Fast Whisper enthält eine browserbasierte Testoberfläche, die unter folgender URL zugänglich ist:
+
+```
+http://localhost:9000/static/index.html
+```
+
+Diese Oberfläche ermöglicht es Ihnen:
+- Mikrofoneingang in Echtzeit zu testen
+- Transkriptionsergebnisse während des Sprechens zu sehen
+- Transkriptionsverlauf zu löschen
+- Verbindungsstatus zu überwachen
 
 ## API-Nutzung
 
-### Endpunkt
+### Basis-URL
 
-Die Whisper-API ist verfügbar unter:
+Die Fast Whisper API ist verfügbar unter:
 
 ```
 http://localhost:9000
 ```
 
-### Audiodatei transkribieren
+### WebSocket-Echtzeit-Transkription
+
+Für die Echtzeit-Spracherkennung stellen Sie eine Verbindung zum WebSocket-Endpunkt her:
+
+```
+ws://localhost:9000/ws
+```
+
+Senden Sie Audiodaten als base64-kodierte Chunks in diesem Format:
+```json
+{
+  \"type\": \"audio\",
+  \"data\": \"<base64-kodierte-Audiodaten>\"
+}
+```
+
+Empfangen Sie Transkriptionen, sobald sie verfügbar sind:
+```json
+{
+  \"type\": \"transcription\",
+  \"text\": \"Der transkribierte Text erscheint hier.\",
+  \"language\": \"de\"
+}
+```
+
+### Datei-Transkriptions-API
 
 Sie können eine Audiodatei transkribieren, indem Sie eine POST-Anfrage senden:
 
 ```bash
-curl -X 'POST' \
-  'http://localhost:9000/asr' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'audio_file=@your-audio-file.mp3;type=audio/mpeg' \
-  -F 'encode=true'
+curl -X 'POST' \\
+  'http://localhost:9000/transcribe' \\
+  -H 'accept: application/json' \\
+  -H 'Content-Type: multipart/form-data' \\
+  -F 'file=@ihre-audiodatei.wav' \\
+  -F 'language=de'
 ```
-
-### API-Parameter
-
-| Parameter | Beschreibung | Standard |
-|-----------|-------------|---------|
-| `encode` | Ob die Antwort base64 kodiert werden soll | `false` |
-| `task` | Auszuführende Aufgabe (`transcribe` oder `translate`) | `transcribe` |
-| `language` | Sprachcode (z.B. `en`, `fr`) | Auto-detect |
-| `initial_prompt` | Optionale Eingabeaufforderung zur Anleitung der Transkription | Keine |
-| `vad_filter` | Filter für Sprachaktivitätserkennung | `false` |
-| `word_timestamps` | Zeitstempel für jedes Wort einbeziehen | `false` |
 
 ## Konfiguration
 
-Der Whisper-Dienst wird in der Datei `docker-compose.yml` mit den folgenden Optionen konfiguriert:
+Der Fast Whisper-Dienst wird in der Datei `docker-compose.yml` mit folgenden Optionen konfiguriert:
 
 ```yaml
-whisper:
-  image: onerahmet/openai-whisper-asr-webservice:latest
-  container_name: whisper
-  ports:
-    - "9000:9000"
-  volumes:
-    - whisper_data:/root/.cache/whisper
+fastwhisper:
+  build:
+    context: ./fast-whisper
+    dockerfile: Dockerfile
+  container_name: fastwhisper
   runtime: nvidia
   environment:
-    - ASR_MODEL=medium
-    - ASR_ENGINE=openai_whisper
     - NVIDIA_VISIBLE_DEVICES=all
-    - INTERVAL=5
+    - MODEL_SIZE=tiny.en
+    - COMPUTE_TYPE=float16
+    - NUM_WORKERS=1
+    - CPU_THREADS=4
+  ports:
+    - \"9000:9000\"
+  volumes:
+    - ./fast-whisper/app:/app/app
+    - ./fast-whisper/models:/app/models
 ```
 
-### Umgebungsvariablen
+## Fehlerbehebung
 
-| Variable | Beschreibung | Standard |
-|----------|-------------|---------|
-| `ASR_MODEL` | Größe des Flüstermodells (tiny, base, small, medium, large) | `small` |
-| `ASR_ENGINE` | Spracherkennungs-Engine | `openai_whisper` |
-| `INTERVAL` | Prüfintervall der Protokolldatei in Sekunden | `5` |
+### WebSocket-Verbindungsprobleme
 
-## Ändern der Modellgröße
+Wenn in der Oberfläche WebSocket-Verbindungsfehler angezeigt werden:
 
-Die Standardkonfiguration verwendet das Modell `medium`, das ein gutes Gleichgewicht zwischen Genauigkeit und Ressourcenverbrauch bietet. Sie können die Modellgröße ändern, indem Sie die Umgebungsvariable `ASR_MODEL` aktualisieren:
-
-```yaml
-environment:
-  - ASR_MODEL=large
-```
-
-Verfügbare Modellgrößen:
-- Winzig": Schnellste, niedrigste Genauigkeit (~1GB VRAM)
-- Basis": Schnell mit angemessener Genauigkeit (~1GB VRAM)
-- Klein": Ausgewogene Geschwindigkeit/Genauigkeit (~2GB VRAM)
-- Mittel": Gute Genauigkeit (~5GB VRAM)
-- `groß`: Beste Genauigkeit (~10GB VRAM)
-
-## Leistungsüberwachung
-
-Die Leistung von Whisper kann über den Log Viewer und allgemeine Systemmetriken überwacht werden. Der Dienst kann bei der Transkription von Audiodaten erhebliche GPU-Ressourcen beanspruchen, daher sollten Sie die GPU-Nutzung mit überwachen:
-
-```bash
-nvidia-smi
-```
-
-## Integration mit Flowise
-
-Sie können Whisper in Flowise-Workflows integrieren, indem Sie den HTTP-Request-Knoten verwenden, um die Whisper-API aufzurufen. Dies ermöglicht Ihnen die Verarbeitung von Audio-Eingaben als Teil Ihrer Konversationsabläufe.
-
-## Fehlersuche
+1. Prüfen Sie, ob der Fast Whisper-Dienst läuft: `docker ps | grep fastwhisper`
+2. Starten Sie den Dienst neu: `docker restart fastwhisper`
+3. Überprüfen Sie die Logs auf Fehler: `docker logs fastwhisper`
+4. Stellen Sie sicher, dass Ihr Browser WebSockets unterstützt
 
 ### Dienst startet nicht
 
-Wenn der Whisper-Dienst nicht startet:
+Wenn der Fast Whisper-Dienst nicht startet:
 
-1. Prüfen Sie, ob Sie genügend GPU-Speicher zur Verfügung haben
-2. Überprüfen Sie, ob die NVIDIA-Laufzeitumgebung richtig für Docker konfiguriert ist.
-3. Versuchen Sie, ein kleineres Modell zu verwenden, indem Sie die Umgebungsvariable "ASR_MODEL" ändern.
-
-### Schlechte Transkriptionsqualität
-
-Wenn die Transkriptionsqualität schlecht ist:
-
-1. Versuchen Sie, ein größeres Modell zu verwenden (z. B. `ASR_MODEL=large`)
-2. Stellen Sie sicher, dass die Audioeingabe eine gute Qualität und minimale Hintergrundgeräusche aufweist.
-3. Verwenden Sie den Parameter `initial_prompt`, um einen Kontext für die domänenspezifische Terminologie zu schaffen.
-
-### Logs anzeigen
-
-So zeigen Sie die Protokolle des Whisper-Dienstes an:
-
-```bash
-docker logs whisper
-```
-
-Oder verwenden Sie den Protokoll-Viewer im Dokumentationsportal.
-
-## Beispiel Integration
-
-Hier ist ein Beispiel für die Integration von Whisper mit einem Bash-Skript:
-
-```bash
-#!/bin/bash
-
-# Record audio (requires ffmpeg)
-ffmpeg -f alsa -i default -t 10 -acodec libmp3lame -ab 192k -ac 1 recording.mp3
-
-# Transcribe with Whisper API
-curl -X 'POST' \
-  'http://localhost:9000/asr' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: multipart/form-data' \
-  -F 'audio_file=@recording.mp3;type=audio/mpeg' \
-  -F 'task=transcribe' \
-  -F 'language=en'
-```
+1. Prüfen Sie, ob genügend GPU-Speicher verfügbar ist
+2. Stellen Sie sicher, dass die NVIDIA-Laufzeit für Docker korrekt konfiguriert ist
+3. Versuchen Sie, ein kleineres Modell zu verwenden, indem Sie die Umgebungsvariable `MODEL_SIZE` ändern
