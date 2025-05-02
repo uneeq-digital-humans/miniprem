@@ -824,6 +824,124 @@ check_environment() {
     fi
 }
 
+# Function to check for duplicate installations of MiniPrem
+check_duplicate_installations() {
+    log_section "Checking for Duplicate Installations"
+    
+    # Create a marker file if it doesn't exist yet
+    local marker_file=".miniprem_installation_marker"
+    if [ ! -f "$marker_file" ]; then
+        touch "$marker_file"
+        info "Created installation marker file: $marker_file"
+    fi
+    
+    # Get the absolute path of the current directory
+    local current_dir=$(pwd)
+    
+    info "Searching for duplicate MiniPrem installations..."
+    
+    # Search for all directories containing "miniprem" (case insensitive) from root
+    # Exclude certain system paths to avoid excessive searching and permission errors
+    local miniprem_dirs=$(sudo find / -type d -iname "*miniprem*" \
+        -not -path "*/\.*" \
+        -not -path "*/proc/*" \
+        -not -path "*/sys/*" \
+        -not -path "*/dev/*" \
+        -not -path "*/run/*" \
+        -not -path "*/tmp/*" \
+        -not -path "*/var/tmp/*" \
+        2>/dev/null | sort)
+    local dir_count=$(echo "$miniprem_dirs" | grep -v "^$" | wc -l)
+    
+    # Search for marker files that could indicate other installations
+    local marker_files=$(sudo find / -type f -name ".miniprem_installation_marker" \
+        -not -path "*/\.*/*" \
+        -not -path "*/proc/*" \
+        -not -path "*/sys/*" \
+        -not -path "*/dev/*" \
+        -not -path "*/run/*" \
+        -not -path "*/tmp/*" \
+        -not -path "*/var/tmp/*" \
+        2>/dev/null | sort)
+    local marker_count=$(echo "$marker_files" | grep -v "^$" | wc -l)
+    
+    # Don't count the current directory as a duplicate
+    if [ "$dir_count" -gt 0 ]; then
+        local real_count=0
+        echo "$miniprem_dirs" | while read dir; do
+            if [ -n "$dir" ] && [ "$dir" != "$current_dir" ] && [ "$(realpath "$dir")" != "$(realpath "$current_dir")" ]; then
+                real_count=$((real_count+1))
+            fi
+        done
+        dir_count=$real_count
+    fi
+    
+    # Don't count the current marker file as a duplicate
+    if [ "$marker_count" -gt 0 ]; then
+        local real_count=0
+        echo "$marker_files" | while read file; do
+            if [ -n "$file" ] && [ "$file" != "$current_dir/$marker_file" ] && [ "$(dirname "$(realpath "$file")")" != "$(realpath "$current_dir")" ]; then
+                real_count=$((real_count+1))
+            fi
+        done
+        marker_count=$real_count
+    fi
+    
+    if [ "$dir_count" -gt 0 ] || [ "$marker_count" -gt 0 ]; then
+        local box_width=75  # Fixed width for the box
+        local border=$(printf "%${box_width}s" | tr ' ' '-')
+        
+        echo -e "\n+${border}+"
+        printf "| %-${box_width}s |\n" "⚠️  MULTIPLE MINIPREM INSTALLATIONS DETECTED"
+        echo "+${border}+"
+        
+        printf "| %-${box_width}s |\n" "Found $dir_count other directories with 'miniprem' in their name:"
+        
+        if [ "$dir_count" -gt 0 ]; then
+            echo "$miniprem_dirs" | while read dir; do
+                if [ -n "$dir" ] && [ "$dir" != "$current_dir" ] && [ "$(realpath "$dir")" != "$(realpath "$current_dir")" ]; then
+                    # Truncate path if too long
+                    local display_path="$dir"
+                    if [ ${#display_path} -gt $((box_width-4)) ]; then
+                        display_path="...${display_path:$((${#display_path}-$box_width+7))}"
+                    fi
+                    printf "| %-${box_width}s |\n" "  - $display_path"
+                fi
+            done
+        fi
+        
+        printf "| %-${box_width}s |\n" ""
+        printf "| %-${box_width}s |\n" "Found $marker_count other MiniPrem marker files:"
+        
+        if [ "$marker_count" -gt 0 ]; then
+            echo "$marker_files" | while read file; do
+                if [ -n "$file" ] && [ "$file" != "$current_dir/$marker_file" ] && [ "$(dirname "$(realpath "$file")")" != "$(realpath "$current_dir")" ]; then
+                    # Truncate path if too long
+                    local display_path="$file"
+                    if [ ${#display_path} -gt $((box_width-4)) ]; then
+                        display_path="...${display_path:$((${#display_path}-$box_width+7))}"
+                    fi
+                    printf "| %-${box_width}s |\n" "  - $display_path"
+                fi
+            done
+        fi
+        
+        printf "| %-${box_width}s |\n" ""
+        printf "| %-${box_width}s |\n" "Having multiple installations may cause conflicts and unexpected behavior."
+        printf "| %-${box_width}s |\n" "It's recommended to use only one installation of MiniPrem."
+        echo "+${border}+"
+        
+        read -p "Do you want to continue with this installation? (y/N): " continue_install
+        if [[ ! "$continue_install" =~ ^[Yy]$ ]]; then
+            fatal "Installation aborted due to multiple MiniPrem installations detected."
+        fi
+        
+        warning "Continuing with installation despite duplicate installations detected."
+    else
+        success "$CHECKMARK No duplicate MiniPrem installations detected."
+    fi
+}
+
 # Function to build the fast-whisper image locally
 build_fast_whisper_image() {
     log_section "Building Fast Whisper Docker Image"
@@ -966,6 +1084,7 @@ EOF
 main() {
     print_logo
     check_environment
+    check_duplicate_installations
     # Parse command line arguments using getopt
     OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image: -- "$@")
     if [ $? -ne 0 ]; then
