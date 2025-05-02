@@ -9,11 +9,11 @@ Antes de comenzar, asegúrate de tener lo siguiente:
 - **Requisitos de Hardware**:
   - GPU NVIDIA con al menos 8GB de VRAM (se recomiendan 16GB+)
   - 16GB+ de RAM
-  - 50GB+ de espacio libre en disco
+  - 128GB+ de espacio libre en disco
 
 - **Requisitos de Software**:
-  - Ubuntu 20.04 LTS o más reciente
-  - Controladores NVIDIA (versión mínima 470.xx)
+  - Ubuntu 24.04 LTS o más reciente
+  - Controladores NVIDIA (versión mínima 550.xx)
   - Docker y Docker Compose
   - NVIDIA Container Toolkit
 
@@ -39,14 +39,17 @@ Puedes volver a ejecutar el instalador en cualquier momento para actualizar de P
 
 Necesitarás la siguiente información durante la instalación:
 
-| Configuración         | Descripción                                 | Ejemplo                                      |
+| Configuración | Descripción | Ejemplo |
 |-----------------------|---------------------------------------------|----------------------------------------------|
-| Dirección de UneeQ    | Dirección del servicio de señalización UneeQ| api.uneeq.io                                 |
-| Clave API de UneeQ    | Clave API para la plataforma UneeQ          | tu_clave_api_uneeq_aquí                      |
-| ID de Inquilino       | Tu identificador de inquilino UneeQ         | tu_id_inquilino_aquí                         |
-| Región de Azure       | Región de Azure para servicios de voz       | tu_región_azure                              |
-| Clave de Azure Speech | Clave API del servicio de voz de Azure      | tu_clave_azure_speech_aquí                   |
-| Imagen de Renny       | Imagen Docker para el humano digital Renny  | facemeproduction/renny:latest                |
+| Dirección de UneeQ | Dirección del servicio de señalización UneeQ| api.uneeq.io |
+| Clave API de UneeQ | Clave API para la plataforma UneeQ | tu_clave_api_uneeq_aquí |
+| ID de Inquilino | Tu identificador de inquilino UneeQ | tu_id_inquilino_aquí |
+| Región de Azure | Región de Azure para servicios de voz | tu_región_azure |
+| Clave de Azure Speech | Clave API del servicio de voz de Azure | tu_clave_azure_speech_aquí |
+| Imagen de Renny | Imagen Docker para el humano digital Renny | facemeproduction/renny:latest |
+| Clave API de RIME | Imagen Docker para texto a voz de RIME | tu_clave_api_rime |
+| Token de Huggingface | Token para acceso a Huggingface | tu_token_huggingface |
+| Token Docker Hub de UneeQ | Token para acceso al repositorio de imágenes de UneeQ | tu_token_acceso_personal |
 
 ### 4. Verificar la Instalación
 
