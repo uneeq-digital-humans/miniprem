@@ -7,7 +7,6 @@ View the live logs from various services in the MiniPrem stack.
 Select a service from the dropdown to view its logs:
 
 ```terminal
-```container-logs
 flowise
 vllm
 redis

@@ -382,3 +382,22 @@ if (window.$docsify) {
   window.$docsify.plugins.push(logsPlugin);
   window.$docsify.plugins.push(swaggerPlugin);
 }
+
+// Set default language for dynamic content loading
+const getCurrentLanguage = () => {
+  // Try to get from Docsify config, hash, or localStorage
+  if (window.$docsify && window.$docsify.language) return window.$docsify.language;
+  const hash = window.location.hash;
+  if (hash.startsWith('#/')) {
+    const path = hash.substring(2);
+    const match = path.match(/^([a-z]{2})\//);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  const storedLang = localStorage.getItem('language');
+  if (storedLang && ['en', 'es', 'de', 'ja', 'ko'].includes(storedLang)) {
+    return storedLang;
+  }
+  return 'en';
+};
