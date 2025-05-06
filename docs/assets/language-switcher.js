@@ -17,16 +17,9 @@
       const currentPath = window.location.hash.split('?')[0].replace('#/', '');
       let newPath = '';
       
-      // If switching to English, remove language prefix
-      if (lang === 'en') {
-        // Remove any language prefix from the path
-        newPath = currentPath.replace(/^[a-z]{2}\//, '');
-      } else {
-        // For other languages, add the language prefix
-        // First remove any existing language prefix
-        const pathWithoutLang = currentPath.replace(/^[a-z]{2}\//, '');
-        newPath = lang + '/' + pathWithoutLang;
-      }
+      // Always add language prefix
+      const pathWithoutLang = currentPath.replace(/^(en|es|de|ja|ko)\//, '');
+      newPath = lang + '/' + pathWithoutLang;
       
       // Update URL without the query parameter
       window.location.hash = '#/' + newPath;
@@ -122,14 +115,42 @@
       window.history.replaceState({}, document.title, url.toString());
     }
     
-    // Only redirect if necessary
-    if (language !== 'en' && currentHash.startsWith('#/') && !currentHash.match(new RegExp(`^#/${language}/`))) {
+    // Special handling for root URL/coverpage
+    if (!currentHash || currentHash === '#/' || currentHash === '#/README') {
+      // Allow root path to show the coverpage - don't redirect
+      console.log("Root path detected, showing coverpage");
+      // Set the language but don't redirect
+      window.$docsify.language = language;
+      return;
+    }
+
+    // Special case for _coverpage - convert to root to show coverpage
+    if (currentHash === '#/_coverpage') {
+      window.location.hash = '#/';
+      window.location.reload();
+      return;
+    }
+    
+    // For other pages without language prefix, add the current language prefix
+    if (currentHash.startsWith('#/') && !currentHash.match(/^#\/(en|es|de|ja|ko)\//)) {
       const path = currentHash.substring(2); // Remove #/
-      const pathWithoutLang = path.replace(/^[a-z]{2}\//, '');
-      const newPath = language + '/' + pathWithoutLang;
-      
-      console.log(`Redirecting to language (${language}): #/${newPath}`);
-      window.location.hash = '#/' + newPath;
+      window.location.hash = '#/' + language + '/' + path;
+      window.location.reload();
+      return;
+    }
+    
+    // If using a different language than in the URL, update the URL
+    if (currentHash.startsWith('#/')) {
+      const urlLangMatch = currentHash.match(/^#\/([a-z]{2})\//);
+      if (urlLangMatch && urlLangMatch[1] !== language) {
+        const path = currentHash.substring(2); // Remove #/
+        const pathWithoutLang = path.replace(/^[a-z]{2}\//, '');
+        const newPath = language + '/' + pathWithoutLang;
+        
+        console.log(`Redirecting to language (${language}): #/${newPath}`);
+        window.location.hash = '#/' + newPath;
+        window.location.reload();
+      }
     }
   }
   
@@ -141,50 +162,62 @@
     // Run this once at startup to handle initial page load
     hook.init(function() {
       console.log('Docsify init with language:', window.$docsify.language);
-      
-      // Fix sidebar loading for non-English languages
-      const language = window.$docsify.language;
-      if (language !== 'en') {
-        // Setup a proper sidebar path for the current language
-        window.$docsify.loadSidebar = `${language}/_sidebar.md`;
-      }
     });
     
     hook.beforeEach(function(content) {
       const currentLang = window.$docsify.language;
+      
+      // Special handling for root path/coverpage
+      if (vm.route.path === '/' || vm.route.path === '/README') {
+        // Try to load the coverpage for the current language
+        return new Promise(resolve => {
+          fetch(currentLang + '/_coverpage.md')
+            .then(response => {
+              if (response.ok) {
+                return response.text();
+              }
+              throw new Error('Language-specific coverpage not found');
+            })
+            .then(translatedContent => {
+              console.log('Using coverpage from: ' + currentLang + '/_coverpage.md');
+              resolve(translatedContent);
+            })
+            .catch(() => {
+              // Fall back to default coverpage
+              console.log('Fallback to default coverpage');
+              resolve(content);
+            });
+        });
+      }
       
       // If already in correct language path, return content as is
       if (vm.route.path.startsWith('/' + currentLang + '/')) {
         return content;
       }
       
-      // If not English, try to load the localized version
-      if (currentLang !== 'en') {
-        const currentPath = vm.route.path;
-        const localizedPath = '/' + currentLang + currentPath;
-        
-        return new Promise(resolve => {
-          // Try to fetch localized version first
-          fetch(localizedPath + '.md')
-            .then(response => {
-              if (response.ok) {
-                return response.text();
-              }
-              throw new Error('Localized version not found');
-            })
-            .then(translatedContent => {
-              console.log('Found translation at ' + localizedPath);
-              resolve(translatedContent);
-            })
-            .catch(() => {
-              // Fall back to English version
-              console.log('No translation found for ' + localizedPath + ', using English');
-              resolve(content);
-            });
-        });
-      }
+      // For other languages, try to load the localized version
+      const currentPath = vm.route.path;
+      const localizedPath = '/' + currentLang + currentPath;
       
-      return content;
+      return new Promise(resolve => {
+        // Try to fetch localized version first
+        fetch(localizedPath + '.md')
+          .then(response => {
+            if (response.ok) {
+              return response.text();
+            }
+            throw new Error('Localized version not found');
+          })
+          .then(translatedContent => {
+            console.log('Found translation at ' + localizedPath);
+            resolve(translatedContent);
+          })
+          .catch(() => {
+            // Fall back to English version
+            console.log('No translation found for ' + localizedPath + ', using English');
+            resolve(content);
+          });
+      });
     });
   });
 })();

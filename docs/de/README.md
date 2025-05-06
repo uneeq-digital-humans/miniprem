@@ -1,47 +1,25 @@
-# MiniPrem-Plattform
+# MiniPrem Plattform
 
-> Eine umfassende Plattform für digitale Menschen mit LLM-Integration, Echtzeit-Gesichtsanimation und Überwachungsfunktionen.
+Eine umfassende digitale Mensch-Plattform mit LLM-Integration, Echtzeit-Gesichtsanimation und Überwachungsfunktionen.
 
-## Überblick
+## Was ist MiniPrem?
 
-MiniPrem ist eine integrierte Plattform, die eine digitale menschliche Schnittstelle (Renny) mit LLM-Funktionen (vLLM), Workflow-Automatisierung (Flowise) und umfassenden Überwachungswerkzeugen (Prometheus + Grafana) kombiniert. Mit diesem Setup können Sie erweiterte KI-Interaktionen über eine virtuelle menschliche Schnittstelle bereitstellen und verwalten.
+MiniPrem kombiniert eine digitale menschliche Schnittstelle (Renny) mit leistungsstarken Sprachmodellen (vLLM),
+Workflow-Automatisierung (Flowise) und Überwachungstools (Prometheus + Grafana), um
+lebensechte KI-Interaktionen durch einen virtuellen Menschen zu schaffen.
 
-## Funktionen
+## Hauptfunktionen
 
-- **Digitale menschliche Schnittstelle**: Powered by Renny, mit Echtzeit-Gesichtsanimation
-- **LLM-Integration**: vLLM mit Gemma3 für natürliches Sprachverständnis
-- **Workflow-Automatisierung**: Flowise für die Erstellung und Verwaltung von KI-Workflows
-- **Metriken und Überwachung**: Prometheus und Grafana für die Leistungsverfolgung in Echtzeit
-- **Warteschlangenverwaltung**: Redis für zuverlässige Nachrichtenverarbeitung
-- **RIME AI**: Hochwertige Text-to-Speech über eine einfache API
+- 🤖 **Digitale Mensch-Schnittstelle** mit Echtzeit-Gesichtsanimation
+- 🧠 **LLM-Integration** mit vLLM unter Verwendung von Gemma3
+- 🔄 **Workflow-Automatisierung** mit Flowise
+- 📊 **Überwachung** mit Prometheus und Grafana
 
-## Schnellstart
+## Dokumentationsabschnitte
 
-### Voraussetzungen
+- [Erste Schritte](/de/guides/getting-started.md) - Installation und grundlegende Einrichtung
+- [Plattformkomponenten](/de/guides/components.md) - Details zu jedem Dienst
+- [Dienste](/de/services/overview.md) - Dienstspezifische Dokumentation
+- [API-Referenz](/de/api/overview.md) - API-Dokumentation
 
-- Docker und Docker Compose
-- NVIDIA GPU mit entsprechenden Treibern
-- Ubuntu Linux (empfohlen)
-- Erforderliche Anmeldeinformationen von UneeQ (Plattformadresse, API-Schlüssel, Mieter-ID)
-- Anmeldedaten für den Azure Speech-Dienst (Region und API-Schlüssel)
-
-### Installation
-
-Vollständige Installationsanweisungen finden Sie in unserem [Getting Started Guide](guides/getting-started.md).
-
-## Plattform-Komponenten
-
-MiniPrem umfasst die folgenden Komponenten:
-
-- **Renny**: Digitale menschliche Schnittstelle mit Echtzeit-Gesichtsanimation
-- **vLLM**: Großes Sprachmodell, das mit Gemma3 bedient wird
-- **Flowise**: Visueller Workflow-Builder für KI-Anwendungen
-- **Prometheus & Grafana**: Echtzeit-Überwachung und Dashboards
-- *Redis**: Nachrichtenwarteschlange für zuverlässige Verarbeitung
-- **RIME**: Hochwertige Text-to-Speech-Engine
-
-## Nächste Schritte
-
-- Erste Schritte](guides/getting-started.md): Installation und grundlegende Einrichtung
-- Überblick über die Dienste](guides/services.md): Details zu jeder Komponente
-- Fehlerbehebung](troubleshooting.md): Lösungen für häufige Probleme
+[Auf GitLab ansehen](https://gitlab.com/tgmerritt/miniprem-2025)
