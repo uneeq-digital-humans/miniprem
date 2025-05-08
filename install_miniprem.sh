@@ -279,10 +279,12 @@ check_all_values_provided() {
     info "AZURE_REGION: ${AZURE_REGION:-'Not set'}"
     info "AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:+'Set (value hidden)'}"
     info "RENNY_IMAGE: ${RENNY_IMAGE:-'Not set'}"
-    if [ -z "$PLATFORM_ADDRESS" ]; then
-        warning "UneeQ platform address is missing"
-        missing=1
-    fi
+    
+    # We don't need to check PLATFORM_ADDRESS since it has a default value
+    # if [ -z "$PLATFORM_ADDRESS" ]; then
+    #     warning "UneeQ platform address is missing"
+    #     missing=1
+    # fi
 
     if [ -z "$PLATFORM_KEY" ]; then
         warning "UneeQ platform API key is missing"
@@ -369,9 +371,29 @@ start_miniprem() {
     log_section "Starting Miniprem"
     
     # Stop any local Redis instances that might be running
-    info "Stopping any local Redis instances..."
-    sudo systemctl stop redis-server || true
-    sudo systemctl stop redis || true
+    info "Checking for local Redis instances..."
+    if command -v lsof >/dev/null 2>&1; then
+        REDIS_PROCESS=$(lsof -i :6379 -sTCP:LISTEN 2>/dev/null)
+    else
+        REDIS_PROCESS=$(ss -ltnp "sport = :6379" 2>/dev/null)
+    fi
+
+    if [ -n "$REDIS_PROCESS" ]; then
+        info "Found Redis running on port 6379, attempting to stop it..."
+        
+        # Check for systemd service
+        if systemctl is-active --quiet redis-server 2>/dev/null; then
+            info "Stopping redis-server.service..."
+            sudo systemctl stop redis-server >/dev/null 2>&1
+        elif systemctl is-active --quiet redis 2>/dev/null; then
+            info "Stopping redis.service..."
+            sudo systemctl stop redis >/dev/null 2>&1
+        else
+            warning "Redis is running but not managed by systemd, please stop it manually if you encounter port conflicts"
+        fi
+    else
+        info "No local Redis instances found running on port 6379"
+    fi
     
     # Only start vLLM for full installation
     if [ "$INSTALL_TYPE" = "full" ]; then
@@ -1215,8 +1237,6 @@ main() {
             esac
         done
     else
-        # Prompt for missing values
-        PLATFORM_ADDRESS=$(check_and_prompt_for_value "Enter the UneeQ platform address" "$PLATFORM_ADDRESS")
         PLATFORM_KEY=$(check_and_prompt_for_value "Enter the UneeQ platform API key" "$PLATFORM_KEY")
         TENANT_ID=$(check_and_prompt_for_value "Enter the Tenant ID" "$TENANT_ID")
         AZURE_REGION=$(check_and_prompt_for_value "Enter the Azure region" "$AZURE_REGION")
@@ -1224,7 +1244,7 @@ main() {
         RENNY_IMAGE=$(check_and_prompt_for_value "Enter the Renny image name" "$RENNY_IMAGE")
 
         # Check if required arguments are provided
-        if [ -z "$PLATFORM_ADDRESS" ] || [ -z "$PLATFORM_KEY" ] || [ -z "$TENANT_ID" ] || [ -z "$AZURE_REGION" ] || [ -z "$AZURE_SPEECH_KEY" ] || [ -z "$RENNY_IMAGE" ]; then
+        if [ -z "$PLATFORM_KEY" ] || [ -z "$TENANT_ID" ] || [ -z "$AZURE_REGION" ] || [ -z "$AZURE_SPEECH_KEY" ] || [ -z "$RENNY_IMAGE" ]; then
             usage
             fatal "Missing required arguments. Please provide the required arguments."
         fi
