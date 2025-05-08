@@ -230,7 +230,14 @@ ensure_configuration_file_exists() {
 # Function to get required variables from the example env file (those with empty values)
 get_required_env_vars_from_example() {
     local example_file="docker/docker-compose.env.example"
-    grep -E '^[A-Z0-9_]+=$' "$example_file" | cut -d= -f1
+    local all_vars=$(grep -E '^[A-Z0-9_]+=$' "$example_file" | cut -d= -f1)
+    
+    # If USE_ELEVEN_LABS is set to "no", filter out Eleven Labs variables
+    if [[ "$USE_ELEVEN_LABS" == "no" ]]; then
+        echo "$all_vars" | grep -v "^ELEVEN_LABS"
+    else
+        echo "$all_vars"
+    fi
 }
 
 # Function to ensure docker-compose.env exists by copying from example if needed
@@ -366,40 +373,48 @@ start_miniprem() {
     sudo systemctl stop redis-server || true
     sudo systemctl stop redis || true
     
-    # First, start just vLLM since it needs significant GPU memory
-    info "Starting vLLM service first..."
-    docker compose $COMPOSE_FILES up -d vllm
-    if [ $? -ne 0 ]; then
-        fatal "Failed to start vLLM service"
-    fi
-    
-    # Prepare the model while GPU is clean
+    # Only start vLLM for full installation
     if [ "$INSTALL_TYPE" = "full" ]; then
+        # First, start just vLLM since it needs significant GPU memory
+        info "Starting vLLM service first..."
+        docker compose $COMPOSE_FILES up -d vllm
+        if [ $? -ne 0 ]; then
+            fatal "Failed to start vLLM service"
+        fi
+        
+        # Prepare the model while GPU is clean
         prepare_vllm_model
-    fi
-    
-    # Now start other services EXCEPT A2F
-    info "Starting other services..."
-    # Use the correct whisper service based on user's choice
-    local whisper_service="whisper"
-    if [[ "$stt_choice" == "2" ]]; then
-        whisper_service="fastwhisper"
-    fi
-    
-    docker compose $COMPOSE_FILES up -d \
-        redis grafana prometheus \
-        rime-model rime-api flowise $whisper_service log-streamer
-    if [ $? -ne 0 ]; then
-        fatal "Failed to start support services"
+        
+        # Now start other services EXCEPT A2F
+        info "Starting other services..."
+        # Use the correct whisper service based on user's choice
+        local whisper_service="whisper"
+        if [[ "$stt_choice" == "2" ]]; then
+            whisper_service="fastwhisper"
+        fi
+        
+        docker compose $COMPOSE_FILES up -d \
+            redis grafana prometheus \
+            rime-model rime-api flowise $whisper_service log-streamer
+        if [ $? -ne 0 ]; then
+            fatal "Failed to start support services"
+        fi
     fi
     
     # Finally start A2F services last since they use lots of GPU
     info "Starting A2F services..."
-    docker compose $COMPOSE_FILES up -d a2f a2f_anim_controller
+    docker compose $COMPOSE_FILES up -d audio2face_with_emotion audio2face_controller
     if [ $? -ne 0 ]; then
         warning "Failed to start A2F services - may need more GPU memory"
         warning "You can try starting them manually later with:"
-        warning "docker compose up -d a2f a2f_anim_controller"
+        warning "docker compose up -d audio2face_with_emotion audio2face_controller"
+    fi
+    
+    # Start Renny (required for both installation types)
+    info "Starting Renny digital human service..."
+    docker compose $COMPOSE_FILES up -d renny
+    if [ $? -ne 0 ]; then
+        fatal "Failed to start Renny service"
     fi
     
     success "$CHECKMARK MiniPrem services started successfully"
@@ -1097,9 +1112,6 @@ main() {
     # Ensure docker-compose.env exists
     ensure_env_file_exists
 
-    # Check and prompt for required env variables
-    check_and_prompt_required_env_vars
-
     # Check if the required software prerequisites are installed so installer can run
     check_installer_prequisites
 
@@ -1294,6 +1306,44 @@ else
     echo "Invalid choice, exiting."
     exit 1
 fi
+
+# Prompt for Eleven Labs configuration
+USE_ELEVEN_LABS=""
+echo -e "\nWould you like to use Eleven Labs for text-to-speech?"
+echo "1) Yes"
+echo "2) No"
+read -p "Enter choice [1-2]: " eleven_choice
+if [[ "$eleven_choice" == "1" ]]; then
+    USE_ELEVEN_LABS="yes"
+    echo "yes" > .miniprem_eleven_labs
+    # Prompt for Eleven Labs API key
+    read -p "Enter your Eleven Labs API key: " ELEVEN_LABS_API_KEY
+    if [ -z "$ELEVEN_LABS_API_KEY" ]; then
+        warning "No Eleven Labs API key provided. Eleven Labs services may not function correctly."
+    else
+        # Update the environment variable
+        update_env_variable "ELEVEN_LABS_API_KEY" "\"$ELEVEN_LABS_API_KEY\""
+        # Set default values for other Eleven Labs parameters
+        update_env_variable "ELEVEN_LABS_MODEL_ID" "\"eleven_flash_v2_5\""
+        update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "1"
+        update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "0.5"
+        update_env_variable "ELEVEN_LABS_STABILITY" "0.5"
+        success "$CHECKMARK Eleven Labs API key configured"
+    fi
+else
+    USE_ELEVEN_LABS="no"
+    echo "no" > .miniprem_eleven_labs
+    # Clear any existing Eleven Labs environment variables
+    update_env_variable "ELEVEN_LABS_API_KEY" "\"\""
+    update_env_variable "ELEVEN_LABS_MODEL_ID" "\"\""
+    update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "\"\""
+    update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "\"\""
+    update_env_variable "ELEVEN_LABS_STABILITY" "\"\""
+    info "Eleven Labs integration disabled"
+fi
+
+# Check and prompt for required env variables (after USE_ELEVEN_LABS has been set)
+check_and_prompt_required_env_vars
 
 # In all docker compose commands, use the correct compose files (with docker/ prefix, run from project root)
 if [ "$INSTALL_TYPE" = "default" ]; then
