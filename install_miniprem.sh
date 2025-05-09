@@ -13,7 +13,7 @@ source scripts/prerequisites.sh
 usage() {
     echo -e $WHITE
     cat <<EOF
-$(basename "$0") --platform-address <UneeQ platform address> --platform-key <UneeQ platform API key> --tenant <Tenant ID> --renny-image <Docker image name for Renny> [--azure-region <Azure region>] [--azure-speech-key <Azure speech key>] --renny-image <Docker image name for Renny> [h]
+$(basename "$0") [--platform-address <UneeQ platform address>] [--platform-key <UneeQ platform API key>] [--tenant <Tenant ID>] [--azure-region <Azure region>] [--azure-speech-key <Azure speech key>] [--renny-image <Docker image name for Renny>] [h]
 Install and configure Renny and A2F services on a laptop/kiosk
 
 Options:
@@ -58,6 +58,88 @@ extract_url_components() {
 
     echo "$protocol" "$address" "$port" "$path"
 }
+
+# Function to prompt for installation type
+prompt_for_install_type() {
+    INSTALL_TYPE=""
+    echo "Select installation type:"
+    echo "1) Default Install (Renny + Audio2Face only)"
+    echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, Whisper etc.)"
+    read -p "Enter choice [1-2]: " install_choice
+    if [[ "$install_choice" == "1" ]]; then
+        INSTALL_TYPE="default"
+        echo "default" > .miniprem_install_type
+    elif [[ "$install_choice" == "2" ]]; then
+        INSTALL_TYPE="full"
+        echo "full" > .miniprem_install_type
+    else
+        echo "Invalid choice, exiting."
+        exit 1
+    fi
+}
+
+# Function to configure Eleven Labs
+configure_eleven_labs() {
+    USE_ELEVEN_LABS=""
+    echo -e "\nWould you like to use Eleven Labs for text-to-speech?"
+    echo "1) Yes"
+    echo "2) No"
+    read -p "Enter choice [1-2]: " eleven_choice
+    if [[ "$eleven_choice" == "1" ]]; then
+        USE_ELEVEN_LABS="yes"
+        echo "yes" > .miniprem_eleven_labs
+        # Prompt for Eleven Labs API key
+        read -p "Enter your Eleven Labs API key: " ELEVEN_LABS_API_KEY
+        if [ -z "$ELEVEN_LABS_API_KEY" ]; then
+            warning "No Eleven Labs API key provided. Eleven Labs services may not function correctly."
+        else
+            # Update the environment variable
+            update_env_variable "ELEVEN_LABS_API_KEY" "\"$ELEVEN_LABS_API_KEY\""
+            # Set default values for other Eleven Labs parameters
+            update_env_variable "ELEVEN_LABS_MODEL_ID" "\"eleven_flash_v2_5\""
+            update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "1"
+            update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "0.5"
+            update_env_variable "ELEVEN_LABS_STABILITY" "0.5"
+            success "$CHECKMARK Eleven Labs API key configured"
+        fi
+    else
+        USE_ELEVEN_LABS="no"
+        echo "no" > .miniprem_eleven_labs
+        # Clear any existing Eleven Labs environment variables
+        update_env_variable "ELEVEN_LABS_API_KEY" "\"\""
+        update_env_variable "ELEVEN_LABS_MODEL_ID" "\"\""
+        update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "\"\""
+        update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "\"\""
+        update_env_variable "ELEVEN_LABS_STABILITY" "\"\""
+        info "Eleven Labs integration disabled"
+    fi
+    
+    # Check and prompt for required env variables (after USE_ELEVEN_LABS has been set)
+    check_and_prompt_required_env_vars
+    
+    # In all docker compose commands, use the correct compose files (with docker/ prefix, run from project root)
+    if [ "$INSTALL_TYPE" = "default" ]; then
+        COMPOSE_FILES="-f docker/docker-compose.default.yml"
+    else
+        COMPOSE_FILES="-f docker/docker-compose.yml"
+    fi
+}
+
+# Function to pull necessary Docker images
+pull_required_images() {
+    # Only pull images and perform logins for selected services
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        # Pull all images and perform all logins (including RIME)
+        setup_rime_credentials
+    else
+        # Only pull images for Renny and Audio2Face
+        info "Pulling Renny and Audio2Face images..."
+        docker pull facemeproduction/renny:0.484-37235
+        docker pull facemeproduction/audio2face_with_emotion:local-dev
+        docker pull facemeproduction/audio2face_anim_controller:local-dev
+    fi
+}
+
 
 check_wss_service() {
     local url=$1
@@ -227,9 +309,9 @@ ensure_configuration_file_exists() {
     fi
 }
 
-# Function to get required variables from the example env file (those with empty values)
+# Function to get required variables from the env file (those with empty values)
 get_required_env_vars_from_example() {
-    local example_file="docker/docker-compose.env.example"
+    local example_file="docker/docker-compose.env"
     local all_vars=$(grep -E '^[A-Z0-9_]+=$' "$example_file" | cut -d= -f1)
     
     # If USE_ELEVEN_LABS is set to "no", filter out Eleven Labs variables
@@ -240,13 +322,77 @@ get_required_env_vars_from_example() {
     fi
 }
 
+# Function to update environment variables in docker-compose.env
+update_env_file() {
+    local env_file="docker/docker-compose.env"
+    
+    # Only update variables if they have values
+    if [ -n "$PLATFORM_KEY" ]; then
+        # Check if variable exists in file before updating
+        if grep -q "^DHOP_APIKEY=" "$env_file"; then
+            sed -i "s|^DHOP_APIKEY=.*|DHOP_APIKEY=$PLATFORM_KEY|" "$env_file"
+        fi
+    fi
+    
+    if [ -n "$TENANT_ID" ]; then
+        if grep -q "^DHOP_TENANTID=" "$env_file"; then
+            sed -i "s|^DHOP_TENANTID=.*|DHOP_TENANTID=$TENANT_ID|" "$env_file"
+        fi
+    fi
+    
+    if [ -n "$AZURE_REGION" ]; then
+        if grep -q "^AZURE_REGION=" "$env_file"; then
+            sed -i "s|^AZURE_REGION=.*|AZURE_REGION=$AZURE_REGION|" "$env_file"
+        fi
+    fi
+    
+    if [ -n "$AZURE_SPEECH_KEY" ]; then
+        if grep -q "^AZURE_SPEECH_KEY=" "$env_file"; then
+            sed -i "s|^AZURE_SPEECH_KEY=.*|AZURE_SPEECH_KEY=$AZURE_SPEECH_KEY|" "$env_file"
+        fi
+        if grep -q "^AZURE_SPEECH=" "$env_file"; then
+            sed -i "s|^AZURE_SPEECH=.*|AZURE_SPEECH=$AZURE_SPEECH_KEY|" "$env_file"
+        fi
+    fi
+    
+    # If we have RIME credentials, update those too
+    if [ -n "$RIME_API_KEY" ]; then
+        if grep -q "^RIME_API_KEY=" "$env_file"; then
+            sed -i "s|^RIME_API_KEY=.*|RIME_API_KEY=$RIME_API_KEY|" "$env_file"
+        fi
+    fi
+    
+    # If we have Eleven Labs credentials, update those too
+    if [ -n "$ELEVEN_LABS_API_KEY" ]; then
+        if grep -q "^ELEVEN_LABS_API_KEY=" "$env_file"; then
+            sed -i "s|^ELEVEN_LABS_API_KEY=.*|ELEVEN_LABS_API_KEY=$ELEVEN_LABS_API_KEY|" "$env_file"
+        fi
+    fi
+}
+
 # Function to ensure docker-compose.env exists by copying from example if needed
 ensure_env_file_exists() {
     local env_file="docker/docker-compose.env"
     local example_file="docker/docker-compose.env.example"
-    if [[ ! -f "$env_file" ]]; then
-        cp "$example_file" "$env_file"
-        info "Created $env_file from $example_file."
+    
+    # Use stat for more reliable file existence checking
+    if ! stat "$env_file" > /dev/null 2>&1; then
+        # Example file must exist
+        if [ -f "$example_file" ]; then
+            info "Environment file not found, creating from example."
+            cp "$example_file" "$env_file"
+            
+            # Verify copy was successful
+            if [ $? -eq 0 ] && [ -f "$env_file" ]; then
+                success "$CHECKMARK Created $env_file from $example_file."
+            else
+                error "Failed to copy example file to $env_file. Check permissions."
+            fi
+        else
+            fatal "Example environment file $example_file not found."
+        fi
+    else
+        info "Environment file already exists at $env_file"
     fi
 }
 
@@ -262,9 +408,21 @@ check_and_prompt_required_env_vars() {
             if [[ -z "$value" ]]; then
                 fatal "$var is required. Exiting."
             fi
-            update_env_variable "$var" "$value"
+            # Store the value in a variable instead of writing directly
+            case "$var" in
+                "DHOP_APIKEY") PLATFORM_KEY="$value" ;;
+                "DHOP_TENANTID") TENANT_ID="$value" ;;
+                "AZURE_REGION") AZURE_REGION="$value" ;;
+                "AZURE_SPEECH_KEY"|"AZURE_SPEECH") AZURE_SPEECH_KEY="$value" ;;
+                "ELEVEN_LABS_API_KEY") ELEVEN_LABS_API_KEY="$value" ;;
+                "RIME_API_KEY") RIME_API_KEY="$value" ;;
+                *) update_env_variable "$var" "$value" ;; # Only use for non-main vars
+            esac
         fi
     done
+    
+    # Update all main variables at once using update_env_file
+    update_env_file
 }
 
 # Function to check if all required values are provided
@@ -279,12 +437,6 @@ check_all_values_provided() {
     info "AZURE_REGION: ${AZURE_REGION:-'Not set'}"
     info "AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:+'Set (value hidden)'}"
     info "RENNY_IMAGE: ${RENNY_IMAGE:-'Not set'}"
-    
-    # We don't need to check PLATFORM_ADDRESS since it has a default value
-    # if [ -z "$PLATFORM_ADDRESS" ]; then
-    #     warning "UneeQ platform address is missing"
-    #     missing=1
-    # fi
 
     if [ -z "$PLATFORM_KEY" ]; then
         warning "UneeQ platform API key is missing"
@@ -1120,19 +1272,28 @@ EOF
 
 main() {
     print_logo
+
     check_environment
+
     check_duplicate_installations
+
+    # Install type
+    prompt_for_install_type
+
     # Parse command line arguments using getopt
     OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image: -- "$@")
     if [ $? -ne 0 ]; then
         usage
     fi
 
+    # Ensure docker-compose.env exists
+    ensure_env_file_exists
+    
     # Ensure configuration.dat exists
     ensure_configuration_file_exists
 
-    # Ensure docker-compose.env exists
-    ensure_env_file_exists
+    # Configure Eleven Labs
+    configure_eleven_labs
 
     # Check if the required software prerequisites are installed so installer can run
     check_installer_prequisites
@@ -1250,6 +1411,18 @@ main() {
         fi
     fi
 
+    # Update the environment file with collected values
+    update_env_file
+
+    # Make sure PLATFORM_ADDRESS has a default value if it's empty
+    if [ -z "$PLATFORM_ADDRESS" ]; then
+        PLATFORM_ADDRESS="wss://api.uneeq.io/signalling-service/v1/ws/renderer"
+        # Also update it in the env file
+        if grep -q "^DHOP_ADDRESS=" "docker/docker-compose.env"; then
+            sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=$PLATFORM_ADDRESS|" "docker/docker-compose.env"
+        fi
+    fi
+
     # Check and update configuration.dat
     check_and_update_configuration "$TENANT_ID" "$PLATFORM_KEY"
 
@@ -1309,83 +1482,5 @@ main() {
     info "- Documentation with logs viewer at http://localhost:3000/docs/ (if you've set up the documentation server)"
     info "To stop the services, use: cd docker && docker compose down"
 }
-
-# Prompt for install type at the start
-INSTALL_TYPE=""
-echo "Select installation type:"
-echo "1) Default Install (Renny + Audio2Face only)"
-echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, Whisper etc.)"
-read -p "Enter choice [1-2]: " install_choice
-if [[ "$install_choice" == "1" ]]; then
-    INSTALL_TYPE="default"
-    echo "default" > .miniprem_install_type
-elif [[ "$install_choice" == "2" ]]; then
-    INSTALL_TYPE="full"
-    echo "full" > .miniprem_install_type
-else
-    echo "Invalid choice, exiting."
-    exit 1
-fi
-
-# Prompt for Eleven Labs configuration
-USE_ELEVEN_LABS=""
-echo -e "\nWould you like to use Eleven Labs for text-to-speech?"
-echo "1) Yes"
-echo "2) No"
-read -p "Enter choice [1-2]: " eleven_choice
-if [[ "$eleven_choice" == "1" ]]; then
-    USE_ELEVEN_LABS="yes"
-    echo "yes" > .miniprem_eleven_labs
-    # Prompt for Eleven Labs API key
-    read -p "Enter your Eleven Labs API key: " ELEVEN_LABS_API_KEY
-    if [ -z "$ELEVEN_LABS_API_KEY" ]; then
-        warning "No Eleven Labs API key provided. Eleven Labs services may not function correctly."
-    else
-        # Update the environment variable
-        update_env_variable "ELEVEN_LABS_API_KEY" "\"$ELEVEN_LABS_API_KEY\""
-        # Set default values for other Eleven Labs parameters
-        update_env_variable "ELEVEN_LABS_MODEL_ID" "\"eleven_flash_v2_5\""
-        update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "1"
-        update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "0.5"
-        update_env_variable "ELEVEN_LABS_STABILITY" "0.5"
-        success "$CHECKMARK Eleven Labs API key configured"
-    fi
-else
-    USE_ELEVEN_LABS="no"
-    echo "no" > .miniprem_eleven_labs
-    # Clear any existing Eleven Labs environment variables
-    update_env_variable "ELEVEN_LABS_API_KEY" "\"\""
-    update_env_variable "ELEVEN_LABS_MODEL_ID" "\"\""
-    update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "\"\""
-    update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "\"\""
-    update_env_variable "ELEVEN_LABS_STABILITY" "\"\""
-    info "Eleven Labs integration disabled"
-fi
-
-# Check and prompt for required env variables (after USE_ELEVEN_LABS has been set)
-check_and_prompt_required_env_vars
-
-# In all docker compose commands, use the correct compose files (with docker/ prefix, run from project root)
-if [ "$INSTALL_TYPE" = "default" ]; then
-    COMPOSE_FILES="-f docker/docker-compose.default.yml"
-else
-    COMPOSE_FILES="-f docker/docker-compose.yml"
-fi
-
-# Only pull images and perform logins for selected services
-if [ "$INSTALL_TYPE" = "full" ]; then
-    # Pull all images and perform all logins (including RIME)
-    setup_rime_credentials
-else
-    # Only pull images for Renny and Audio2Face
-    info "Pulling Renny and Audio2Face images..."
-    docker pull facemeproduction/renny:0.484-37235
-    docker pull facemeproduction/audio2face_with_emotion:local-dev
-    docker pull facemeproduction/audio2face_anim_controller:local-dev
-fi
-
-# Use $COMPOSE_FILES in all docker compose up/down commands
-# Example:
-# docker compose $COMPOSE_FILES up -d
 
 main "$@"
