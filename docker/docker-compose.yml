@@ -1,13 +1,6 @@
 name: uneeq-miniprem
 include:
   - ./docker-compose.a2f.yml # a2f services
-networks:
-  miniprem_net:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.28.0.0/16
 services:
   # Log streamer service
   log-streamer:
@@ -20,8 +13,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:8082/health > /dev/null 2>&1 || exit 1"]
       interval: 20s
@@ -45,8 +37,7 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -71,8 +62,7 @@ services:
       - prometheus_data:/prometheus
       - ./prometheus.yml:/etc/prometheus/prometheus.yml
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
@@ -107,8 +97,7 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     depends_on:
       prometheus:
         condition: service_healthy
@@ -151,8 +140,7 @@ services:
       # Debug settings
       - DEBUG=flowise:*
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     depends_on:
       prometheus:
         condition: service_healthy
@@ -177,7 +165,7 @@ services:
     extra_hosts:
       - audio2face-gateway:host-gateway
     image: "facemeproduction/renny:0.484-37235"
-    network_mode: "host"
+    network_mode: host
     runtime: nvidia
     tty: true
     volumes:
@@ -216,8 +204,7 @@ services:
     entrypoint: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
     command: ["--model", "HuggingFaceH4/zephyr-7b-beta", "--host", "0.0.0.0", "--port", "8800", "--gpu-memory-utilization", "0.8", "--trust-remote-code"]
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     healthcheck:
       test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8800/health')\" || exit 1"]
       interval: 30s
@@ -240,9 +227,8 @@ services:
       - "8100:8000"
     restart: unless-stopped
     environment:
-      - MODEL_URL=http://rime-model:8080/invocations
-    networks:
-      - miniprem_net
+      - MODEL_URL=http://localhost:8080/invocations
+    network_mode: host
     # Since the API returns 503 but is actually working, we'll use a simple exit 0 to mark it as healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -s http://localhost:8000/health > /dev/null || exit 0"]
@@ -270,8 +256,7 @@ services:
     ports:
       - "8101:8080"
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
       interval: 30s
@@ -303,8 +288,7 @@ services:
   #     - NVIDIA_VISIBLE_DEVICES=all
   #     - INTERVAL=5
   #   restart: unless-stopped
-  #   networks:
-  #     - miniprem_net
+  #   network_mode: host
   #   healthcheck:
   #     test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
   #     interval: 30s
@@ -346,8 +330,7 @@ services:
       - ./fast-whisper/app:/app/app
       - ./fast-whisper/models:/app/models
     restart: unless-stopped
-    networks:
-      - miniprem_net
+    network_mode: host
     # Simple health check that checks if the container is running
     healthcheck:
       test: ["CMD-SHELL", "exit 0"]
