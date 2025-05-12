@@ -9,6 +9,7 @@ services:
     runtime: nvidia
     volumes:
       - a2f_model_cache:/tmp/a2f_pipeline:rw
+
     restart: unless-stopped
 
   audio2face_controller:
@@ -23,6 +24,7 @@ services:
       - 52100:52100
     volumes:
       - ./a2f-config.yml:/opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+
     depends_on:
       audio2face_with_emotion:
         condition: service_healthy

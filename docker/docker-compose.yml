@@ -1,6 +1,8 @@
 name: uneeq-miniprem
+
 include:
   - ./docker-compose.a2f.yml # a2f services
+  
 services:
   # Log streamer service
   log-streamer:
@@ -163,7 +165,7 @@ services:
     env_file:
       - docker-compose.env
     extra_hosts:
-      - audio2face-gateway:host-gateway
+      - "audio2face-gateway:127.0.0.1"
     image: "facemeproduction/renny:0.484-37235"
     network_mode: host
     runtime: nvidia
@@ -182,13 +184,7 @@ services:
       audio2face_controller:
         condition: service_started
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
+
   vllm:
     image: vllm/vllm-openai:v0.2.7
     container_name: vllm
