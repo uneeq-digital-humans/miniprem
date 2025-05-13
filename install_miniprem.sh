@@ -522,33 +522,33 @@ build_log_streamer() {
 start_miniprem() {
     log_section "Starting Miniprem"
     
-    # Stop any local Redis instances that might be running
-    info "Checking for local Redis instances..."
-    if command -v lsof >/dev/null 2>&1; then
-        REDIS_PROCESS=$(lsof -i :6379 -sTCP:LISTEN 2>/dev/null)
-    else
-        REDIS_PROCESS=$(ss -ltnp "sport = :6379" 2>/dev/null)
-    fi
-
-    if [ -n "$REDIS_PROCESS" ]; then
-        info "Found Redis running on port 6379, attempting to stop it..."
-        
-        # Check for systemd service
-        if systemctl is-active --quiet redis-server 2>/dev/null; then
-            info "Stopping redis-server.service..."
-            sudo systemctl stop redis-server >/dev/null 2>&1
-        elif systemctl is-active --quiet redis 2>/dev/null; then
-            info "Stopping redis.service..."
-            sudo systemctl stop redis >/dev/null 2>&1
-        else
-            warning "Redis is running but not managed by systemd, please stop it manually if you encounter port conflicts"
-        fi
-    else
-        info "No local Redis instances found running on port 6379"
-    fi
-    
-    # Only start vLLM for full installation
     if [ "$INSTALL_TYPE" = "full" ]; then
+        # Stop any local Redis instances that might be running
+        info "Checking for local Redis instances..."
+        if command -v lsof >/dev/null 2>&1; then
+            REDIS_PROCESS=$(lsof -i :6379 -sTCP:LISTEN 2>/dev/null)
+        else
+            REDIS_PROCESS=$(ss -ltnp "sport = :6379" 2>/dev/null)
+        fi
+
+        if [ -n "$REDIS_PROCESS" ]; then
+            info "Found Redis running on port 6379, attempting to stop it..."
+            
+            # Check for systemd service
+            if systemctl is-active --quiet redis-server 2>/dev/null; then
+                info "Stopping redis-server.service..."
+                sudo systemctl stop redis-server >/dev/null 2>&1
+            elif systemctl is-active --quiet redis 2>/dev/null; then
+                info "Stopping redis.service..."
+                sudo systemctl stop redis >/dev/null 2>&1
+            else
+                warning "Redis is running but not managed by systemd, please stop it manually if you encounter port conflicts"
+            fi
+        else
+            info "No local Redis instances found running on port 6379"
+        fi
+
+        # Only start vLLM for full installation
         # First, start just vLLM since it needs significant GPU memory
         info "Starting vLLM service first..."
         docker compose $COMPOSE_FILES up -d vllm
@@ -922,94 +922,77 @@ check_environment() {
         info "No existing Miniprem containers found"
     fi
     
-    # Only check for common local daemon ports that might conflict
-    local port_map=(
-        "6379:Redis" 
-        "11434:Ollama"
-    )
-    local found=0
-    local box_width=65  # Fixed width for the box
-    
-    for port_entry in "${port_map[@]}"; do
-        # Split entry into port and service name
-        local port="${port_entry%%:*}"
-        local service="${port_entry#*:}"
+    if [ "$INSTALL_TYPE" = "full" ]; then 
+
+        # Only check for common local daemon ports that might conflict
+        local port_map=(
+            "6379:Redis"
+        )
+        local found=0
+        local box_width=65  # Fixed width for the box
         
-        # Try lsof first, fallback to ss
-        if command -v lsof >/dev/null 2>&1; then
-            proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
-        else
-            proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
-        fi
-        if [ ! -z "$proc_info" ]; then
-            proc_name=$(echo $proc_info | awk '{print $1}')
-            proc_pid=$(echo $proc_info | awk '{print $2}')
-            # Special handling for redis-server on 6379
-            if [ "$port" = "6379" ] && [ "$proc_name" = "redis-server" ]; then
-                echo -e "\nRedis appears to be running locally on port 6379."
-                read -p "Would you like to try stopping it automatically? [y/N]: " stop_redis
-                if [[ "$stop_redis" =~ ^[Yy]$ ]]; then
-                    sudo service redis-server stop || true
-                    sudo systemctl stop redis || true
-                    # Re-check if port is still in use
-                    if command -v lsof >/dev/null 2>&1; then
-                        proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
-                    else
-                        proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
-                    fi
-                    if [ -z "$proc_info" ]; then
-                        success "$CHECKMARK Successfully stopped redis-server on port 6379."
-                        continue
-                    else
-                        warning "redis-server is still running on port 6379. Please stop it manually."
+        for port_entry in "${port_map[@]}"; do
+            # Split entry into port and service name
+            local port="${port_entry%%:*}"
+            local service="${port_entry#*:}"
+            
+            # Try lsof first, fallback to ss
+            if command -v lsof >/dev/null 2>&1; then
+                proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
+            else
+                proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
+            fi
+            if [ ! -z "$proc_info" ]; then
+                proc_name=$(echo $proc_info | awk '{print $1}')
+                proc_pid=$(echo $proc_info | awk '{print $2}')
+                # Special handling for redis-server on 6379
+                if [ "$port" = "6379" ] && [ "$proc_name" = "redis-server" ]; then
+                    echo -e "\nRedis appears to be running locally on port 6379."
+                    read -p "Would you like to try stopping it automatically? [y/N]: " stop_redis
+                    if [[ "$stop_redis" =~ ^[Yy]$ ]]; then
+                        sudo service redis-server stop || true
+                        sudo systemctl stop redis || true
+                        # Re-check if port is still in use
+                        if command -v lsof >/dev/null 2>&1; then
+                            proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
+                        else
+                            proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
+                        fi
+                        if [ -z "$proc_info" ]; then
+                            success "$CHECKMARK Successfully stopped redis-server on port 6379."
+                            continue
+                        else
+                            warning "redis-server is still running on port 6379. Please stop it manually."
+                        fi
                     fi
                 fi
+
+                found=1
+                # Create horizontal border line with consistent width
+                local border=$(printf "%${box_width}s" | tr ' ' '-')
+                
+                echo -e "\n+${border}+"
+                printf "| %-${box_width}s |\n" "⚠️  LOCAL SERVICE CONFLICT DETECTED"
+                echo "+${border}+"
+                
+                # Format each line with proper right alignment
+                printf "| Port %-5s is in use by local process '%-12s' (PID %-6s) |\n" "$port" "$proc_name" "$proc_pid"
+                printf "| %-${box_width}s |\n" ""
+                printf "| %-${box_width}s |\n" "This will prevent the $service service from starting"
+                printf "| %-${box_width}s |\n" "correctly. You appear to have a local instance of $service"
+                printf "| %-${box_width}s |\n" "running on your system."
+                printf "| %-${box_width}s |\n" ""
+                printf "| %-${box_width}s |\n" "To resolve:"
+                printf "| %-${box_width}s |\n" "    sudo kill $proc_pid"
+                printf "| %-${box_width}s |\n" "Then re-run this installer."
+                echo "+${border}+"
             fi
-            # Special handling for ollama on 11434
-            if [ "$port" = "11434" ] && [[ "${proc_name,,}" == *ollama* ]]; then
-                echo -e "\nOllama appears to be running locally on port 11434."
-                read -p "Would you like to try stopping it automatically? [y/N]: " stop_ollama
-                if [[ "$stop_ollama" =~ ^[Yy]$ ]]; then
-                    sudo systemctl stop ollama || true
-                    # Re-check if port is still in use
-                    if command -v lsof >/dev/null 2>&1; then
-                        proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
-                    else
-                        proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
-                    fi
-                    if [ -z "$proc_info" ]; then
-                        success "$CHECKMARK Successfully stopped ollama on port 11434."
-                        continue
-                    else
-                        warning "Ollama is still running on port 11434. Please stop it manually."
-                    fi
-                fi
-            fi
-            found=1
-            # Create horizontal border line with consistent width
-            local border=$(printf "%${box_width}s" | tr ' ' '-')
-            
-            echo -e "\n+${border}+"
-            printf "| %-${box_width}s |\n" "⚠️  LOCAL SERVICE CONFLICT DETECTED"
-            echo "+${border}+"
-            
-            # Format each line with proper right alignment
-            printf "| Port %-5s is in use by local process '%-12s' (PID %-6s) |\n" "$port" "$proc_name" "$proc_pid"
-            printf "| %-${box_width}s |\n" ""
-            printf "| %-${box_width}s |\n" "This will prevent the $service service from starting"
-            printf "| %-${box_width}s |\n" "correctly. You appear to have a local instance of $service"
-            printf "| %-${box_width}s |\n" "running on your system."
-            printf "| %-${box_width}s |\n" ""
-            printf "| %-${box_width}s |\n" "To resolve:"
-            printf "| %-${box_width}s |\n" "    sudo kill $proc_pid"
-            printf "| %-${box_width}s |\n" "Then re-run this installer."
-            echo "+${border}+"
+        done
+        if [ $found -eq 1 ]; then
+            echo -e "\n\e[1;33m[WARNING] Local service conflicts detected.\e[0m"
+            read -p "\nPress Enter to exit and resolve the conflict(s)..." _
+            exit 1
         fi
-    done
-    if [ $found -eq 1 ]; then
-        echo -e "\n\e[1;33m[WARNING] Local service conflicts detected.\e[0m"
-        read -p "\nPress Enter to exit and resolve the conflict(s)..." _
-        exit 1
     fi
 }
 
@@ -1276,7 +1259,7 @@ main() {
     check_environment
 
     check_duplicate_installations
-
+    
     # Install type
     prompt_for_install_type
 
