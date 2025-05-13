@@ -214,6 +214,7 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+  
   rime-api:
     image: quay.io/rimelabs/api:v0.0.2-20250407
     container_name: rime-api
@@ -239,6 +240,7 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+  
   rime-model:
     image: quay.io/rimelabs/mistv2:v0.0.1-20250403
     container_name: rime-model
