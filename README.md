@@ -349,6 +349,108 @@ If you cannot connect to UneeQ platform services:
 3. Check for any IP restrictions on the UneeQ platform
 4. Contact UneeQ support for assistance
 
+### If the Digital Human starts but does not respond
+Verify the contents (cat, nano, vim) of docker/configuration.dat:
+```
+{
+  "Server": "prod-global",
+  "TenantId": "3f3122-5555-5555-o5o5o-99aEXAMPLE7823",
+  "JWSSecret": "MM99EXAMPLEXi3N/CZ3r3h32EXAMPLEq9iydXFKwuNNUwW0g9vmDRBxQ2c3kO0C9M/"
+}
+```
+The **TenantID** is available from the UneeQ admin portal. 
+The **JWSSecret** is the API Key.
+
+The TenantID is available from the UneeQ admin portal. 
+The JWSSecret is their API Key.
+
+Verify the Tenant ID by acccessing a customer account on the UneeQ Admin Portal. Before clicking on any tenant name, click the pencil/edit icon to the right of a tenant.
+
+The JWSSecret is the API key which you can verify on the same admin page, in the Security section.
+
+### If the Digital Human does not start
+(Audio2Face troubleshooting)
+Nvidia / Audio2Face Troubleshooting
+
+When starting MiniPrem, if you see an error related audio2face: 
+
+`Container audio2face_with_emotion  Error`
+
+There could be an issue with either the GPU card or driver.
+
+Check Card and Driver Status by verifying card is physically installed:
+
+`lspci | grep -i nvidia`
+
+You should see a NVIDIA card listed if it is physically installed, regardless of the driver status.
+
+To check if drivers are installed:
+
+```
+dpkg -l | grep nvidia-driver
+lsmod | grep nvidia
+```
+If no output from either command, then no NVIDIA modules are loaded. 
+
+
+If it does appear the drivers are loaded, verify they are running properly:
+`nvidia-smi`
+
+A typical nvidia-smi output should look like this:
+```
++-----------------------------------------------------------------------------+| NVIDIA-SMI 545.XX.XX    Driver Version: 545.XX.XX    CUDA Version: 12.X     |
++-----------------------------------------------------------------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|                               |                      |               MIG M. |
+|===============================+======================+======================|
+|   0  NVIDIA GeForce ...  Off | 00000000:01:00.0  On |                  N/A |
+| 30%   45C    P8    16W / 200W|    456MiB /  8192MiB |      2%      Default |
+|                               |                      |                  N/A |
++-----------------------------------------------------------------------------+
+```
+
+Key things to look for:
+- Driver Version (top line)
+- GPU Name
+
+If you see a `command not found` error, it usually means the NVIDIA drivers aren't installed properly. 
+
+If you see "NVIDIA-SMI has failed" error, it usually means either:
+- The drivers aren't properly loaded
+- There's a conflict with Secure Boot
+- The drivers aren't compatible with your current kernel
+
+
+### To (Re)Install Nvidia Drivers
+Update Ubuntu Linux first and then install latest available NVIDIA driver.
+
+`sudo apt update
+sudo apt install nvidia-driver`
+
+Before rebooting, verify loading the NVIDIA drivers manually:
+`sudo modprobe nvidia`
+
+
+If you see this specific message: 
+
+`ERROR: could not insert 'nvidia': Key was rejected by service`
+
+The system is rejecting the NVIDIA module, likely because Secure Boot is enabled in the UEFI settings. To fix this issue, restart the computer and press DEL, F12, or the appropriate key during startup to access the BIOS settings. Find and disable the Secure Boot option in the BIOS menu. While NVIDIA drivers from official Ubuntu repositories are typically digitally signed, kernel updates sometimes prevent GPU drivers from loading properly
+
+
+
+Once Secure Boot is disabled, you should be able to verify again if NVIDIA drivers are loaded once Ubuntu is booted:
+`lsmod | grep nvidia`
+
+If no output, no NVIDIA modules are loaded and you may need to reinstall the NVIDIA driver again.
+
+
+
+
+
+
+
 ## Additional Documentation
 
 For more detailed information, refer to the following guides:
