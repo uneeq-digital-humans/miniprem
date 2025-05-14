@@ -158,7 +158,8 @@
   window.$docsify.language = getCurrentLanguage();
   
   // Handle content loading based on language
-  window.$docsify.plugins = [].concat(window.$docsify.plugins, function(hook, vm) {
+  window.$docsify.plugins = window.$docsify.plugins || [];
+  window.$docsify.plugins.push(function(hook, vm) {
     // Run this once at startup to handle initial page load
     hook.init(function() {
       console.log('Docsify init with language:', window.$docsify.language);

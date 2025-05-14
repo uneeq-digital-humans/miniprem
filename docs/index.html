@@ -44,6 +44,7 @@
       subMaxLevel: 2,
       coverpage: true,
       auto2top: true,
+      noCompile: false,
       themeColor: '#42b983',
       search: {
         maxAge: 86400000,
@@ -133,28 +134,27 @@
 
   <!-- Custom MiniPrem scripts (after Docsify is loaded) -->
   <script src="assets/miniprem.js"></script>
-  <script src="assets/coverpage-handler.js"></script>
-  <script src="assets/language-switcher.js"></script>
-  <script src="assets/translation-status.js"></script>
+  <!-- <script src="assets/coverpage-handler.js"></script> -->
+  <!-- <script src="assets/language-switcher.js"></script> -->
+  <!-- <script src="assets/translation-status.js"></script> -->
 
   <script>
     // Custom language switcher with flags
-    window.$docsify.plugins = [
-      function (hook) {
-        hook.doneEach(function () {
-          const select = document.querySelector('.language-select');
-          if (select) {
-            select.innerHTML = Object.entries(languages)
-              .map(([code, { name, flag }]) => `
-                <option value="${code}" ${code === window.$docsify.language ? 'selected' : ''}>
-                  <span class="flag-icon flag-icon-${flag}"></span> ${name}
-                </option>
-              `)
-              .join('');
-          }
-        });
-      }
-    ];
+    window.$docsify.plugins = window.$docsify.plugins || [];
+    window.$docsify.plugins.push(function (hook) {
+      hook.doneEach(function () {
+        const select = document.querySelector('.language-select');
+        if (select) {
+          select.innerHTML = Object.entries(languages)
+            .map(([code, { name, flag }]) => `
+              <option value="${code}" ${code === window.$docsify.language ? 'selected' : ''}>
+                <span class="flag-icon flag-icon-${flag}"></span> ${name}
+              </option>
+            `)
+            .join('');
+        }
+      });
+    });
   </script>
 
   <!-- Language prefix enforcement and switcher path update (modified to allow root path) -->

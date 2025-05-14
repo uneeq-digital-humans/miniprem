@@ -93,7 +93,8 @@
 
   // Initialize when Docsify is ready
   window.$docsify = window.$docsify || {};
-  window.$docsify.plugins = (window.$docsify.plugins || []).concat(function(hook) {
+  window.$docsify.plugins = window.$docsify.plugins || [];
+  window.$docsify.plugins.push(function(hook) {
     hook.afterEach(function(html) {
       addTranslationStatus();
       return html;

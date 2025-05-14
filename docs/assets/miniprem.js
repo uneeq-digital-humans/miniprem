@@ -285,59 +285,38 @@ const apiPlugin = function (hook, vm) {
   });
 };
 
-// Process container logs blocks
+// Add logs plugin to Docsify
 const logsPlugin = function (hook, vm) {
   hook.doneEach(function () {
-    console.log("Running logs plugin after page render");
-
-    // Find all container-logs blocks
-    const logsBlocks = document.querySelectorAll('pre[data-lang="container-logs"]');
-    console.log("Found container-logs blocks:", logsBlocks.length);
-
-    logsBlocks.forEach((preElement, index) => {
-      const content = preElement.textContent;
-      console.log(`Processing container-logs block ${index}:`, content);
-
-      const containers = content.trim().split('\n');
-      const containerId = 'terminal-' + Math.random().toString(36).substring(2, 11);
-
-      console.log(`Creating terminal container with ID: ${containerId}`);
-      console.log(`Available containers:`, containers);
-
-      let options = '';
-      containers.forEach(container => {
-        options += `<option value="${container.trim()}">${container.trim()}</option>`;
-      });
-
-      // Create container div with explicit styling to ensure visibility
-      const terminalContainer = document.createElement('div');
-      terminalContainer.className = 'terminal-container';
-      terminalContainer.style.cssText = 'display: block; visibility: visible;';
-
-      terminalContainer.innerHTML = `
-        <div class="terminal-header">
-          <span class="terminal-title">Container Logs</span>
-          <select class="terminal-select" onchange="connectToContainerLogs(this.value, '${containerId}')">
-            <option value="">Select a container</option>
-            ${options}
-          </select>
-        </div>
-        <div class="terminal-output" id="${containerId}" style="min-height: 200px; background-color: #1e1e1e; color: white;">
-          <em>Select a container to view logs</em>
+    document.querySelectorAll('pre code.lang-container-logs, pre code.lang-terminal').forEach(function(codeBlock) {
+      // Decode HTML entities
+      let services = codeBlock.textContent.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+      const serviceList = services.trim().split('\n');
+      const containerId = 'logs-' + Math.random().toString(36).substring(2, 11);
+      const html = `
+        <div class="logs-container">
+          <div class="logs-header">
+            <select class="logs-select" onchange="switchContainerLogs(this.value, '${containerId}')">
+              ${serviceList.map(service => `
+                <option value="${service.trim()}">${service.trim()}</option>
+              `).join('')}
+            </select>
+            <button class="logs-clear" onclick="clearLogs('${containerId}')">Clear</button>
+          </div>
+          <div class="logs-output" id="${containerId}">
+            <em>Select a service to view its logs...</em>
+          </div>
         </div>
       `;
-
-      // Replace the pre element with our terminal container
-      console.log("Replacing pre element with terminal container");
-      preElement.parentNode.replaceChild(terminalContainer, preElement);
-
-      // Debug: Check if the container was inserted into the DOM
+      // Replace the parent <pre> with the logs container
+      const pre = codeBlock.parentElement;
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = html;
+      pre.parentElement.replaceChild(wrapper.firstElementChild, pre);
+      // Initialize logs for the first service
       setTimeout(() => {
-        const insertedElement = document.getElementById(containerId);
-        console.log(`Terminal output element exists: ${insertedElement !== null}`);
-        if (insertedElement) {
-          console.log("Terminal element styles:", window.getComputedStyle(insertedElement));
-        }
+        const firstService = serviceList[0].trim();
+        connectToContainerLogs(firstService, containerId);
       }, 100);
     });
   });
@@ -401,3 +380,12 @@ const getCurrentLanguage = () => {
   }
   return 'en';
 };
+
+// Global function to switch logs when a new container is selected
+function switchContainerLogs(containerName, outputElementId) {
+  const outputElement = document.getElementById(outputElementId);
+  if (outputElement) {
+    outputElement.innerHTML = '<em>Switching to logs for ' + containerName + '...</em>';
+    connectToContainerLogs(containerName, outputElementId);
+  }
+}
