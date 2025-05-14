@@ -122,7 +122,7 @@ perform_nvidia_runtime_test() {
 
     {
         # Perform a test to make sure Nvidia runtime is working
-        nvidia_smi_output=$($DOCKER_CMD run --rm --runtime=nvidia --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi 2>/dev/null)
+        nvidia_smi_output=$($DOCKER_CMD run --rm --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi 2>/dev/null)
         if ! echo "$nvidia_smi_output" | grep -q "NVIDIA-SMI"; then
             fatal "$CROSS Nvidia runtime test failed. Please check your installation."
         fi
