@@ -127,16 +127,31 @@ configure_eleven_labs() {
 
 # Function to pull necessary Docker images
 pull_required_images() {
-    # Only pull images and perform logins for selected services
+    # Only pull images for selected services
     if [ "$INSTALL_TYPE" = "full" ]; then
-        # Pull all images and perform all logins (including RIME)
-        setup_rime_credentials
+        # Pull common images
+        info "Pulling basic services images..."
+        docker pull prom/prometheus:v2.45.0
+        docker pull grafana/grafana:10.2.0
+        docker pull redis:latest
+        docker pull vllm/vllm-openai:v0.2.7
+        
+        # Pull TTS-specific images based on selection
+        if [ "$TTS_PROVIDER" = "rime" ]; then
+            # RIME credentials and images are handled in setup_rime_credentials
+            setup_rime_credentials
+        fi
     else
         # Only pull images for Renny and Audio2Face
         info "Pulling Renny and Audio2Face images..."
         docker pull facemeproduction/renny:0.484-37235
         docker pull facemeproduction/audio2face_with_emotion:local-dev
         docker pull facemeproduction/audio2face_anim_controller:local-dev
+        
+        # If using RIME in default install, pull RIME images
+        if [ "$TTS_PROVIDER" = "rime" ]; then
+            setup_rime_credentials
+        fi
     fi
 }
 
@@ -309,17 +324,286 @@ ensure_configuration_file_exists() {
     fi
 }
 
-# Function to get required variables from the env file (those with empty values)
-get_required_env_vars_from_example() {
-    local example_file="docker/docker-compose.env"
-    local all_vars=$(grep -E '^[A-Z0-9_]+=$' "$example_file" | cut -d= -f1)
+# Function to prompt for TTS provider selection
+select_tts_provider() {
+    log_section "Text-to-Speech Provider Selection"
     
-    # If USE_ELEVEN_LABS is set to "no", filter out Eleven Labs variables
-    if [[ "$USE_ELEVEN_LABS" == "no" ]]; then
-        echo "$all_vars" | grep -v "^ELEVEN_LABS"
-    else
-        echo "$all_vars"
+    echo "Select your preferred text-to-speech provider:"
+    echo "1) Azure (Microsoft TTS)"
+    echo "2) Eleven Labs"
+    echo "3) RIME"
+    read -p "Enter choice [1-3]: " tts_choice
+    
+    case "$tts_choice" in
+        1)
+            TTS_PROVIDER="azure"
+            echo "azure" > .miniprem_tts_provider
+            info "Azure TTS selected"
+            ;;
+        2)
+            TTS_PROVIDER="elevenlabs"
+            echo "elevenlabs" > .miniprem_tts_provider
+            info "Eleven Labs TTS selected"
+            ;;
+        3)
+            TTS_PROVIDER="rime"
+            echo "rime" > .miniprem_tts_provider
+            info "RIME TTS selected"
+            ;;
+        *)
+            warning "Invalid choice, defaulting to Azure TTS"
+            TTS_PROVIDER="azure"
+            echo "azure" > .miniprem_tts_provider
+            ;;
+    esac
+}
+
+# Modified function to configure Azure TTS
+configure_azure_tts() {
+    if [ "$TTS_PROVIDER" != "azure" ]; then
+        # Clear Azure environment variables if not using Azure
+        update_env_variable "AZURE_REGION" "\"\""
+        update_env_variable "AZURE_SPEECH" "\"\""
+        update_env_variable "AZURE_SPEECH_KEY" "\"\""
+        return 0
     fi
+    
+    log_section "Configure Azure TTS"
+    
+    # Check if Azure region is already set
+    local AZURE_REGION_VAL=$(read_env_variable "AZURE_REGION")
+    if [ -z "$AZURE_REGION_VAL" ]; then
+        read -p "Enter your Azure region (e.g., eastus): " AZURE_REGION
+        if [ -z "$AZURE_REGION" ]; then
+            warning "No Azure region provided. Azure TTS may not function correctly."
+        else
+            update_env_variable "AZURE_REGION" "\"$AZURE_REGION\""
+            success "$CHECKMARK Azure region configured"
+        fi
+    else
+        AZURE_REGION="$AZURE_REGION_VAL"
+        success "$CHECKMARK Azure region already configured"
+    fi
+
+    # Check if Azure speech key is already set
+    local AZURE_SPEECH_KEY_VAL=$(read_env_variable "AZURE_SPEECH_KEY")
+    if [ -z "$AZURE_SPEECH_KEY_VAL" ]; then
+        read -p "Enter your Azure speech key: " AZURE_SPEECH_KEY
+        if [ -z "$AZURE_SPEECH_KEY" ]; then
+            warning "No Azure speech key provided. Azure TTS may not function correctly."
+        else
+            update_env_variable "AZURE_SPEECH_KEY" "\"$AZURE_SPEECH_KEY\""
+            update_env_variable "AZURE_SPEECH" "\"$AZURE_SPEECH_KEY\""
+            success "$CHECKMARK Azure speech key configured"
+        fi
+    else
+        AZURE_SPEECH_KEY="$AZURE_SPEECH_KEY_VAL"
+        success "$CHECKMARK Azure speech key already configured"
+    fi
+}
+
+# Modified function to configure Eleven Labs
+configure_eleven_labs() {
+    if [ "$TTS_PROVIDER" != "elevenlabs" ]; then
+        # Clear Eleven Labs environment variables if not using Eleven Labs
+        update_env_variable "ELEVEN_LABS_API_KEY" "\"\""
+        update_env_variable "ELEVEN_LABS_MODEL_ID" "\"\""
+        update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "\"\""
+        update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "\"\""
+        update_env_variable "ELEVEN_LABS_STABILITY" "\"\""
+        return 0
+    fi
+    
+    log_section "Configure Eleven Labs TTS"
+    
+    # Check if Eleven Labs API key is already set
+    local ELEVEN_LABS_API_KEY_VAL=$(read_env_variable "ELEVEN_LABS_API_KEY")
+    if [ -z "$ELEVEN_LABS_API_KEY_VAL" ]; then
+        read -p "Enter your Eleven Labs API key: " ELEVEN_LABS_API_KEY
+        if [ -z "$ELEVEN_LABS_API_KEY" ]; then
+            warning "No Eleven Labs API key provided. Eleven Labs services may not function correctly."
+        else
+            # Update the environment variable
+            update_env_variable "ELEVEN_LABS_API_KEY" "\"$ELEVEN_LABS_API_KEY\""
+            # Set default values for other Eleven Labs parameters
+            update_env_variable "ELEVEN_LABS_MODEL_ID" "\"eleven_flash_v2_5\""
+            update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "1"
+            update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "0.5"
+            update_env_variable "ELEVEN_LABS_STABILITY" "0.5"
+            success "$CHECKMARK Eleven Labs API key configured"
+        fi
+    else
+        ELEVEN_LABS_API_KEY="$ELEVEN_LABS_API_KEY_VAL"
+        success "$CHECKMARK Eleven Labs API key already configured"
+    fi
+}
+
+# Modified function to setup RIME credentials
+setup_rime_credentials() {
+    if [ "$TTS_PROVIDER" != "rime" ]; then
+        # Clear RIME environment variables if not using RIME
+        update_env_variable "RIME_API_KEY" "\"\""
+        return 0
+    fi
+    
+    log_section "Setting up RIME credentials"
+
+    # Check if RIME_API_KEY is already set
+    local RIME_API_KEY_VAL=$(read_env_variable "RIME_API_KEY")
+
+    if [ -z "$RIME_API_KEY_VAL" ]; then
+        read -p "Enter your RIME API key: " RIME_API_KEY
+        if [ -z "$RIME_API_KEY" ]; then
+            warning "No RIME API key provided. RIME services may not function correctly."
+        else
+            update_env_variable "RIME_API_KEY" "\"$RIME_API_KEY\""
+            success "$CHECKMARK RIME API key configured"
+        fi
+    else
+        RIME_API_KEY="$RIME_API_KEY_VAL"
+        success "$CHECKMARK RIME API key already configured"
+    fi
+
+    # Only pull RIME images if we're using RIME
+    if [ "$TTS_PROVIDER" == "rime" ]; then
+        # Check if we've already authenticated with quay.io
+        if docker images | grep -q "quay.io/rimelabs/api" && docker images | grep -q "quay.io/rimelabs/mistv2"; then
+            success "$CHECKMARK Already have RIME Docker images, skipping quay.io login"
+            return 0
+        fi
+
+        # Prompt for quay.io password for RIME images
+        local RIME_QUAY_PASSWORD=""
+        while [ -z "$RIME_QUAY_PASSWORD" ]; do
+            read -s -p "Enter the quay.io password for RIME (rimelabs+uneeq): " RIME_QUAY_PASSWORD
+            echo
+            if [ -z "$RIME_QUAY_PASSWORD" ]; then
+                warning "No password entered. Please provide the quay.io password for RIME."
+            fi
+        done
+
+        # Login to quay.io for RIME images
+        info "Logging in to quay.io for RIME images..."
+        docker login -u="rimelabs+uneeq" -p="$RIME_QUAY_PASSWORD" quay.io
+        docker pull quay.io/rimelabs/api:v0.0.2-20250407
+        docker pull quay.io/rimelabs/mistv2:v0.0.1-20250403
+
+        info "RIME credential setup complete"
+    fi
+}
+
+# Function to update docker-compose.yml based on the selected TTS provider
+update_docker_compose_for_tts() {
+    local compose_file="docker/docker-compose.yml"
+    
+    # Only proceed if docker-compose.yml exists
+    if [ ! -f "$compose_file" ]; then
+        warning "docker-compose.yml not found, skipping TTS configuration"
+        return 1
+    fi
+    
+    # Make a backup of the original file
+    cp "$compose_file" "${compose_file}.bak"
+    
+    info "Updating docker-compose.yml for selected TTS provider: $TTS_PROVIDER"
+    
+    # Handle RIME services based on selection
+    if [ "$TTS_PROVIDER" = "rime" ]; then
+        # Uncomment RIME services if RIME is selected
+        sed -i '/^### RIME BEGIN ###/,/^### RIME END ###/s/^  # /  /' "$compose_file"
+    else
+        # Comment out RIME services if not selected
+        sed -i '/^### RIME BEGIN ###/,/^### RIME END ###/s/^  /  # /' "$compose_file"
+    fi
+    
+    success "$CHECKMARK docker-compose.yml updated for TTS provider: $TTS_PROVIDER"
+}
+
+# Function to update docker-compose.yml based on the selected STT backend
+update_docker_compose_for_stt() {
+    local compose_file="docker/docker-compose.yml"
+    local stt_choice=$1
+    
+    # Only proceed if docker-compose.yml exists
+    if [ ! -f "$compose_file" ]; then
+        warning "docker-compose.yml not found, skipping STT configuration"
+        return 1
+    fi
+    
+    info "Updating docker-compose.yml for selected STT backend..."
+    
+    if [ "$stt_choice" = "1" ]; then
+        # Enable Whisper, disable FastWhisper
+        sed -i '/^### WHISPER BEGIN ###/,/^### WHISPER END ###/s/^  # /  /' "$compose_file"
+        sed -i '/^### FASTWHISPER BEGIN ###/,/^### FASTWHISPER END ###/s/^  /  # /' "$compose_file"
+    elif [ "$stt_choice" = "2" ]; then
+        # Enable FastWhisper, disable Whisper
+        sed -i '/^### FASTWHISPER BEGIN ###/,/^### FASTWHISPER END ###/s/^  # /  /' "$compose_file"
+        sed -i '/^### WHISPER BEGIN ###/,/^### WHISPER END ###/s/^  /  # /' "$compose_file"
+    elif [ "$stt_choice" = "3" ]; then
+        # Disable both Whisper and FastWhisper (use UneeQ default STT)
+        sed -i '/^### WHISPER BEGIN ###/,/^### WHISPER END ###/s/^  /  # /' "$compose_file"
+        sed -i '/^### FASTWHISPER BEGIN ###/,/^### FASTWHISPER END ###/s/^  /  # /' "$compose_file"
+    fi
+    
+    success "$CHECKMARK docker-compose.yml updated for STT backend"
+}
+
+# Function to get required variables from the env file based on selected provider
+get_required_env_vars_from_example() {
+    local example_file="docker/docker-compose.env.example"
+    local all_vars=""
+    
+    # Get variables based on the selected TTS provider
+    case "$TTS_PROVIDER" in
+        "azure")
+            all_vars=$(grep -E '^(AZURE_REGION|AZURE_SPEECH|AZURE_SPEECH_KEY)=$' "$example_file" | cut -d= -f1)
+            ;;
+        "elevenlabs")
+            all_vars=$(grep -E '^ELEVEN_LABS_API_KEY=$' "$example_file" | cut -d= -f1)
+            ;;
+        "rime")
+            all_vars=$(grep -E '^RIME_API_KEY=$' "$example_file" | cut -d= -f1)
+            ;;
+        *)
+            # Get common variables (not related to TTS)
+            all_vars=$(grep -E '^[A-Z0-9_]+=$' "$example_file" | grep -v -E '^(AZURE_|ELEVEN_LABS_|RIME_)' | cut -d= -f1)
+            ;;
+    esac
+    
+    # Add common required variables
+    common_vars=$(grep -E '^(DHOP_APIKEY|DHOP_TENANTID)=$' "$example_file" | cut -d= -f1)
+    echo "$all_vars"$'\n'"$common_vars" | sort | uniq
+}
+
+# Function to check and prompt for required env variables dynamically based on selected provider
+check_and_prompt_required_env_vars() {
+    local env_file="docker/docker-compose.env"
+    local required_vars=( $(get_required_env_vars_from_example) )
+    
+    for var in "${required_vars[@]}"; do
+        local value=$(read_env_variable "$var")
+        if [[ -z "$value" ]]; then
+            warning "$var is missing or empty in $env_file."
+            read -p "Enter value for $var: " value
+            if [[ -z "$value" ]]; then
+                fatal "$var is required. Exiting."
+            fi
+            # Store the value in a variable instead of writing directly
+            case "$var" in
+                "DHOP_APIKEY") PLATFORM_KEY="$value" ;;
+                "DHOP_TENANTID") TENANT_ID="$value" ;;
+                "AZURE_REGION") AZURE_REGION="$value" ;;
+                "AZURE_SPEECH_KEY"|"AZURE_SPEECH") AZURE_SPEECH_KEY="$value" ;;
+                "ELEVEN_LABS_API_KEY") ELEVEN_LABS_API_KEY="$value" ;;
+                "RIME_API_KEY") RIME_API_KEY="$value" ;;
+                *) update_env_variable "$var" "$value" ;; # Only use for non-main vars
+            esac
+        fi
+    done
+    
+    # Update all main variables at once using update_env_file
+    update_env_file
 }
 
 # Function to update environment variables in docker-compose.env
@@ -340,32 +624,35 @@ update_env_file() {
         fi
     fi
     
-    if [ -n "$AZURE_REGION" ]; then
-        if grep -q "^AZURE_REGION=" "$env_file"; then
-            sed -i "s|^AZURE_REGION=.*|AZURE_REGION=$AZURE_REGION|" "$env_file"
+    # Only update TTS-related variables based on selected provider
+    if [ "$TTS_PROVIDER" = "azure" ]; then
+        if [ -n "$AZURE_REGION" ]; then
+            if grep -q "^AZURE_REGION=" "$env_file"; then
+                sed -i "s|^AZURE_REGION=.*|AZURE_REGION=$AZURE_REGION|" "$env_file"
+            fi
         fi
-    fi
-    
-    if [ -n "$AZURE_SPEECH_KEY" ]; then
-        if grep -q "^AZURE_SPEECH_KEY=" "$env_file"; then
-            sed -i "s|^AZURE_SPEECH_KEY=.*|AZURE_SPEECH_KEY=$AZURE_SPEECH_KEY|" "$env_file"
+        
+        if [ -n "$AZURE_SPEECH_KEY" ]; then
+            if grep -q "^AZURE_SPEECH_KEY=" "$env_file"; then
+                sed -i "s|^AZURE_SPEECH_KEY=.*|AZURE_SPEECH_KEY=$AZURE_SPEECH_KEY|" "$env_file"
+            fi
+            if grep -q "^AZURE_SPEECH=" "$env_file"; then
+                sed -i "s|^AZURE_SPEECH=.*|AZURE_SPEECH=$AZURE_SPEECH_KEY|" "$env_file"
+            fi
         fi
-        if grep -q "^AZURE_SPEECH=" "$env_file"; then
-            sed -i "s|^AZURE_SPEECH=.*|AZURE_SPEECH=$AZURE_SPEECH_KEY|" "$env_file"
+    elif [ "$TTS_PROVIDER" = "elevenlabs" ]; then
+        # If we have Eleven Labs credentials, update those
+        if [ -n "$ELEVEN_LABS_API_KEY" ]; then
+            if grep -q "^ELEVEN_LABS_API_KEY=" "$env_file"; then
+                sed -i "s|^ELEVEN_LABS_API_KEY=.*|ELEVEN_LABS_API_KEY=$ELEVEN_LABS_API_KEY|" "$env_file"
+            fi
         fi
-    fi
-    
-    # If we have RIME credentials, update those too
-    if [ -n "$RIME_API_KEY" ]; then
-        if grep -q "^RIME_API_KEY=" "$env_file"; then
-            sed -i "s|^RIME_API_KEY=.*|RIME_API_KEY=$RIME_API_KEY|" "$env_file"
-        fi
-    fi
-    
-    # If we have Eleven Labs credentials, update those too
-    if [ -n "$ELEVEN_LABS_API_KEY" ]; then
-        if grep -q "^ELEVEN_LABS_API_KEY=" "$env_file"; then
-            sed -i "s|^ELEVEN_LABS_API_KEY=.*|ELEVEN_LABS_API_KEY=$ELEVEN_LABS_API_KEY|" "$env_file"
+    elif [ "$TTS_PROVIDER" = "rime" ]; then
+        # If we have RIME credentials, update those
+        if [ -n "$RIME_API_KEY" ]; then
+            if grep -q "^RIME_API_KEY=" "$env_file"; then
+                sed -i "s|^RIME_API_KEY=.*|RIME_API_KEY=$RIME_API_KEY|" "$env_file"
+            fi
         fi
     fi
 }
@@ -396,35 +683,6 @@ ensure_env_file_exists() {
     fi
 }
 
-# Function to check and prompt for required env variables dynamically
-check_and_prompt_required_env_vars() {
-    local env_file="docker/docker-compose.env"
-    local required_vars=( $(get_required_env_vars_from_example) )
-    for var in "${required_vars[@]}"; do
-        local value=$(read_env_variable "$var")
-        if [[ -z "$value" ]]; then
-            warning "$var is missing or empty in $env_file."
-            read -p "Enter value for $var: " value
-            if [[ -z "$value" ]]; then
-                fatal "$var is required. Exiting."
-            fi
-            # Store the value in a variable instead of writing directly
-            case "$var" in
-                "DHOP_APIKEY") PLATFORM_KEY="$value" ;;
-                "DHOP_TENANTID") TENANT_ID="$value" ;;
-                "AZURE_REGION") AZURE_REGION="$value" ;;
-                "AZURE_SPEECH_KEY"|"AZURE_SPEECH") AZURE_SPEECH_KEY="$value" ;;
-                "ELEVEN_LABS_API_KEY") ELEVEN_LABS_API_KEY="$value" ;;
-                "RIME_API_KEY") RIME_API_KEY="$value" ;;
-                *) update_env_variable "$var" "$value" ;; # Only use for non-main vars
-            esac
-        fi
-    done
-    
-    # Update all main variables at once using update_env_file
-    update_env_file
-}
-
 # Function to check if all required values are provided
 check_all_values_provided() {
     local missing=0
@@ -434,9 +692,19 @@ check_all_values_provided() {
     info "PLATFORM_ADDRESS: ${PLATFORM_ADDRESS:-'Not set'}"
     info "PLATFORM_KEY: ${PLATFORM_KEY:+'Set (value hidden)'}"
     info "TENANT_ID: ${TENANT_ID:-'Not set'}"
-    info "AZURE_REGION: ${AZURE_REGION:-'Not set'}"
-    info "AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:+'Set (value hidden)'}"
     info "RENNY_IMAGE: ${RENNY_IMAGE:-'Not set'}"
+    
+    # Check TTS-specific variables based on provider
+    if [ "$TTS_PROVIDER" = "azure" ]; then
+        info "AZURE_REGION: ${AZURE_REGION:-'Not set'}"
+        info "AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:+'Set (value hidden)'}"
+    elif [ "$TTS_PROVIDER" = "elevenlabs" ]; then
+        ELEVEN_LABS_API_KEY=$(read_env_variable "ELEVEN_LABS_API_KEY")
+        info "ELEVEN_LABS_API_KEY: ${ELEVEN_LABS_API_KEY:+'Set (value hidden)'}"
+    elif [ "$TTS_PROVIDER" = "rime" ]; then
+        RIME_API_KEY=$(read_env_variable "RIME_API_KEY")
+        info "RIME_API_KEY: ${RIME_API_KEY:+'Set (value hidden)'}"
+    fi
 
     if [ -z "$PLATFORM_KEY" ]; then
         warning "UneeQ platform API key is missing"
@@ -447,15 +715,30 @@ check_all_values_provided() {
         warning "Tenant ID is missing"
         missing=1
     fi
+    
+    # Check TTS-specific requirements
+    if [ "$TTS_PROVIDER" = "azure" ]; then
+        if [ -z "$AZURE_REGION" ]; then
+            warning "Azure region is missing"
+            missing=1
+        fi
 
-    if [ -z "$AZURE_REGION" ]; then
-        warning "Azure region is missing"
-        missing=1
-    fi
-
-    if [ -z "$AZURE_SPEECH_KEY" ]; then
-        warning "Azure speech key is missing"
-        missing=1
+        if [ -z "$AZURE_SPEECH_KEY" ]; then
+            warning "Azure speech key is missing"
+            missing=1
+        fi
+    elif [ "$TTS_PROVIDER" = "elevenlabs" ]; then
+        ELEVEN_LABS_API_KEY=$(read_env_variable "ELEVEN_LABS_API_KEY")
+        if [ -z "$ELEVEN_LABS_API_KEY" ]; then
+            warning "Eleven Labs API key is missing"
+            missing=1
+        fi
+    elif [ "$TTS_PROVIDER" = "rime" ]; then
+        RIME_API_KEY=$(read_env_variable "RIME_API_KEY")
+        if [ -z "$RIME_API_KEY" ]; then
+            warning "RIME API key is missing"
+            missing=1
+        fi
     fi
 
     if [ -z "$RENNY_IMAGE" ]; then
@@ -549,17 +832,25 @@ start_miniprem() {
         fi
 
         # Only start vLLM for full installation
+        # First, ensure vLLM volume directory exists and has correct permissions
+        info "Preparing vLLM volume directory..."
+        if [ ! -d "docker/vllm_data" ]; then
+            mkdir -p docker/vllm_data
+            chmod 777 docker/vllm_data
+        fi
+
         # First, start just vLLM since it needs significant GPU memory
         info "Starting vLLM service first..."
+        info "Note: Initial startup may fail as the model needs to be downloaded. This is expected."
         docker compose $COMPOSE_FILES up -d vllm
         if [ $? -ne 0 ]; then
-            fatal "Failed to start vLLM service"
+            warning "vLLM service failed to start - this is expected as the model needs to be downloaded"
         fi
         
         # Prepare the model while GPU is clean
         prepare_vllm_model
         
-        # Now start other services EXCEPT A2F
+        # Now start other services EXCEPT A2F and TTS-specific ones
         info "Starting other services..."
         # Use the correct whisper service based on user's choice
         local whisper_service="whisper"
@@ -567,11 +858,24 @@ start_miniprem() {
             whisper_service="fastwhisper"
         fi
         
+        # Define services to start based on TTS provider
+        local tts_services=""
+        if [ "$TTS_PROVIDER" = "rime" ]; then
+            tts_services="rime-model rime-api"
+        fi
+        
         docker compose $COMPOSE_FILES up -d \
             redis grafana prometheus \
-            rime-model rime-api flowise $whisper_service log-streamer
+            $tts_services flowise $whisper_service log-streamer
         if [ $? -ne 0 ]; then
             fatal "Failed to start support services"
+        fi
+    elif [ "$TTS_PROVIDER" = "rime" ]; then
+        # If using RIME in default install, start the RIME services
+        info "Starting RIME services..."
+        docker compose $COMPOSE_FILES up -d rime-model rime-api
+        if [ $? -ne 0 ]; then
+            warning "Failed to start RIME services"
         fi
     fi
     
@@ -1252,6 +1556,15 @@ EOF
     fi
 }
 
+# Add this function after the `pull_required_images` function
+# Wrapper function around the pull_docker_images function in scripts/docker.sh
+# that passes the TTS_PROVIDER as an environment variable
+pull_docker_with_tts_provider() {
+    # Export our TTS_PROVIDER so that the docker.sh script can access it
+    export TTS_PROVIDER
+    # Call the pull_docker_images function from scripts/docker.sh
+    pull_docker_images
+}
 
 main() {
     print_logo
@@ -1274,10 +1587,22 @@ main() {
     
     # Ensure configuration.dat exists
     ensure_configuration_file_exists
+    
+    # Select TTS provider before configuring
+    select_tts_provider
 
-    # Configure Eleven Labs
-    configure_eleven_labs
+    # Configure TTS provider based on selection
+    if [ "$TTS_PROVIDER" = "azure" ]; then
+        configure_azure_tts
+    elif [ "$TTS_PROVIDER" = "elevenlabs" ]; then
+        configure_eleven_labs
+    elif [ "$TTS_PROVIDER" = "rime" ]; then
+        setup_rime_credentials
+    fi
 
+    # Update docker-compose.yml based on TTS provider
+    update_docker_compose_for_tts
+    
     # Check if the required software prerequisites are installed so installer can run
     check_installer_prequisites
 
@@ -1361,9 +1686,22 @@ main() {
         info "UneeQ platform address: $PLATFORM_ADDRESS"
         info "UneeQ platform API key: ${PLATFORM_KEY:0:8}****${PLATFORM_KEY: -8}"
         info "Tenant ID: $TENANT_ID"
-        info "Azure region: $AZURE_REGION"
-        info "Azure speech key: ${AZURE_SPEECH_KEY:0:8}****${AZURE_SPEECH_KEY: -8}"
         info "Renny image name: $RENNY_IMAGE"
+        
+        # Display TTS provider-specific information
+        info "TTS Provider: $TTS_PROVIDER"
+        if [ "$TTS_PROVIDER" = "azure" ]; then
+            info "Azure region: $AZURE_REGION"
+            info "Azure speech key: ${AZURE_SPEECH_KEY:0:8}****${AZURE_SPEECH_KEY: -8}"
+        elif [ "$TTS_PROVIDER" = "elevenlabs" ]; then
+            ELEVEN_LABS_API_KEY=$(read_env_variable "ELEVEN_LABS_API_KEY")
+            ELEVEN_LABS_API_KEY=$(echo "$ELEVEN_LABS_API_KEY" | sed 's/^"//;s/"$//')
+            info "Eleven Labs API key: ${ELEVEN_LABS_API_KEY:0:8}****${ELEVEN_LABS_API_KEY: -8}"
+        elif [ "$TTS_PROVIDER" = "rime" ]; then
+            RIME_API_KEY=$(read_env_variable "RIME_API_KEY")
+            RIME_API_KEY=$(echo "$RIME_API_KEY" | sed 's/^"//;s/"$//')
+            info "RIME API key: ${RIME_API_KEY:0:8}****${RIME_API_KEY: -8}"
+        fi
 
         while true; do
             read -p "All configuration values are already set. Proceed with installation? (Y/n): " confirm
@@ -1383,14 +1721,25 @@ main() {
     else
         PLATFORM_KEY=$(check_and_prompt_for_value "Enter the UneeQ platform API key" "$PLATFORM_KEY")
         TENANT_ID=$(check_and_prompt_for_value "Enter the Tenant ID" "$TENANT_ID")
-        AZURE_REGION=$(check_and_prompt_for_value "Enter the Azure region" "$AZURE_REGION")
-        AZURE_SPEECH_KEY=$(check_and_prompt_for_value "Enter the Azure speech key" "$AZURE_SPEECH_KEY")
+        
+        # Only prompt for Azure credentials if Azure TTS is selected
+        if [ "$TTS_PROVIDER" = "azure" ]; then
+            AZURE_REGION=$(check_and_prompt_for_value "Enter the Azure region" "$AZURE_REGION")
+            AZURE_SPEECH_KEY=$(check_and_prompt_for_value "Enter the Azure speech key" "$AZURE_SPEECH_KEY")
+        fi
+        
         RENNY_IMAGE=$(check_and_prompt_for_value "Enter the Renny image name" "$RENNY_IMAGE")
 
         # Check if required arguments are provided
-        if [ -z "$PLATFORM_KEY" ] || [ -z "$TENANT_ID" ] || [ -z "$AZURE_REGION" ] || [ -z "$AZURE_SPEECH_KEY" ] || [ -z "$RENNY_IMAGE" ]; then
+        if [ -z "$PLATFORM_KEY" ] || [ -z "$TENANT_ID" ] || [ -z "$RENNY_IMAGE" ]; then
             usage
             fatal "Missing required arguments. Please provide the required arguments."
+        fi
+        
+        # Check if Azure credentials are provided when Azure TTS is selected
+        if [ "$TTS_PROVIDER" = "azure" ] && ([ -z "$AZURE_REGION" ] || [ -z "$AZURE_SPEECH_KEY" ]); then
+            usage
+            fatal "Azure TTS selected but Azure credentials are missing."
         fi
     fi
 
@@ -1412,32 +1761,22 @@ main() {
     # check to make sure the cloud services are reachable
     check_cloud_services "$PLATFORM_ADDRESS" "$PLATFORM_ADDRESS"
 
-    # Setup RIME credentials
-    if [ "$INSTALL_TYPE" = "full" ]; then
-        setup_rime_credentials
-    fi
-
+    # No need to setup RIME credentials here as we did it earlier based on TTS_PROVIDER selection
+    
     if [ "$INSTALL_TYPE" = "full" ]; then
         echo -e "\nChoose your speech-to-text backend (only one will be enabled):"
         echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
         echo "2) FastWhisper (GPU-optimized, locally built)"
-        read -p "Enter choice [1-2]: " stt_choice
-        if [[ "$stt_choice" == "1" ]]; then
-            info "Enabling Whisper backend in docker-compose.yml..."
-            # Uncomment whisper, comment fastwhisper
-            sed -i '/^# whisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
-            sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
-        elif [[ "$stt_choice" == "2" ]]; then
-            info "Enabling FastWhisper backend in docker-compose.yml..."
-            # Uncomment fastwhisper, comment whisper
-            sed -i '/^# fastwhisper:/,/^#   security_opt:/s/^# //' docker/docker-compose.yml
-            sed -i '/^# whisper:/,/^#   security_opt:/s/^# /#/' docker/docker-compose.yml
+        echo "3) Do not use local STT (UneeQ default STT will be used)"
+        read -p "Enter choice [1-3]: " stt_choice
+        if [[ "$stt_choice" == "1" ]] || [[ "$stt_choice" == "2" ]] || [[ "$stt_choice" == "3" ]]; then
+            # Update docker-compose.yml for the selected STT backend
+            update_docker_compose_for_stt "$stt_choice"
             
-            # Update the image name in the docker-compose.yml to use the locally built image
-            sed -i 's|image: systran/faster-whisper:latest|image: fast-whisper-optimized:latest|g' docker/docker-compose.yml
-            
-            # Build the fast-whisper image
-            build_fast_whisper_image
+            # If FastWhisper is selected, build the image
+            if [[ "$stt_choice" == "2" ]]; then
+                build_fast_whisper_image
+            fi
         else
             echo "Invalid choice, exiting."
             exit 1
@@ -1447,8 +1786,8 @@ main() {
     # Build the log streamer service
     build_log_streamer
 
-    # pull the images down
-    pull_docker_images
+    # pull the images down with TTS provider information
+    pull_docker_with_tts_provider
 
     # Start the Miniprem system
     start_miniprem

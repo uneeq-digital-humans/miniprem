@@ -17,6 +17,5 @@
   * [Prometheus API](/en/api/README.md#prometheus-api)
   * [Grafana API](/en/api/README.md#grafana-api)
   * [Health API](/en/api/health.md)
-* [Monitoring](/en/monitoring/logs.md)
-  * [Container Logs](/en/api/container-logs.md)
+* [Container Logs](/en/api/container-logs.md)
 * [Troubleshooting](/en/troubleshooting.md)

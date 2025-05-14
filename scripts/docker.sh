@@ -170,6 +170,18 @@ pull_docker_images() {
         } &
         show_spinner $!
         success "$CHECKMARK Public Docker images pulled successfully."
+        
+        # Pull TTS-specific images if needed
+        if [ "$TTS_PROVIDER" = "rime" ]; then
+            info "Pulling RIME-specific images..."
+            # RIME images are handled through setup_rime_credentials via quay.io authentication
+        fi
+    else
+        # For default installation, pull TTS-specific images if needed
+        if [ "$TTS_PROVIDER" = "rime" ]; then
+            info "Pulling RIME-specific images for default installation..."
+            # RIME images are handled through setup_rime_credentials via quay.io authentication
+        fi
     fi
 
     # Docker login for UneeQ images

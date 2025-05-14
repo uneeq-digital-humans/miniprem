@@ -17,6 +17,5 @@
   * [Prometheus API](/ja/api/README.md#prometheus-api)
   * [Grafana API](/ja/api/README.md#grafana-api)
   * [ヘルスAPI](/ja/api/health.md)
-* [監視](/ja/monitoring/logs.md)
-  * [コンテナログ](/ja/api/container-logs.md)
+* [コンテナログ](/ja/api/container-logs.md)
 * [トラブルシューティング](/ja/troubleshooting.md)

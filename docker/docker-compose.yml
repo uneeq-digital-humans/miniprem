@@ -4,7 +4,6 @@ include:
   - ./docker-compose.a2f.yml # a2f services
   
 services:
-  # Log streamer service
   log-streamer:
     build:
       context: ./log-streamer
@@ -30,7 +29,7 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
-  # Redis service for Flowise
+
   redis:
     image: redis:latest
     container_name: redis
@@ -54,7 +53,7 @@ services:
     security_opt:
       - no-new-privileges:true
     read_only: true
-  # Prometheus for metrics collection
+  
   prometheus:
     image: prom/prometheus:v2.45.0
     container_name: prometheus
@@ -84,7 +83,7 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
-  # Grafana for metrics visualization
+  
   grafana:
     image: grafana/grafana:10.2.0
     container_name: grafana
@@ -110,6 +109,7 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+  
   flowise:
     build:
       context: ./flowise
@@ -159,6 +159,7 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+  
   renny:
     container_name: renny
     command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
@@ -166,7 +167,9 @@ services:
       - docker-compose.env
     extra_hosts:
       - "audio2face-gateway:127.0.0.1"
-    image: "facemeproduction/renny:0.484-37235"
+    # image: "facemeproduction/renny:0.484-37235"
+    # image: "facemeproduction/renny:0.504-e34483_byo_experiments"
+    image: "facemeproduction/renny:0.514-21f16_byo_experiments"
     network_mode: host
     runtime: nvidia
     tty: true
@@ -215,63 +218,10 @@ services:
     security_opt:
       - no-new-privileges:true
   
-  rime-api:
-    image: quay.io/rimelabs/api:v0.0.2-20250407
-    container_name: rime-api
-    depends_on:
-      - rime-model
-    ports:
-      - "8100:8000"
-    restart: unless-stopped
-    environment:
-      - MODEL_URL=http://localhost:8080/invocations
-    network_mode: host
-    # Since the API returns 503 but is actually working, we'll use a simple exit 0 to mark it as healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:8000/health > /dev/null || exit 0"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-  
-  rime-model:
-    image: quay.io/rimelabs/mistv2:v0.0.1-20250403
-    container_name: rime-model
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              count: all
-    ports:
-      - "8101:8080"
-    restart: unless-stopped
-    network_mode: host
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-    runtime: nvidia
   # --- Speech-to-Text Backend: Only enable ONE of the following ---
   # The install script will uncomment your choice based on the WHISPER_TYPE environment variable
 
+  ### WHISPER BEGIN ###
   # whisper:
   #   image: onerahmet/openai-whisper-asr-webservice:latest
   #   container_name: whisper
@@ -300,7 +250,9 @@ services:
   #       max-file: "3"
   #   security_opt:
   #     - no-new-privileges:true
+  ### WHISPER END ###
 
+  ### FASTWHISPER BEGIN ###
   fastwhisper:
     build:
       context: ./fast-whisper
@@ -329,7 +281,6 @@ services:
       - ./fast-whisper/models:/app/models
     restart: unless-stopped
     network_mode: host
-    # Simple health check that checks if the container is running
     healthcheck:
       test: ["CMD-SHELL", "exit 0"]
       interval: 30s
@@ -343,6 +294,65 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+  ### FASTWHISPER END ###
+
+  ### RIME BEGIN ###
+  # rime-api:
+  #   image: quay.io/rimelabs/api:v0.0.2-20250407
+  #   container_name: rime-api
+  #   depends_on:
+  #     - rime-model
+  #   ports:
+  #     - "8100:8000"
+  #   restart: unless-stopped
+  #   environment:
+  #     - MODEL_URL=http://localhost:8080/invocations
+  #   network_mode: host
+  #   # Since the API returns 503 but is actually working, we'll use a simple exit 0 to mark it as healthy
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -s http://localhost:8000/health > /dev/null || exit 0"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 15s
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #   security_opt:
+  #     - no-new-privileges:true
+  # 
+  # rime-model:
+  #   image: quay.io/rimelabs/mistv2:v0.0.1-20250403
+  #   container_name: rime-model
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             capabilities: [gpu]
+  #             count: all
+  #   ports:
+  #     - "8101:8080"
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 60s
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   runtime: nvidia
+  ### RIME END ###
+
 volumes:
   flowise_data:
   redis_data:

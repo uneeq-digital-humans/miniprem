@@ -17,6 +17,5 @@
   * [Prometheus API](/ko/api/README.md#prometheus-api)
   * [Grafana API](/ko/api/README.md#grafana-api)
   * [상태 API](/ko/api/health.md)
-* [모니터링](/ko/monitoring/logs.md)
-  * [컨테이너 로그](/ko/api/container-logs.md)
+* [컨테이너 로그](/ko/api/container-logs.md)
 * [문제 해결](/ko/troubleshooting.md)

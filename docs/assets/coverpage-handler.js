@@ -44,5 +44,6 @@
   };
   
   // Register the plugin with Docsify
-  window.$docsify.plugins = [].concat(coverpagePlugin, window.$docsify.plugins || []);
+  window.$docsify.plugins = window.$docsify.plugins || [];
+  window.$docsify.plugins.push(coverpagePlugin);
 })();
