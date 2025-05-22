@@ -278,52 +278,6 @@ check_cloud_services() {
     check_wss_service "$dhop_ps_address"
 }
 
-# Function to check and update configuration.dat
-check_and_update_configuration() {
-    local tenant_id="$1"
-    local jws_secret="$2"
-    local config_file="docker/configuration.dat"
-    local server="prod-global"
-
-    if [[ -f "$config_file" ]]; then
-        # Read the JSON values from the file, we won't replace the existing values for server
-        server=$(jq -r 'if .Server == null then "" else .Server end' "$config_file")
-
-        # If server is not set, default to "prod-global"
-        if [[ -z "$server" ]]; then
-            server="prod-global"
-        fi
-    fi
-
-    # Update the configuration file with the new values
-    jq -n --arg server "$server" --arg tenant_id "$tenant_id" --arg jws_secret "$jws_secret" \
-        '{Server: $server, TenantId: $tenant_id, JWSSecret: $jws_secret}' > "$config_file"
-
-    # Check the ownership of the file and make sure its not the root user that owns it
-    file_owner=$(stat -c '%U' "$config_file")
-    if [[ "$file_owner" != "$USER" ]]; then
-        warning "$config_file is not owned by $USER, correcting this now."
-        sudo chown "$USER:$USER" "$config_file"
-    fi
-
-    # make sure the file has correct permissions (and isn't a directory)
-    if [[ -d "$config_file" ]]; then
-        warning "$config_file is a directory rather than a file, correcting this now."
-        chmod 644 "$config_file"
-    fi
-    
-    success "$CHECKMARK Configuration updated in $config_file"
-}
-
-# Function to ensure configuration.dat exists
-ensure_configuration_file_exists() {
-    local config_file="docker/configuration.dat"
-    if [[ ! -f "$config_file" ]]; then
-        touch "$config_file"
-        echo "{}" > "$config_file"  # Initialize with an empty JSON object
-    fi
-}
-
 # Function to prompt for TTS provider selection
 select_tts_provider() {
     log_section "Text-to-Speech Provider Selection"
@@ -1585,9 +1539,6 @@ main() {
     # Ensure docker-compose.env exists
     ensure_env_file_exists
     
-    # Ensure configuration.dat exists
-    ensure_configuration_file_exists
-    
     # Select TTS provider before configuring
     select_tts_provider
 
@@ -1754,9 +1705,6 @@ main() {
             sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=$PLATFORM_ADDRESS|" "docker/docker-compose.env"
         fi
     fi
-
-    # Check and update configuration.dat
-    check_and_update_configuration "$TENANT_ID" "$PLATFORM_KEY"
 
     # check to make sure the cloud services are reachable
     check_cloud_services "$PLATFORM_ADDRESS" "$PLATFORM_ADDRESS"
