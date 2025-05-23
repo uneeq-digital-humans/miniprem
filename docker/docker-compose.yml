@@ -173,8 +173,6 @@ services:
     network_mode: host
     runtime: nvidia
     tty: true
-    volumes:
-      - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
     healthcheck:
       test: "curl -f http://localhost:8081/health"
       interval: 10s
