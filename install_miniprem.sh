@@ -116,13 +116,6 @@ configure_eleven_labs() {
     
     # Check and prompt for required env variables (after USE_ELEVEN_LABS has been set)
     check_and_prompt_required_env_vars
-    
-    # In all docker compose commands, use the correct compose files (with docker/ prefix, run from project root)
-    if [ "$INSTALL_TYPE" = "default" ]; then
-        COMPOSE_FILES="-f docker/docker-compose.default.yml"
-    else
-        COMPOSE_FILES="-f docker/docker-compose.yml"
-    fi
 }
 
 # Function to pull necessary Docker images
@@ -1103,50 +1096,6 @@ setup_flowise_chatflow() {
     cd "$current_dir"
 }
 
-# Function to install Rime login credentials
-setup_rime_credentials() {
-    log_section "Setting up RIME credentials"
-
-    # Check if RIME_API_KEY is already set
-    local RIME_API_KEY=$(read_env_variable "RIME_API_KEY")
-
-    if [ -z "$RIME_API_KEY" ]; then
-        read -p "Enter your RIME API key: " RIME_API_KEY
-        if [ -z "$RIME_API_KEY" ]; then
-            warning "No RIME API key provided. RIME services may not function correctly."
-        else
-            update_env_variable "RIME_API_KEY" "\"$RIME_API_KEY\""
-            success "$CHECKMARK RIME API key configured"
-        fi
-    else
-        success "$CHECKMARK RIME API key already configured"
-    fi
-
-    # Check if we've already authenticated with quay.io
-    if docker images | grep -q "quay.io/rimelabs/api" && docker images | grep -q "quay.io/rimelabs/mistv2"; then
-        success "$CHECKMARK Already have RIME Docker images, skipping quay.io login"
-        return 0
-    fi
-
-    # Prompt for quay.io password for RIME images
-    local RIME_QUAY_PASSWORD=""
-    while [ -z "$RIME_QUAY_PASSWORD" ]; do
-        read -s -p "Enter the quay.io password for RIME (rimelabs+uneeq): " RIME_QUAY_PASSWORD
-        echo
-        if [ -z "$RIME_QUAY_PASSWORD" ]; then
-            warning "No password entered. Please provide the quay.io password for RIME."
-        fi
-    done
-
-    # Login to quay.io for RIME images
-    info "Logging in to quay.io for RIME images..."
-    docker login -u="rimelabs+uneeq" -p="$RIME_QUAY_PASSWORD" quay.io
-    docker pull quay.io/rimelabs/api:v0.0.2-20250407
-    docker pull quay.io/rimelabs/mistv2:v0.0.1-20250403
-
-    info "RIME credential setup complete"
-}
-
 # UneeQ ASCII Logo
 print_logo() {
     echo ""
@@ -1549,6 +1498,13 @@ main() {
         configure_eleven_labs
     elif [ "$TTS_PROVIDER" = "rime" ]; then
         setup_rime_credentials
+    fi
+
+    # In all docker compose commands, use the correct compose files (with docker/ prefix, run from project root)
+    if [ "$INSTALL_TYPE" = "default" ]; then
+        COMPOSE_FILES="-f docker/docker-compose.default.yml"
+    else
+        COMPOSE_FILES="-f docker/docker-compose.yml"
     fi
 
     # Update docker-compose.yml based on TTS provider
