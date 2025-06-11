@@ -25,6 +25,7 @@ services:
       interval: 10s
       timeout: 500ms
       start_interval: 15s
+      start_period: 10s
       retries: 3
     depends_on:
       audio2face_with_emotion:
