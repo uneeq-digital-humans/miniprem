@@ -4,14 +4,10 @@
 
 # Function to check if the user is in the Docker group and return the appropriate command
 get_docker_command() {
-    if systemctl --user is-active docker >/dev/null 2>&1; then
-        echo "docker"
-    else
         # Command about to be run using sudo, prompt for sudo password now (outside of the spinner)
         sudo -v
 
         echo "sudo docker"
-    fi
 }
 
 check_docker_installed() {
@@ -28,46 +24,6 @@ check_docker_installed() {
         } &
         show_spinner $!
         success "$CHECKMARK Docker & compose installed successfully."
-    fi
-
-    # Check if Docker rootless mode is installed
-    if ! command_exists dockerd-rootless-setuptool.sh; then
-        warning 'Docker rootless mode is not installed. Installing Docker rootless mode...'
-
-        # Prompt for sudo password
-        sudo -v
-
-        # Install Docker rootless mode
-        {
-            sudo apt-get update
-            sudo apt-get install -y uidmap
-            curl -fsSL https://get.docker.com/rootless | sh
-        } &
-        show_spinner $!
-        success "$CHECKMARK Docker rootless mode installed successfully."
-    fi
-
-    # Set up Docker rootless mode for the current user
-    if ! systemctl --user is-active docker >/dev/null 2>&1; then
-        warning 'Setting up Docker rootless mode for the current user...'
-
-        # Add a small sleep before installing the uidmap package just to make sure apt-get has finished updating
-        sleep 2
-
-        # Ensure required packages are installed
-        sudo apt-get install -y uidmap
-
-        # Set up Docker rootless mode
-        dockerd-rootless-setuptool.sh install
-        if [ $? -ne 0 ]; then
-            fatal "$CROSS Failed to set up Docker rootless mode. Please check the requirements and try again."
-        fi
-
-        # Enable and start the Docker daemon in rootless mode
-        systemctl --user enable docker
-        systemctl --user start docker
-
-        success "$CHECKMARK Docker rootless mode set up for the current user"
     fi
 
     docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
@@ -104,11 +60,6 @@ check_nvidia_toolkit() {
         } &
         show_spinner $!
         success "$CHECKMARK Nvidia Docker runtime installed successfully."
-
-        # now configure so that in rootless mode the nvidia runtime can still be used
-        nvidia-ctk runtime configure --runtime=docker --config=$HOME/.config/docker/daemon.json  > /dev/null 2>&1
-        systemctl --user restart docker  > /dev/null 2>&1
-        sudo nvidia-ctk config --set nvidia-container-cli.no-cgroups --in-place  > /dev/null 2>&1
     fi
 
     nvidia_toolkit_version=$(dpkg-query -W -f='${Version}' nvidia-container-toolkit)
@@ -122,7 +73,7 @@ perform_nvidia_runtime_test() {
 
     {
         # Perform a test to make sure Nvidia runtime is working
-        nvidia_smi_output=$($DOCKER_CMD run --rm --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi 2>/dev/null)
+        nvidia_smi_output=$($DOCKER_CMD run --rm --privileged --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi 2>/dev/null)
         if ! echo "$nvidia_smi_output" | grep -q "NVIDIA-SMI"; then
             fatal "$CROSS Nvidia runtime test failed. Please check your installation."
         fi
