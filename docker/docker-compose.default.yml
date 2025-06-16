@@ -1,46 +1,7 @@
 name: uneeq-miniprem
-networks:
-  miniprem_net:
-    driver: bridge
-    ipam:
-      driver: default
-      config:
-        - subnet: 172.28.0.0/16
+
 services:
-  renny:
-    container_name: renny
-    command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
-    env_file:
-      - docker-compose.env
-    extra_hosts:
-      - audio2face-gateway:host-gateway
-    image: "facemeproduction/renny:0.484-37235"
-    network_mode: "host"
-    runtime: nvidia
-    tty: true
-    volumes:
-      - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
-    healthcheck:
-      test: "curl -f http://localhost:8081/health"
-      interval: 10s
-      timeout: 500ms
-      start_interval: 15s
-      start_period: 10s
-      retries: 3
-    depends_on:
-      audio2face_with_emotion:
-        condition: service_healthy
-      audio2face_controller:
-        condition: service_started
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-  
+  # === FIRST TIER: Audio2Face services ===
   audio2face_with_emotion:
     container_name: audio2face_with_emotion
     environment:
@@ -49,9 +10,23 @@ services:
     ports:
       - 50000:50000
     runtime: nvidia
+    privileged: true
     volumes:
       - a2f_model_cache:/tmp/a2f_pipeline:rw
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:50000/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s  # Allow 2 minutes for model loading
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
 
   audio2face_controller:
     container_name: audio2face_controller
@@ -69,6 +44,53 @@ services:
       audio2face_with_emotion:
         condition: service_healthy
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:52000/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # === SECOND TIER: Renny (comes last) ===
+  renny:
+    container_name: renny
+    command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
+    env_file:
+      - docker-compose.env
+    extra_hosts:
+      - audio2face-gateway:localhost
+    image: "facemeproduction/renny:0.540-40978"
+    network_mode: "host"
+    runtime: nvidia
+    privileged: true
+    tty: true
+    volumes:
+      - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
+    healthcheck:
+      test: "curl -f http://localhost:8081/health"
+      interval: 10s
+      timeout: 500ms
+      start_interval: 15s
+      start_period: 10s
+      retries: 3
+    depends_on:
+      audio2face_with_emotion:
+        condition: service_healthy
+      audio2face_controller:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  a2f_model_cache: 
+  a2f_model_cache:

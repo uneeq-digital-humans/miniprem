@@ -4,6 +4,43 @@ include:
   - ./docker-compose.a2f.yml # a2f services
   
 services:
+  # === FIRST TIER: Memory-intensive model loading services ===
+  vllm:
+    image: vllm/vllm-openai:v0.2.7
+    container_name: vllm
+    ports:
+      - "8000:8800"
+    volumes:
+      - vllm_data:/root/.cache/huggingface
+    runtime: nvidia
+    privileged: true
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - HF_HOME=/root/.cache/huggingface
+      - HF_CACHE_DIR=/root/.cache/huggingface/cache
+    entrypoint: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
+    command: ["--model", "HuggingFaceH4/zephyr-7b-beta", "--host", "0.0.0.0", "--port", "8800", "--gpu-memory-utilization", "0.8", "--trust-remote-code"]
+    restart: unless-stopped
+    network_mode: host
+    healthcheck:
+      # Enhanced health check to verify model loading is complete
+      test: [
+        "CMD-SHELL", 
+        "curl -s http://localhost:8800/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"HuggingFaceH4/zephyr-7b-beta\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}' | grep -q 'choices' || exit 1"
+      ]
+      interval: 30s
+      timeout: 15s
+      retries: 20
+      start_period: 120s  # Allow up to 2 minutes for initial startup
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # === SECOND TIER: Other Services ===
   log-streamer:
     build:
       context: ./log-streamer
@@ -110,6 +147,7 @@ services:
     security_opt:
       - no-new-privileges:true
   
+  # === THIRD TIER: Depends on vLLM ===
   flowise:
     build:
       context: ./flowise
@@ -144,6 +182,8 @@ services:
     restart: unless-stopped
     network_mode: host
     depends_on:
+      vllm:
+        condition: service_healthy
       prometheus:
         condition: service_healthy
     healthcheck:
@@ -159,7 +199,115 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
-  
+
+  # === RIME Services (Conditional) ===
+  ### RIME BEGIN ###
+  # rime-model:
+  #   image: quay.io/rimelabs/mistv2:v0.0.1-20250403
+  #   container_name: rime-model
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             capabilities: [gpu]
+  #             count: all
+  #   privileged: true
+  #   ports:
+  #     - "8101:8080"
+  #   restart: unless-stopped
+  #   network_mode: host
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 120s  # Increased start period for model loading
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   runtime: nvidia
+  # 
+  # rime-api:
+  #   image: quay.io/rimelabs/api:v0.0.2-20250407
+  #   container_name: rime-api
+  #   depends_on:
+  #     rime-model:
+  #       condition: service_healthy
+  #   ports:
+  #     - "8100:8000"
+  #   restart: unless-stopped
+  #   environment:
+  #     - MODEL_URL=http://localhost:8080/invocations
+  #   network_mode: host
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -s http://localhost:8000/health > /dev/null || exit 0"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 15s
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #   security_opt:
+  #     - no-new-privileges:true
+  ### RIME END ###
+
+  # === FOURTH TIER: Audio2Face services ===
+  audio2face_with_emotion:
+    container_name: audio2face_with_emotion
+    environment:
+      LOG_JSON: false
+    image: facemeproduction/audio2face_with_emotion:local-dev
+    ports:
+      - 50000:50000
+    runtime: nvidia
+    privileged: true
+    volumes:
+      - a2f_model_cache:/tmp/a2f_pipeline:rw
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:50000/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s  # Allow 2 minutes for model loading
+    depends_on:
+      vllm:
+        condition: service_healthy
+      flowise:
+        condition: service_healthy
+
+  audio2face_controller:
+    container_name: audio2face_controller
+    command: /opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+    entrypoint: ./service/launch_service.py
+    environment:
+      LOG_JSON: false
+    image: facemeproduction/audio2face_anim_controller:local-dev
+    ports:
+      - 52000:52000
+      - 52100:52100
+    volumes:
+      - ./a2f-config.yml:/opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+    depends_on:
+      audio2face_with_emotion:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:52000/health | grep -q '\"status\":\"ok\"' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # === FIFTH TIER: Renny (comes last) ===
   renny:
     container_name: renny
     command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
@@ -169,9 +317,11 @@ services:
       - "audio2face-gateway:127.0.0.1"
     # image: "facemeproduction/renny:0.484-37235"
     # image: "facemeproduction/renny:0.504-e34483_byo_experiments"
-    image: "facemeproduction/renny:0.514-21f16_byo_experiments"
+    # image: "facemeproduction/renny:0.514-21f16_byo_experiments"
+    image: "facemeproduction/renny:0.586-d2bc9"
     network_mode: host
     runtime: nvidia
+    privileged: true
     tty: true
     healthcheck:
       test: "curl -f http://localhost:8081/health"
@@ -184,31 +334,8 @@ services:
       audio2face_with_emotion:
         condition: service_healthy
       audio2face_controller:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
-
-  vllm:
-    image: vllm/vllm-openai:v0.2.7
-    container_name: vllm
-    ports:
-      - "8000:8800"
-    volumes:
-      - vllm_data:/root/.cache/huggingface
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - HF_HOME=/root/.cache/huggingface
-      - HF_CACHE_DIR=/root/.cache/huggingface/cache
-    entrypoint: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
-    command: ["--model", "HuggingFaceH4/zephyr-7b-beta", "--host", "0.0.0.0", "--port", "8800", "--gpu-memory-utilization", "0.8", "--trust-remote-code"]
-    restart: unless-stopped
-    network_mode: host
-    healthcheck:
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8800/health')\" || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 30s
     logging:
       driver: "json-file"
       options:
@@ -216,7 +343,7 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
-  
+
   # --- Speech-to-Text Backend: Only enable ONE of the following ---
   # The install script will uncomment your choice based on the WHISPER_TYPE environment variable
 
@@ -229,6 +356,7 @@ services:
   #   volumes:
   #     - whisper_data:/root/.cache/whisper
   #   runtime: nvidia
+  #   privileged: true
   #   environment:
   #     - ASR_MODEL=medium
   #     - ASR_ENGINE=openai_whisper
@@ -241,7 +369,7 @@ services:
   #     interval: 30s
   #     timeout: 10s
   #     retries: 5
-  #     start_period: 60s
+  #     start_period: 120s  # Increased for model loading
   #   logging:
   #     driver: "json-file"
   #     options:
@@ -249,6 +377,9 @@ services:
   #       max-file: "3"
   #   security_opt:
   #     - no-new-privileges:true
+  #   depends_on:
+  #     vllm:
+  #       condition: service_healthy
   ### WHISPER END ###
 
   ### FASTWHISPER BEGIN ###
@@ -273,6 +404,7 @@ services:
             - driver: nvidia
               capabilities: [gpu]
               count: 1
+    privileged: true
     ports:
       - "9000:9000"
     volumes:
@@ -281,11 +413,11 @@ services:
     restart: unless-stopped
     network_mode: host
     healthcheck:
-      test: ["CMD-SHELL", "exit 0"]
+      test: ["CMD-SHELL", "curl -s http://localhost:9000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 10s
+      start_period: 60s
     logging:
       driver: "json-file"
       options:
@@ -293,64 +425,10 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
+    depends_on:
+      vllm:
+        condition: service_healthy
   ### FASTWHISPER END ###
-
-  ### RIME BEGIN ###
-  # rime-api:
-  #   image: quay.io/rimelabs/api:v0.0.2-20250407
-  #   container_name: rime-api
-  #   depends_on:
-  #     - rime-model
-  #   ports:
-  #     - "8100:8000"
-  #   restart: unless-stopped
-  #   environment:
-  #     - MODEL_URL=http://localhost:8080/invocations
-  #   network_mode: host
-  #   # Since the API returns 503 but is actually working, we'll use a simple exit 0 to mark it as healthy
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -s http://localhost:8000/health > /dev/null || exit 0"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 15s
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
-  #   security_opt:
-  #     - no-new-privileges:true
-  # 
-  # rime-model:
-  #   image: quay.io/rimelabs/mistv2:v0.0.1-20250403
-  #   container_name: rime-model
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             capabilities: [gpu]
-  #             count: all
-  #   ports:
-  #     - "8101:8080"
-  #   restart: unless-stopped
-  #   network_mode: host
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 10
-  #     start_period: 60s
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   runtime: nvidia
-  ### RIME END ###
 
 volumes:
   flowise_data:
@@ -359,3 +437,4 @@ volumes:
   grafana_data:
   vllm_data:
   whisper_data:
+  a2f_model_cache:
