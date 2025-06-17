@@ -120,14 +120,17 @@ configure_eleven_labs() {
 
 # Function to pull necessary Docker images
 pull_required_images() {
+
+    DOCKER_CMD="sudo docker"
+
     # Only pull images for selected services
     if [ "$INSTALL_TYPE" = "full" ]; then
         # Pull common images
         info "Pulling basic services images..."
-        docker pull prom/prometheus:v2.45.0
-        docker pull grafana/grafana:10.2.0
-        docker pull redis:latest
-        docker pull vllm/vllm-openai:v0.2.7
+        $DOCKER_CMD pull prom/prometheus:v2.45.0
+        $DOCKER_CMD pull grafana/grafana:10.2.0
+        $DOCKER_CMD pull redis:latest
+        $DOCKER_CMD pull vllm/vllm-openai:v0.2.7
         
         # Pull TTS-specific images based on selection
         if [ "$TTS_PROVIDER" = "rime" ]; then
@@ -137,9 +140,9 @@ pull_required_images() {
     else
         # Only pull images for Renny and Audio2Face
         info "Pulling Renny and Audio2Face images..."
-        docker pull facemeproduction/renny:0.484-37235
-        docker pull facemeproduction/audio2face_with_emotion:local-dev
-        docker pull facemeproduction/audio2face_anim_controller:local-dev
+        $DOCKER_CMD pull facemeproduction/renny:0.484-37235
+        $DOCKER_CMD pull facemeproduction/audio2face_with_emotion:local-dev
+        $DOCKER_CMD pull facemeproduction/audio2face_anim_controller:local-dev
         
         # If using RIME in default install, pull RIME images
         if [ "$TTS_PROVIDER" = "rime" ]; then
@@ -387,6 +390,9 @@ configure_eleven_labs() {
 
 # Modified function to setup RIME credentials
 setup_rime_credentials() {
+
+    DOCKER_CMD="sudo docker"
+
     if [ "$TTS_PROVIDER" != "rime" ]; then
         # Clear RIME environment variables if not using RIME
         update_env_variable "RIME_API_KEY" "\"\""
@@ -414,7 +420,7 @@ setup_rime_credentials() {
     # Only pull RIME images if we're using RIME
     if [ "$TTS_PROVIDER" == "rime" ]; then
         # Check if we've already authenticated with quay.io
-        if docker images | grep -q "quay.io/rimelabs/api" && docker images | grep -q "quay.io/rimelabs/mistv2"; then
+        if $DOCKER_CMD images | grep -q "quay.io/rimelabs/api" && $DOCKER_CMD images | grep -q "quay.io/rimelabs/mistv2"; then
             success "$CHECKMARK Already have RIME Docker images, skipping quay.io login"
             return 0
         fi
@@ -431,9 +437,9 @@ setup_rime_credentials() {
 
         # Login to quay.io for RIME images
         info "Logging in to quay.io for RIME images..."
-        docker login -u="rimelabs+uneeq" -p="$RIME_QUAY_PASSWORD" quay.io
-        docker pull quay.io/rimelabs/api:v0.0.2-20250407
-        docker pull quay.io/rimelabs/mistv2:v0.0.1-20250403
+        $DOCKER_CMD login -u="rimelabs+uneeq" -p="$RIME_QUAY_PASSWORD" quay.io
+        $DOCKER_CMD pull quay.io/rimelabs/api:v0.0.2-20250407
+        $DOCKER_CMD pull quay.io/rimelabs/mistv2:v0.0.1-20250403
 
         info "RIME credential setup complete"
     fi
@@ -751,6 +757,8 @@ build_log_streamer() {
 
 start_miniprem() {
     log_section "Starting Miniprem"
+
+    DOCKER_CMD="sudo docker compose"
     
     if [ "$INSTALL_TYPE" = "full" ]; then
         # Stop any local Redis instances that might be running
@@ -789,7 +797,7 @@ start_miniprem() {
         # First, start just vLLM since it needs significant GPU memory
         info "Starting vLLM service first..."
         info "Note: Initial startup may fail as the model needs to be downloaded. This is expected."
-        docker compose $COMPOSE_FILES up -d vllm
+        $DOCKER_CMD $COMPOSE_FILES up -d vllm
         if [ $? -ne 0 ]; then
             warning "vLLM service failed to start - this is expected as the model needs to be downloaded"
         fi
@@ -811,7 +819,7 @@ start_miniprem() {
             tts_services="rime-model rime-api"
         fi
         
-        docker compose $COMPOSE_FILES up -d \
+        $DOCKER_CMD $COMPOSE_FILES up -d \
             redis grafana prometheus \
             $tts_services flowise $whisper_service log-streamer
         if [ $? -ne 0 ]; then
@@ -820,7 +828,7 @@ start_miniprem() {
     elif [ "$TTS_PROVIDER" = "rime" ]; then
         # If using RIME in default install, start the RIME services
         info "Starting RIME services..."
-        docker compose $COMPOSE_FILES up -d rime-model rime-api
+        $DOCKER_CMD $COMPOSE_FILES up -d rime-model rime-api
         if [ $? -ne 0 ]; then
             warning "Failed to start RIME services"
         fi
@@ -828,7 +836,7 @@ start_miniprem() {
     
     # Finally start A2F services last since they use lots of GPU
     info "Starting A2F services..."
-    docker compose $COMPOSE_FILES up -d audio2face_with_emotion audio2face_controller
+    $DOCKER_CMD $COMPOSE_FILES up -d audio2face_with_emotion audio2face_controller
     if [ $? -ne 0 ]; then
         warning "Failed to start A2F services - may need more GPU memory"
         warning "You can try starting them manually later with:"
@@ -837,7 +845,7 @@ start_miniprem() {
     
     # Start Renny (required for both installation types)
     info "Starting Renny digital human service..."
-    docker compose $COMPOSE_FILES up -d renny
+    $DOCKER_CMD $COMPOSE_FILES up -d renny
     if [ $? -ne 0 ]; then
         fatal "Failed to start Renny service"
     fi
@@ -886,12 +894,14 @@ show_progress_spinner() {
 prepare_vllm_model() {
     log_section "Preparing vLLM LLM"
 
+    DOCKER_CMD="sudo docker"
+
     info "Step 1: Waiting for vLLM container to become ready..."
     local max_attempts=30  # 5 minutes (30 * 10s)
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
-        if docker inspect vllm >/dev/null 2>&1; then
+        if $DOCKER_CMD inspect vllm >/dev/null 2>&1; then
             success "$CHECKMARK vLLM container exists"
             break
         fi
@@ -922,10 +932,10 @@ prepare_vllm_model() {
             info "Still waiting for vLLM API... ($api_attempt/$api_max_attempts)"
             # Show GPU usage
             info "Current GPU memory usage:"
-            docker exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+            $DOCKER_CMD exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
             # Show recent logs
             info "Recent container logs:"
-            docker logs --tail 5 vllm
+            $DOCKER_CMD logs --tail 5 vllm
         else
             printf '.'
         fi
@@ -1115,6 +1125,8 @@ print_logo() {
 # Function to check if required ports are in use and stop existing containers
 check_environment() {
     log_section "Checking Environment"
+
+    DOCKER_CMD="sudo docker compose"
     
     # First, stop any existing miniprem containers
     info "Stopping any existing Miniprem containers..."
@@ -1123,7 +1135,7 @@ check_environment() {
         ./miniprem.sh stop >/dev/null 2>&1
         success "$CHECKMARK Existing Miniprem containers stopped using miniprem.sh"
     elif [ -d "./docker" ]; then
-        (cd docker && docker compose down) >/dev/null 2>&1
+        (cd docker && $DOCKER_CMD down) >/dev/null 2>&1
         success "$CHECKMARK Existing Miniprem containers stopped using docker compose"
     else
         info "No existing Miniprem containers found"
@@ -1325,6 +1337,8 @@ check_duplicate_installations() {
 build_fast_whisper_image() {
     log_section "Building Fast Whisper Docker Image"
     
+    DOCKER_CMD="sudo docker"
+
     info "Building fast-whisper image from Dockerfile..."
     
     # Check if required directories exist
@@ -1450,7 +1464,7 @@ EOF
     fi
     
     # Build the Docker image
-    (cd docker && docker build -t fast-whisper-optimized -f fast-whisper/Dockerfile ./fast-whisper)
+    (cd docker && $DOCKER_CMD build -t fast-whisper-optimized -f fast-whisper/Dockerfile ./fast-whisper)
     
     if [ $? -ne 0 ]; then
         fatal "Failed to build fast-whisper Docker image"

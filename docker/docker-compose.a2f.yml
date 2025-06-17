@@ -7,6 +7,7 @@ services:
     ports:
       - 50000:50000
     runtime: nvidia
+    privileged: true
     volumes:
       - a2f_model_cache:/tmp/a2f_pipeline:rw
 
