@@ -259,54 +259,6 @@ services:
   #     - no-new-privileges:true
   ### RIME END ###
 
-  # === FOURTH TIER: Audio2Face services ===
-  audio2face_with_emotion:
-    container_name: audio2face_with_emotion
-    environment:
-      LOG_JSON: false
-    image: facemeproduction/audio2face_with_emotion:local-dev
-    ports:
-      - 50000:50000
-    runtime: nvidia
-    privileged: true
-    volumes:
-      - a2f_model_cache:/tmp/a2f_pipeline:rw
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:50000/health | grep -q '\"status\":\"ok\"' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s  # Allow 2 minutes for model loading
-    depends_on:
-      vllm:
-        condition: service_healthy
-      flowise:
-        condition: service_healthy
-
-  audio2face_controller:
-    container_name: audio2face_controller
-    command: /opt/nvidia/anim_controller/service/ac_a2x_config.yaml
-    entrypoint: ./service/launch_service.py
-    environment:
-      LOG_JSON: false
-    image: facemeproduction/audio2face_anim_controller:local-dev
-    ports:
-      - 52000:52000
-      - 52100:52100
-    volumes:
-      - ./a2f-config.yml:/opt/nvidia/anim_controller/service/ac_a2x_config.yaml
-    depends_on:
-      audio2face_with_emotion:
-        condition: service_healthy
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:52000/health | grep -q '\"status\":\"ok\"' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-
   # === FIFTH TIER: Renny (comes last) ===
   renny:
     container_name: renny
@@ -318,7 +270,8 @@ services:
     # image: "facemeproduction/renny:0.484-37235"
     # image: "facemeproduction/renny:0.504-e34483_byo_experiments"
     # image: "facemeproduction/renny:0.514-21f16_byo_experiments"
-    image: "facemeproduction/renny:0.586-d2bc9"
+    # image: "facemeproduction/renny:0.586-d2bc9"
+    image: "facemeproduction/renny:0.540-40978"
     network_mode: host
     runtime: nvidia
     privileged: true

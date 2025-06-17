@@ -65,7 +65,7 @@ services:
     env_file:
       - docker-compose.env
     extra_hosts:
-      - audio2face-gateway:localhost
+      - audio2face-gateway:127.0.0.1
     image: "facemeproduction/renny:0.540-40978"
     network_mode: "host"
     runtime: nvidia
