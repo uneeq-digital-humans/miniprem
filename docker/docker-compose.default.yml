@@ -14,12 +14,6 @@ services:
     volumes:
       - a2f_model_cache:/tmp/a2f_pipeline:rw
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:50000/health | grep -q '\"status\":\"ok\"' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s  # Allow 2 minutes for model loading
     logging:
       driver: "json-file"
       options:
@@ -84,7 +78,7 @@ services:
       audio2face_with_emotion:
         condition: service_healthy
       audio2face_controller:
-        condition: service_healthy
+        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"
