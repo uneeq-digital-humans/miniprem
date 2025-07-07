@@ -13,14 +13,8 @@ services:
     privileged: true
     volumes:
       - a2f_model_cache:/tmp/a2f_pipeline:rw
+
     restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
 
   audio2face_controller:
     container_name: audio2face_controller
@@ -34,23 +28,11 @@ services:
       - 52100:52100
     volumes:
       - ./a2f-config.yml:/opt/nvidia/anim_controller/service/ac_a2x_config.yaml
+
     depends_on:
       audio2face_with_emotion:
         condition: service_healthy
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:52000/health | grep -q '\"status\":\"ok\"' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
 
   # === SECOND TIER: Renny (comes last) ===
   renny:
