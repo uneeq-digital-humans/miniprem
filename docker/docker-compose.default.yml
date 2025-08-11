@@ -42,7 +42,7 @@ services:
       - docker-compose.env
     extra_hosts:
       - audio2face-gateway:127.0.0.1
-    image: "facemeproduction/renny:0.619-dc967"
+    image: "facemeproduction/renny:0.632-47d09"
     network_mode: "host"
     runtime: nvidia
     privileged: true
