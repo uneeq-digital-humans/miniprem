@@ -41,7 +41,7 @@ Während der Installation benötigen Sie die folgenden Informationen:
 
 | Konfiguration | Beschreibung | Beispiel |
 |-----------------------|---------------------------------------------|----------------------------------------------|
-| Adresse der UneeQ-Plattform | Adresse des UneeQ-Signalisierungsdienstes | api.uneeq.io |
+| Adresse der UneeQ-Plattform | Adresse des UneeQ-Signalisierungsdienstes | api.enterprise.uneeq.io |
 | UneeQ-Plattform-API-Schlüssel | API-Schlüssel für die UneeQ-Plattform | your_uneeq_api_key_here |
 | Tenant ID | Ihre UneeQ-Mieterkennung | your_tenant_id_here |
 | Azure Region | Azure Region für Sprachdienste | your_azure_region |

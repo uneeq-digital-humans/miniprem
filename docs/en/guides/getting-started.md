@@ -41,7 +41,7 @@ You'll need the following information during installation:
 
 | Configuration         | Description                                 | Example                                      |
 |-----------------------|---------------------------------------------|----------------------------------------------|
-| UneeQ Platform Address | Address of the UneeQ signaling service      | api.uneeq.io                                 |
+| UneeQ Platform Address | Address of the UneeQ signaling service      | api.enterprise.uneeq.io                                 |
 | UneeQ Platform API Key | API key for UneeQ platform                  | your_uneeq_api_key_here                      |
 | Tenant ID             | Your UneeQ tenant identifier                | your_tenant_id_here                          |
 | Azure Region          | Azure region for speech services            | your_azure_region                            |

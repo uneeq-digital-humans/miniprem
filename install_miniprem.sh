@@ -1669,7 +1669,7 @@ main() {
 
     # Make sure PLATFORM_ADDRESS has a default value if it's empty
     if [ -z "$PLATFORM_ADDRESS" ]; then
-        PLATFORM_ADDRESS="wss://api.uneeq.io/signalling-service/v1/ws/renderer"
+        PLATFORM_ADDRESS="wss://api.enterprise.uneeq.io/signalling-service/v1/ws/renderer"
         # Also update it in the env file
         if grep -q "^DHOP_ADDRESS=" "docker/docker-compose.env"; then
             sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=$PLATFORM_ADDRESS|" "docker/docker-compose.env"

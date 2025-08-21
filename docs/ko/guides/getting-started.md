@@ -43,7 +43,7 @@ Here's the complete Korean table with all the entries:
 
 | 구성 | 설명 | 예제 |
 |-----------------------|---------------------------------------------|----------------------------------------------|
-| UneeQ 플랫폼 주소 | UneeQ 시그널링 서비스 주소 | api.uneeq.io |
+| UneeQ 플랫폼 주소 | UneeQ 시그널링 서비스 주소 | api.enterprise.uneeq.io |
 | UneeQ 플랫폼 API 키 | UneeQ 플랫폼용 API 키 | your_uneeq_api_key_here |
 | 테넌트 ID | UneeQ 테넌트 식별자 | your_tenant_id_here |
 | Azure 지역 | 음성 서비스용 Azure 지역 | your_azure_region |

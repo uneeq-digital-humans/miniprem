@@ -1,0 +1,48 @@
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/tfplan
+terraform/terraform.tfvars
+terraform/*.backup
+
+# Helm
+*.tgz
+renny-chart.tgz
+charts/
+
+# Generated values
+values/renny-values-deployed.yaml
+values/a2f-values-deployed.yaml
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Credentials and secrets
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+credentials/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/

@@ -41,7 +41,7 @@ Necesitarás la siguiente información durante la instalación:
 
 | Configuración | Descripción | Ejemplo |
 |-----------------------|---------------------------------------------|----------------------------------------------|
-| Dirección de UneeQ | Dirección del servicio de señalización UneeQ| api.uneeq.io |
+| Dirección de UneeQ | Dirección del servicio de señalización UneeQ| api.enterprise.uneeq.io |
 | Clave API de UneeQ | Clave API para la plataforma UneeQ | tu_clave_api_uneeq_aquí |
 | ID de Inquilino | Tu identificador de inquilino UneeQ | tu_id_inquilino_aquí |
 | Región de Azure | Región de Azure para servicios de voz | tu_región_azure |

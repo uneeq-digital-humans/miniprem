@@ -40,7 +40,7 @@ cd miniprem-2025
 
 | 設定 | 説明 | 例 |
 |-----------------------|------------------------------------------------|------------------------------------------------|
-| UneeQプラットフォームアドレス | UneeQシグナリングサービスのアドレス | api.uneeq.io |
+| UneeQプラットフォームアドレス | UneeQシグナリングサービスのアドレス | api.enterprise.uneeq.io |
 | UneeQプラットフォームAPIキー | UneeQプラットフォームのAPIキー | your_uneeq_api_key_here |
 | テナントID | UneeQテナント識別子 | your_tenant_id_here |
 | Azureリージョン | スピーチサービス用のAzureリージョン | your_azure_region |

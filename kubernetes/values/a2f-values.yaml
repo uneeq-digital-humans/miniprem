@@ -1,0 +1,70 @@
+# Audio2Face Helm values
+dockerConfigSecret: docker-config
+
+deployment:
+  nodeType: a2f
+  replicas: 2
+
+a2x:
+  # Max concurrent rendering streams per instance
+  # Each g5.2xlarge can handle approximately 12-15 streams
+  streamNumber: 12
+  
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: "16Gi"
+    cpu: "4"
+  requests:
+    nvidia.com/gpu: 1
+    memory: "8Gi"
+    cpu: "2"
+
+nodeSelector:
+  uneeq.io/node-type: a2f
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - audio2face
+        topologyKey: kubernetes.io/hostname
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 52000
+  targetPort: 52000
+  grpcPort: 52000
+
+# Health check configuration
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Logging
+logging:
+  level: info
+  format: json

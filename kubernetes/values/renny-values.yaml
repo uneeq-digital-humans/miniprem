@@ -1,0 +1,136 @@
+# Renny Helm values
+deployment:
+  nodeType: renny
+  replicas: 10  # This will scale with the node group
+
+renderer:
+  a2f:
+    url: http://audio2face-gateway.uneeq-renderer.svc.cluster.local:52000
+  
+  cp:
+    flowiseApiKey: ""  # Add your base64 encoded key here if using Flowise
+    flowiseUrl: ""     # Add if using Flowise (e.g., http://flowise.uneeq-renderer.svc.cluster.local:3000)
+  
+  unrealEngine:
+    config: ""  # Base64 encoded UneeQ's Unreal Engine SDK licence file
+    # Command line arguments for Unreal Engine
+    args:
+      - "/Game/Live_Levels/BlankScene"
+      - "-RenderOffScreen"
+      - "-ResX=1920"
+      - "-ResY=1080"
+      - "-NoTextureStreaming"
+
+dhop:
+  url: wss://api.enterprise.uneeq.io:443/signalling-service
+  tenantId: ""  # Will be filled from terraform.tfvars
+  apiKey: ""    # Base64 encoded - Will be filled from terraform.tfvars
+
+tts:
+  azureRegion: eastus
+  azureSpeechKey: ""     # Base64 encoded Azure Speech API key
+  elevenlabsApiKey: ""   # Base64 encoded Eleven Labs API key
+
+logLevel: "4"
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: "32Gi"
+    cpu: "8"
+  requests:
+    nvidia.com/gpu: 1
+    memory: "16Gi"
+    cpu: "3"
+
+nodeSelector:
+  uneeq.io/node-type: renny
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# Pod affinity to spread across nodes
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - renny
+        topologyKey: kubernetes.io/hostname
+
+# Service configuration
+service:
+  type: ClusterIP
+  ports:
+    health: 8081
+    webrtc: 8888
+    pixelstream: 8080
+
+# Health check configuration
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# HPA configuration for autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 10
+  maxReplicas: 20
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+# Network Policy (optional - uncomment to enable)
+# networkPolicy:
+#   enabled: true
+#   ingress:
+#     - from:
+#       - podSelector:
+#           matchLabels:
+#             app: ingress-controller
+#       ports:
+#       - protocol: TCP
+#         port: 8080
+#       - protocol: UDP
+#         port: 8888
+
+# Additional environment variables
+env:
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "all"

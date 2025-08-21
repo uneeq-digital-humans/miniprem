@@ -1,0 +1,36 @@
+# Example terraform.tfvars file
+# Copy this to terraform.tfvars and fill in your actual values
+
+# REQUIRED: DHOP Configuration
+dhop_tenant_id = "your-tenant-id-here"  # e.g., "361b9233-8c52-42fc-90f1-70ba93eba281"
+dhop_api_key   = "your-base64-encoded-api-key"  # Must be base64 encoded
+
+# REQUIRED: Docker Hub Credentials
+# Your Docker Hub account must have access to UneeQ repositories
+docker_username = "your-dockerhub-username"
+docker_password = "your-dockerhub-password"
+
+# OPTIONAL: Override default values
+# Uncomment and modify as needed
+
+# AWS Configuration
+# aws_region = "us-east-1"
+
+# Instance Types
+# renny_instance_type = "g5.2xlarge"  # Options: g5.xlarge, g5.2xlarge, g5.4xlarge
+# a2f_instance_type = "g5.2xlarge"    # Options: g5.xlarge, g5.2xlarge, g5.4xlarge
+
+# Renny Node Scaling
+# renny_min_size = 10      # Minimum number of Renny nodes
+# renny_max_size = 20      # Maximum number of Renny nodes
+# renny_desired_size = 10  # Initial number of Renny nodes
+
+# Audio2Face Node Scaling
+# a2f_min_size = 2         # Minimum number of A2F nodes
+# a2f_max_size = 5         # Maximum number of A2F nodes
+# a2f_desired_size = 2     # Initial number of A2F nodes
+
+# Cluster Configuration
+# project_name = "renny"
+# environment = "production"
+# kubernetes_version = "1.31"
