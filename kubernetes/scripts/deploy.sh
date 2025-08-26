@@ -1,14 +1,45 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting Renny EKS Deployment..."
-
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Parse command line arguments
+AWS_PROFILE_ARG=""
+SKIP_PROFILE_CHECK=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            AWS_PROFILE_ARG="$2"
+            shift 2
+            ;;
+        --skip-profile-check)
+            SKIP_PROFILE_CHECK=true
+            shift
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --profile PROFILE_NAME    Use specific AWS profile"
+            echo "  --skip-profile-check      Skip AWS profile confirmation"
+            echo "  --help, -h                Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+echo "🚀 Starting Renny EKS Deployment..."
 
 # Timing
 START_TIME=$(date +%s)
@@ -24,6 +55,105 @@ show_elapsed() {
     local elapsed_min=$((elapsed / 60))
     local elapsed_sec=$((elapsed % 60))
     echo "Elapsed time: ${elapsed_min}m ${elapsed_sec}s"
+}
+
+# AWS Profile detection and confirmation
+check_aws_profile() {
+    if [ "$SKIP_PROFILE_CHECK" = true ]; then
+        return 0
+    fi
+    
+    echo "🔍 Checking AWS Profile Configuration..."
+    
+    # Set profile if provided via command line
+    if [ -n "$AWS_PROFILE_ARG" ]; then
+        export AWS_PROFILE="$AWS_PROFILE_ARG"
+        echo -e "${BLUE}Using profile from command line: ${AWS_PROFILE}${NC}"
+    fi
+    
+    # Get current profile info
+    local current_profile=""
+    local account_id=""
+    local identity_arn=""
+    local region=""
+    
+    # Try to get current AWS identity
+    if ! aws sts get-caller-identity &> /dev/null; then
+        echo -e "${RED}❌ AWS credentials not configured or expired${NC}"
+        echo ""
+        echo "Available options:"
+        echo "1. Run 'aws configure' to set up credentials"
+        echo "2. Run 'aws sso login --profile <profile-name>' for SSO"
+        echo "3. Set AWS_PROFILE environment variable"
+        echo "4. Use --profile flag: $0 --profile <profile-name>"
+        echo ""
+        exit 1
+    fi
+    
+    # Get identity information
+    identity_arn=$(aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null || echo "Unknown")
+    account_id=$(aws sts get-caller-identity --query 'Account' --output text 2>/dev/null || echo "Unknown")
+    region=$(aws configure get region 2>/dev/null || echo "Not set")
+    
+    # Try to get current profile name
+    if [ -n "$AWS_PROFILE" ]; then
+        current_profile="$AWS_PROFILE"
+    else
+        current_profile="default"
+    fi
+    
+    # Display current AWS configuration
+    echo ""
+    echo -e "${CYAN}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║           AWS Profile Information          ║${NC}"
+    echo -e "${CYAN}╚════════════════════════════════════════════╝${NC}"
+    echo -e "${BLUE}Profile:${NC} $current_profile"
+    echo -e "${BLUE}Account ID:${NC} $account_id"
+    echo -e "${BLUE}Region:${NC} $region"
+    echo -e "${BLUE}Identity:${NC} $identity_arn"
+    echo ""
+    
+    # Check if this looks like SSO
+    if [[ "$identity_arn" == *"assumed-role"* && "$identity_arn" == *"AWSReservedSSO"* ]]; then
+        echo -e "${GREEN}✅ SSO session detected${NC}"
+        
+        # Check if credentials might be expired soon
+        local expiration=$(aws configure get sso_session.expiration 2>/dev/null || echo "")
+        if [ -n "$expiration" ]; then
+            echo -e "${BLUE}SSO Session:${NC} Active"
+        fi
+    fi
+    
+    # Confirm with user
+    echo -e "${YELLOW}Is this the correct AWS profile/account for your EKS deployment? (y/N)${NC}"
+    read -r response
+    
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        echo -e "${GREEN}✅ Proceeding with current AWS configuration${NC}"
+        echo ""
+    else
+        echo ""
+        echo -e "${YELLOW}Available options to change your AWS profile:${NC}"
+        echo ""
+        echo "1. Run with specific profile:"
+        echo "   $0 --profile your-profile-name"
+        echo ""
+        echo "2. Set environment variable:"
+        echo "   export AWS_PROFILE=your-profile-name"
+        echo "   $0"
+        echo ""
+        echo "3. For SSO profiles, ensure you're logged in:"
+        echo "   aws sso login --profile your-profile-name"
+        echo "   AWS_PROFILE=your-profile-name $0"
+        echo ""
+        echo "4. List available profiles:"
+        echo "   aws configure list-profiles"
+        echo ""
+        echo "5. Skip this check (advanced users):"
+        echo "   $0 --skip-profile-check"
+        echo ""
+        exit 1
+    fi
 }
 
 # Check prerequisites
@@ -147,6 +277,14 @@ configure_kubectl() {
     
     echo "Updating kubeconfig for cluster: $CLUSTER_NAME"
     aws eks update-kubeconfig --region $REGION --name $CLUSTER_NAME
+    
+    # Fix kubectl authentication compatibility for older AWS CLI versions
+    echo "Ensuring kubectl authentication compatibility..."
+    if grep -q "client.authentication.k8s.io/v1alpha1" ~/.kube/config 2>/dev/null; then
+        echo "  Detected old authentication API version, fixing..."
+        sed -i '' 's/client.authentication.k8s.io\/v1alpha1/client.authentication.k8s.io\/v1beta1/g' ~/.kube/config
+        echo "  ✅ Kubeconfig authentication fixed"
+    fi
     
     # Wait for nodes to be ready
     echo "Waiting for all nodes to be ready..."
@@ -435,6 +573,7 @@ main() {
     echo "======================================"
     echo ""
     
+    check_aws_profile
     check_prerequisites
     create_tfvars
     deploy_infrastructure

@@ -9,7 +9,37 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
 NC='\033[0m' # No Color
+
+# Parse command line arguments
+AWS_PROFILE_ARG=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            AWS_PROFILE_ARG="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --profile PROFILE_NAME    Use specific AWS profile"
+            echo "  --help, -h                Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Set profile if provided via command line
+if [ -n "$AWS_PROFILE_ARG" ]; then
+    export AWS_PROFILE="$AWS_PROFILE_ARG"
+fi
 
 echo "======================================"
 echo "====================================="
@@ -196,6 +226,26 @@ if command -v helm &>/dev/null; then
     HELM_VERSION=$(helm version --short 2>/dev/null | cut -d':' -f2 | tr -d ' v')
     if [ -n "$HELM_VERSION" ]; then
         echo "  Helm version: $HELM_VERSION"
+    fi
+fi
+
+# Check AWS CLI version (critical for kubectl compatibility)
+if command -v aws &>/dev/null; then
+    AWS_VERSION=$(aws --version 2>/dev/null | cut -d'/' -f2 | cut -d' ' -f1)
+    if [ -n "$AWS_VERSION" ]; then
+        echo "  AWS CLI version: $AWS_VERSION"
+        
+        # Check if version is too old (< 2.3.0) - causes kubectl compatibility issues
+        AWS_MAJOR=$(echo "$AWS_VERSION" | cut -d'.' -f1)
+        AWS_MINOR=$(echo "$AWS_VERSION" | cut -d'.' -f2)
+        
+        if [ "$AWS_MAJOR" -lt 2 ] || ([ "$AWS_MAJOR" -eq 2 ] && [ "$AWS_MINOR" -lt 3 ]); then
+            echo -e "    ${YELLOW}⚠️  AWS CLI version is old and may cause kubectl authentication issues${NC}"
+            echo "    Recommendation: Update to AWS CLI v2.3.0 or later"
+            echo "    Update command: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+            echo "    This deployment will auto-fix any kubectl compatibility issues"
+            ((CHECKS_FAILED++))
+        fi
     fi
 fi
 
