@@ -295,7 +295,8 @@ configure_kubectl() {
         READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
         TOTAL_NODES=$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "0")
         
-        if [ "$TOTAL_NODES" -ge "14" ] && [ "$READY_NODES" -eq "$TOTAL_NODES" ]; then
+        # Check if we have nodes and all of them are ready
+        if [ "$TOTAL_NODES" -gt "0" ] && [ "$READY_NODES" -eq "$TOTAL_NODES" ]; then
             echo -e "${GREEN}✓ All $TOTAL_NODES nodes are ready${NC}"
             kubectl get nodes
             break
