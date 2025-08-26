@@ -348,9 +348,32 @@ install_gpu_operator() {
     while [ $attempt -le $max_attempts ]; do
         READY_DRIVERS=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
         
+        # Check for failed/crashing pods
+        FAILED_PODS=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l || echo "0")
+        CRASHLOOP_PODS=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff\|ImagePullBackOff\|Error" || echo "0")
+        
         if [ "$READY_DRIVERS" -ge "$gpu_nodes" ]; then
             echo -e "${GREEN}✓ GPU drivers installed on all $gpu_nodes GPU nodes${NC}"
             break
+        fi
+        
+        # Show detailed status if there are issues
+        if [ "$FAILED_PODS" -gt "0" ] || [ "$CRASHLOOP_PODS" -gt "0" ]; then
+            echo -e "${RED}⚠ GPU Operator Issues Detected:${NC}"
+            echo "  Failed pods: $FAILED_PODS, CrashLooping pods: $CRASHLOOP_PODS"
+            echo ""
+            echo -e "${YELLOW}Current GPU operator pod status:${NC}"
+            kubectl get pods -n gpu-operator --no-headers | head -10
+            echo ""
+            echo -e "${YELLOW}Problematic pods details:${NC}"
+            kubectl get pods -n gpu-operator | grep -E "CrashLoopBackOff|ImagePullBackOff|Error|Failed" || echo "  (No critical failures found)"
+            echo ""
+            if [ $attempt -gt 30 ]; then
+                echo -e "${RED}GPU operator appears to be having persistent issues.${NC}"
+                echo "Check logs with: kubectl logs -n gpu-operator -l app=nvidia-operator --tail=20"
+                echo "Or examine failing pods: kubectl describe pods -n gpu-operator | grep -A 10 -B 5 Error"
+                break
+            fi
         fi
         
         echo "  Waiting for GPU drivers... ($READY_DRIVERS/$gpu_nodes ready, attempt $attempt/$max_attempts)"
