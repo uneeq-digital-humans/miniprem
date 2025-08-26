@@ -391,15 +391,116 @@ Get a comprehensive status report:
 
 ### Monitoring
 
-View cluster status:
+#### kubectl Context Management
+
+**Important**: After deployment, `kubectl` automatically connects to your EKS cluster. Verify this with:
+
 ```bash
-kubectl get nodes -l uneeq.io/node-type=renny
-kubectl get pods -n uneeq-renderer
+# Check which cluster kubectl is connected to
+kubectl config current-context
+# Should show: arn:aws:eks:us-east-2:722136182380:cluster/renny-production
+
+# If you need to reconnect to the EKS cluster later:
+aws eks update-kubeconfig --region us-east-2 --name renny-production --profile your-profile
+
+# List all available contexts (if you have multiple clusters)
+kubectl config get-contexts
+
+# Switch between contexts
+kubectl config use-context <context-name>
 ```
 
-Check GPU utilization:
+#### Deployment Status Monitoring
+
+**During Deployment** (while script is running):
 ```bash
+# Check node readiness and types
+kubectl get nodes -L uneeq.io/node-type,nvidia.com/gpu
+
+# Monitor GPU operator installation progress
+kubectl get pods -n gpu-operator
+
+# Check namespace creation
+kubectl get namespaces
+
+# View all pod statuses across namespaces
+kubectl get pods --all-namespaces
+```
+
+**After Deployment** (when applications are running):
+```bash
+# Check Renny and A2F pods
+kubectl get pods -n uneeq-renderer
+
+# Check GPU operator status
+kubectl get pods -n gpu-operator
+
+# Check node-specific GPU availability
+kubectl describe nodes -l uneeq.io/node-type=renny
+
+# View detailed pod status
+kubectl describe pods -n uneeq-renderer
+```
+
+#### GPU Monitoring Commands
+
+**Check GPU Utilization** (only works after GPU operator is fully installed):
+```bash
+# Method 1: Via GPU operator pod (recommended)
 kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-dcgm-exporter -o name | head -1) -- nvidia-smi
+
+# Method 2: Direct node access (if above fails)
+kubectl exec -it $(kubectl get pods -n uneeq-renderer -o name | head -1) -- nvidia-smi
+
+# Method 3: Check GPU resources on nodes
+kubectl describe nodes | grep -A 10 "Allocatable" | grep nvidia
+```
+
+#### GPU Verification for Unreal Engine 5.6
+
+**Verify GPUs are working with modern CUDA** (requires CUDA 12.4+ and NVIDIA 570+ drivers for Unreal Engine 5.6):
+```bash
+# Test GPU functionality with modern CUDA runtime
+kubectl run gpu-test --rm -it --restart=Never \
+  --image=nvidia/cuda:12.4-runtime-ubuntu22.04 \
+  --overrides='{"spec":{"nodeSelector":{"uneeq.io/node-type":"renny"},"tolerations":[{"key":"nvidia.com/gpu","operator":"Equal","value":"true","effect":"NoSchedule"}]}}' \
+  -- nvidia-smi
+
+# For production workloads requiring CUDA 12.8+
+kubectl run gpu-test-128 --rm -it --restart=Never \
+  --image=nvidia/cuda:12.8-runtime-ubuntu22.04 \
+  --overrides='{"spec":{"nodeSelector":{"uneeq.io/node-type":"renny"},"tolerations":[{"key":"nvidia.com/gpu","operator":"Equal","value":"true","effect":"NoSchedule"}]}}' \
+  -- nvidia-smi
+```
+
+**Expected Output** for Unreal Engine 5.6 compatibility:
+- **Driver Version**: 570.0 or higher
+- **CUDA Version**: 12.4 or higher (12.8+ recommended for latest UE5.6 features)
+- **GPU**: Should show "NVIDIA A10G" or similar GPU model
+- **GPU Memory**: Available VRAM for rendering workloads
+
+#### Troubleshooting Commands
+
+**If kubectl seems disconnected or commands fail:**
+```bash
+# 1. Verify kubectl context
+kubectl config current-context
+
+# 2. Test basic connectivity
+kubectl get nodes
+
+# 3. Reconnect to EKS if needed
+aws eks update-kubeconfig --region us-east-2 --name renny-production --profile your-profile
+
+# 4. Check if you have required permissions
+kubectl auth can-i get pods --all-namespaces
+```
+
+**Common Monitoring During Deployment Issues:**
+```bash
+# If "No resources found in gpu-operator namespace" - GPU operator not installed yet
+# If "No resources found in uneeq-renderer namespace" - Applications not deployed yet
+# If nodes show "NotReady" - Still provisioning or joining cluster
 ```
 
 ### Updating Configuration
