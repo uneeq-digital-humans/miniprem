@@ -23,7 +23,7 @@ resource "aws_eks_node_group" "renny" {
     "nvidia.com/gpu"     = "true"
   }
 
-  taints {
+  taint {
     key    = "nvidia.com/gpu"
     value  = "true"
     effect = "NO_SCHEDULE"
@@ -71,7 +71,7 @@ resource "aws_eks_node_group" "a2f" {
     "nvidia.com/gpu"     = "true"
   }
 
-  taints {
+  taint {
     key    = "nvidia.com/gpu"
     value  = "true"
     effect = "NO_SCHEDULE"

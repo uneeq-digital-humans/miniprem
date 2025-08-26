@@ -12,6 +12,10 @@ module "eks" {
   # Enable IRSA
   enable_irsa = true
 
+  # Disable KMS encryption for reference deployment (can be enabled later)
+  create_kms_key = false
+  cluster_encryption_config = {}
+
   # Enable cluster addons
   cluster_addons = {
     coredns = {
