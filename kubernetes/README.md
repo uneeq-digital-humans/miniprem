@@ -37,7 +37,7 @@ kubernetes/
 ### Prerequisites
 
 1. **AWS Account** with appropriate permissions (see [AWS_SETUP.md](AWS_SETUP.md))
-2. **AWS CLI** configured with credentials
+2. **AWS CLI** >= 2.3.0 configured with credentials ⚠️ **IMPORTANT VERSION REQUIREMENT**
 3. **Terraform** >= 1.0 (see installation below)
 4. **kubectl** 
 5. **Helm** >= 3.0
@@ -160,12 +160,41 @@ scoop install terraform
 # Extract terraform.exe and add directory to PATH
 ```
 
-**Other Required Tools:**
+**AWS CLI Installation (Required: v2.3.0+):**
 
-*AWS CLI:*
-- macOS: `brew install awscli`
-- Linux: `pip install awscli` or `sudo apt install awscli`
-- Windows: `choco install awscli` or download from AWS
+⚠️ **CRITICAL**: AWS CLI versions < 2.3.0 cause kubectl authentication issues with modern Kubernetes versions.
+
+*macOS:*
+```bash
+# Official installer (recommended)
+curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
+sudo installer -pkg AWSCLIV2.pkg -target /
+
+# Or via Homebrew
+brew install awscli
+```
+
+*Linux:*
+```bash
+# Official installer (recommended)
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# Or via package manager (may be older)
+sudo apt install awscli  # Check version with aws --version
+```
+
+*Windows:*
+```powershell
+# Download and run the AWS CLI MSI installer from:
+# https://awscli.amazonaws.com/AWSCLIV2.msi
+
+# Or via Chocolatey
+choco install awscli
+```
+
+**Other Required Tools:**
 
 *kubectl:*
 - macOS: `brew install kubectl`
@@ -187,24 +216,50 @@ helm version       # Helm package manager
 
 ### Step 0: Setup AWS Credentials
 
-**Quick Setup (for testing):**
+The deployment script is **profile-aware** and will detect your current AWS configuration automatically.
 
-Check [AWS SETUP](AWS_SETUP.md) for more detailed instructions.
+#### **Option 1: AWS SSO (Recommended for Organizations)**
+
+```bash
+# Login to your SSO profile
+aws sso login --profile your-org-profile
+
+# Run deployment with specific profile
+./scripts/deploy.sh --profile your-org-profile
+
+# Or set environment variable
+export AWS_PROFILE=your-org-profile
+./scripts/deploy.sh
+```
+
+#### **Option 2: IAM User (For Testing)**
 
 1. Create an IAM user in AWS Console with:
    - `PowerUserAccess` policy
    - `IAMFullAccess` policy
-2. Download the access key CSV
-3. Configure AWS CLI:
+   - `AmazonEKSClusterPolicy` policy
+2. Configure AWS CLI:
    ```bash
    aws configure
-   # Enter Access Key ID and Secret Access Key from CSV
+   # Enter Access Key ID and Secret Access Key
    # Region: your preferred region (default: us-east-2)
    ```
 
+#### **AWS Profile Detection**
+
+The deployment script will automatically:
+- ✅ **Detect** your current AWS profile and credentials
+- ✅ **Display** account ID, region, and identity information  
+- ✅ **Confirm** you're using the correct profile before proceeding
+- ✅ **Provide** clear instructions if credentials are missing or expired
+
 **Verify your AWS setup:**
 ```bash
+# Check prerequisites with current profile
 ./scripts/check-aws-prerequisites.sh
+
+# Check prerequisites with specific profile
+./scripts/check-aws-prerequisites.sh --profile your-profile-name
 ```
 
 **Check VPC availability (important - AWS has VPC limits):**
@@ -264,7 +319,18 @@ Run the one-click deployment:
 ```bash
 cd kubernetes
 chmod +x scripts/*.sh
+
+# Basic deployment (will prompt for profile confirmation)
 ./scripts/deploy.sh
+
+# With specific AWS profile
+./scripts/deploy.sh --profile your-profile-name
+
+# Skip profile confirmation (for automation)
+./scripts/deploy.sh --skip-profile-check
+
+# Get help
+./scripts/deploy.sh --help
 ```
 
 This will:
@@ -400,6 +466,39 @@ For emergency cleanup without confirmations:
 4. Use Reserved Instances for production
 
 ## 🐛 Troubleshooting
+
+### kubectl Authentication Issues
+
+**Problem**: `error: exec plugin: invalid apiVersion "client.authentication.k8s.io/v1alpha1"`
+
+**Cause**: Old AWS CLI versions (< 2.3.0) output deprecated authentication format that newer kubectl versions reject.
+
+**Solutions**:
+1. **Update AWS CLI (Recommended)**:
+   ```bash
+   # Check current version
+   aws --version
+   
+   # Update via official installer (macOS)
+   curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
+   sudo installer -pkg AWSCLIV2.pkg -target /
+   
+   # Update via official installer (Linux)
+   curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+   unzip awscliv2.zip
+   sudo ./aws/install --update
+   ```
+
+2. **Manual kubeconfig fix (temporary)**:
+   ```bash
+   # Fix authentication API version
+   sed -i '' 's/client.authentication.k8s.io\/v1alpha1/client.authentication.k8s.io\/v1beta1/g' ~/.kube/config
+   
+   # Regenerate kubeconfig
+   aws eks update-kubeconfig --region us-east-2 --name renny-production
+   ```
+
+**Note**: The deployment script automatically detects and fixes this issue, but updating AWS CLI is the permanent solution.
 
 ### GPU Operator Issues
 ```bash
