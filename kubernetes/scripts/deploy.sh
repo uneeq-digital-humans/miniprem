@@ -454,15 +454,18 @@ install_renny() {
     local max_attempts=60
     local attempt=1
     
+    # Get expected replica count from the deployment
+    local expected_replicas=$(kubectl get deployment renny -n uneeq-renderer -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+    
     while [ $attempt -le $max_attempts ]; do
         READY_PODS=$(kubectl get pods -n uneeq-renderer -l app=renny --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
         
-        if [ "$READY_PODS" -ge "10" ]; then
-            echo -e "${GREEN}✓ $READY_PODS Renny pods are running${NC}"
+        if [ "$expected_replicas" -gt "0" ] && [ "$READY_PODS" -ge "$expected_replicas" ]; then
+            echo -e "${GREEN}✓ $READY_PODS/$expected_replicas Renny pods are running${NC}"
             break
         fi
         
-        echo "  Waiting for Renny pods... ($READY_PODS/10 running, attempt $attempt/$max_attempts)"
+        echo "  Waiting for Renny pods... ($READY_PODS/$expected_replicas running, attempt $attempt/$max_attempts)"
         sleep 10
         ((attempt++))
     done
