@@ -47,3 +47,6 @@ docker/fast-whisper/app/__pycache__/
 
 # Model files
 docker/fast-whisper/models/
+
+# Commit guide file
+commits.mdc

@@ -14,7 +14,7 @@ docker_password = "your-dockerhub-password"
 # Uncomment and modify as needed
 
 # AWS Configuration
-# aws_region = "us-east-1"
+aws_region = "us-east-2"  # Change to your desired region
 
 # Instance Types
 # renny_instance_type = "g5.2xlarge"  # Options: g5.xlarge, g5.2xlarge, g5.4xlarge

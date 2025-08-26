@@ -26,7 +26,9 @@ kubernetes/
 │   ├── scale.sh        # Scale Renny instances
 │   ├── destroy.sh      # Full cleanup (~15-20 min)
 │   ├── status.sh       # Check deployment status
-│   └── cleanup.sh      # Emergency cleanup (no confirmations)
+│   ├── cleanup.sh      # Emergency cleanup (no confirmations)
+│   ├── check-aws-prerequisites.sh # Verify AWS setup
+│   └── check-vpc-usage.sh # Analyze VPC usage and limits
 └── README.md           # This file
 ```
 
@@ -197,13 +199,40 @@ Check [AWS SETUP](AWS_SETUP.md) for more detailed instructions.
    ```bash
    aws configure
    # Enter Access Key ID and Secret Access Key from CSV
-   # Region: us-east-1
+   # Region: your preferred region (default: us-east-2)
    ```
 
 **Verify your AWS setup:**
 ```bash
 ./scripts/check-aws-prerequisites.sh
 ```
+
+**Check VPC availability (important - AWS has VPC limits):**
+```bash
+./scripts/check-vpc-usage.sh
+```
+
+This deployment creates a new VPC, so you need to ensure you haven't hit the VPC limit (5 per region by default). The VPC checker helps you:
+- Analyze VPC usage across all AWS services 
+- Identify unused VPCs that can be safely deleted
+- Check specific VPCs or regions
+
+**VPC Checker Usage Examples:**
+```bash
+# Check all VPCs in your configured region
+./scripts/check-vpc-usage.sh
+
+# Check VPCs in a specific region
+./scripts/check-vpc-usage.sh --region us-west-2
+
+# Analyze a specific VPC 
+./scripts/check-vpc-usage.sh --vpc vpc-123456789
+
+# Analyze specific VPC in specific region
+./scripts/check-vpc-usage.sh --region us-west-2 --vpc vpc-123456789
+```
+
+The script will show you which VPCs are safe to delete and provide deletion commands if needed.
 
 For detailed AWS setup instructions, see [AWS_SETUP.md](AWS_SETUP.md).
 
@@ -212,11 +241,17 @@ For detailed AWS setup instructions, see [AWS_SETUP.md](AWS_SETUP.md).
 Create `terraform/terraform.tfvars` with your credentials:
 
 ```hcl
+# Required credentials
 dhop_tenant_id  = "your-tenant-id"
 dhop_api_key    = "your-base64-encoded-api-key"
 docker_username = "your-dockerhub-username"
 docker_password = "your-dockerhub-password"
+
+# Optional: Override defaults
+aws_region = "us-east-2"  # Change to your preferred region
 ```
+
+The region will be used by all scripts automatically. You can also override other settings like instance types and scaling parameters - see `terraform.tfvars.example` for all options.
 
 ### Step 2: Place Helm Chart
 
@@ -246,7 +281,7 @@ This will:
 
 ### Cluster Configuration
 
-- **Region**: us-east-1
+- **Region**: Configurable (default: us-east-2)
 - **Kubernetes Version**: 1.31
 - **Node Groups**:
   - **Control Plane**: 2x t3.large nodes (for management)

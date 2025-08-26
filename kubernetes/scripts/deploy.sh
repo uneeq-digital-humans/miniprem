@@ -343,6 +343,7 @@ install_autoscaler() {
     cd "$PROJECT_DIR/terraform"
     CLUSTER_NAME=$(terraform output -raw cluster_name)
     AUTOSCALER_ROLE_ARN=$(terraform output -raw cluster_autoscaler_role_arn)
+    REGION=$(terraform output -raw region)
     cd "$PROJECT_DIR"
     
     # Add autoscaler repo
@@ -354,7 +355,7 @@ install_autoscaler() {
     helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
         --namespace kube-system \
         --set autoDiscovery.clusterName=$CLUSTER_NAME \
-        --set awsRegion=us-east-1 \
+        --set awsRegion=$REGION \
         --set rbac.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$AUTOSCALER_ROLE_ARN" \
         --set rbac.serviceAccount.create=true \
         --set rbac.create=true \
@@ -381,11 +382,12 @@ display_status() {
     
     cd "$PROJECT_DIR/terraform"
     CLUSTER_NAME=$(terraform output -raw cluster_name)
+    REGION=$(terraform output -raw region)
     cd "$PROJECT_DIR"
     
     echo "📊 Cluster Info:"
     echo "Cluster Name: $CLUSTER_NAME"
-    echo "Region: us-east-1"
+    echo "Region: $REGION"
     echo ""
     
     echo "📋 Node Summary:"
@@ -418,7 +420,7 @@ display_status() {
     echo "4. Monitor GPU usage: kubectl top nodes"
     echo ""
     echo "🔧 Useful Commands:"
-    echo "  - Access cluster: aws eks update-kubeconfig --region us-east-1 --name $CLUSTER_NAME"
+    echo "  - Access cluster: aws eks update-kubeconfig --region $REGION --name $CLUSTER_NAME"
     echo "  - Scale Renny: ./scripts/scale.sh 15"
     echo "  - View logs: kubectl logs -n uneeq-renderer -l app=renny --tail=100"
     echo "  - Destroy all: ./scripts/destroy.sh"

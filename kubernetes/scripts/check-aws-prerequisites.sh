@@ -87,6 +87,12 @@ fi
 
 # Check default region
 REGION=${AWS_DEFAULT_REGION:-$(aws configure get region)}
+
+# If not set, try to get from terraform vars
+if [ -z "$REGION" ] && [ -f "terraform/terraform.tfvars" ]; then
+    REGION=$(grep "^aws_region" terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
+fi
+
 if [ -n "$REGION" ]; then
     echo -e "Default region: ${GREEN}$REGION${NC}"
 else
