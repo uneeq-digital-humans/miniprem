@@ -17,6 +17,9 @@ resource "aws_eks_node_group" "renny" {
   # Ensure GPU AMI is used
   ami_type = "AL2_x86_64_GPU"
 
+  # Configure larger EBS volume for large AI images (70GB A2F + 12GB Renny + drivers + overhead)
+  disk_size = 150
+
   labels = {
     "uneeq.io/node-type" = "renny"
     "workload-type"      = "gpu"
@@ -64,6 +67,9 @@ resource "aws_eks_node_group" "a2f" {
 
   # Ensure GPU AMI is used
   ami_type = "AL2_x86_64_GPU"
+
+  # Configure larger EBS volume for large AI images (70GB A2F + 12GB Renny + drivers + overhead)
+  disk_size = 150
 
   labels = {
     "uneeq.io/node-type" = "a2f"

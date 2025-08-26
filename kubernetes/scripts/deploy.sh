@@ -12,6 +12,7 @@ NC='\033[0m' # No Color
 # Parse command line arguments
 AWS_PROFILE_ARG=""
 SKIP_PROFILE_CHECK=false
+DEBUG_MODE=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -23,11 +24,16 @@ while [[ $# -gt 0 ]]; do
             SKIP_PROFILE_CHECK=true
             shift
             ;;
+        --debug)
+            DEBUG_MODE=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
             echo "  --profile PROFILE_NAME    Use specific AWS profile"
             echo "  --skip-profile-check      Skip AWS profile confirmation"
+            echo "  --debug                   Enable verbose debug output"
             echo "  --help, -h                Show this help message"
             exit 0
             ;;
@@ -40,6 +46,24 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "🚀 Starting Renny EKS Deployment..."
+
+# Debug logging functions
+debug_log() {
+    if [ "$DEBUG_MODE" = true ]; then
+        echo -e "${CYAN}[DEBUG] $1${NC}"
+    fi
+}
+
+info_log() {
+    echo -e "$1"
+}
+
+# Show debug mode status
+if [ "$DEBUG_MODE" = true ]; then
+    echo -e "${CYAN}🐛 Debug mode enabled - verbose output active${NC}"
+else
+    echo -e "${BLUE}💡 Use --debug flag for verbose troubleshooting output${NC}"
+fi
 
 # Timing
 START_TIME=$(date +%s)
@@ -55,6 +79,93 @@ show_elapsed() {
     local elapsed_min=$((elapsed / 60))
     local elapsed_sec=$((elapsed % 60))
     echo "Elapsed time: ${elapsed_min}m ${elapsed_sec}s"
+}
+
+# Function to wait for large image pulls with detailed monitoring
+wait_for_large_images() {
+    local app_label="$1"
+    local namespace="$2"
+    local max_timeout="${3:-1800}"  # Default 30 minutes
+    local start_time=$(date +%s)
+    local last_status=""
+    
+    echo "Monitoring $app_label pods for large image pulls..."
+    echo "⏰ Timeout: $((max_timeout/60)) minutes"
+    
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        
+        if [ $elapsed -ge $max_timeout ]; then
+            echo -e "${RED}❌ Timeout waiting for $app_label pods after $((max_timeout/60)) minutes${NC}"
+            kubectl get pods -n "$namespace" -l "app=$app_label" -o wide
+            echo "Recent events:"
+            kubectl get events -n "$namespace" --field-selector involvedObject.kind=Pod --sort-by='.lastTimestamp' | tail -10
+            return 1
+        fi
+        
+        # Get pod status
+        local pods_info=$(kubectl get pods -n "$namespace" -l "app=$app_label" --no-headers 2>/dev/null || echo "")
+        local ready_count=$(echo "$pods_info" | grep -c "Running" 2>/dev/null || echo "0")
+        local total_count=$(echo "$pods_info" | wc -l | tr -d ' ')
+        
+        # Check for image pull issues
+        local pulling_count=$(echo "$pods_info" | grep -c "ContainerCreating\|Pending" 2>/dev/null || echo "0")
+        local failed_count=$(echo "$pods_info" | grep -c "ErrImagePull\|ImagePullBackOff\|Evicted\|ContainerStatusUnknown" 2>/dev/null || echo "0")
+        
+        # Status summary
+        local current_status="Ready: $ready_count/$total_count | Pulling: $pulling_count | Failed: $failed_count"
+        
+        # Show status based on debug mode and changes
+        if [ "$current_status" != "$last_status" ] || [ $((elapsed % 30)) -eq 0 ]; then
+            local elapsed_min=$((elapsed / 60))
+            local elapsed_sec=$((elapsed % 60))
+            
+            if [ "$DEBUG_MODE" = true ]; then
+                debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status"
+                
+                # Show detailed issues in debug mode
+                if [ "$failed_count" -gt "0" ]; then
+                    debug_log "⚠️  Issues detected - checking for disk pressure and image pull errors..."
+                    kubectl get pods -n "$namespace" -l "app=$app_label" | grep -E "ErrImagePull|ImagePullBackOff|Evicted|ContainerStatusUnknown" || debug_log "No critical pod failures found"
+                fi
+            else
+                # Simple progress for normal mode
+                local progress_bar=""
+                if [ "$total_count" -gt "0" ]; then
+                    local filled=$((ready_count * 20 / total_count))
+                    for ((i=1; i<=20; i++)); do
+                        if [ $i -le $filled ]; then
+                            progress_bar+="█"
+                        else
+                            progress_bar+="░"
+                        fi
+                    done
+                    echo -ne "\r🖼️ Pulling $app_label images... [$progress_bar] $ready_count/$total_count ready (${elapsed_min}m${elapsed_sec}s)"
+                    
+                    # Show brief warning for failures in normal mode
+                    if [ "$failed_count" -gt "0" ]; then
+                        echo -ne " ⚠️ $failed_count issues"
+                    fi
+                else
+                    echo -ne "\r🖼️ Pulling $app_label images... Waiting for pods... (${elapsed_min}m${elapsed_sec}s)"
+                fi
+            fi
+            
+            last_status="$current_status"
+        fi
+        
+        # Success condition - all pods ready
+        if [ "$total_count" -gt "0" ] && [ "$ready_count" -eq "$total_count" ]; then
+            if [ "$DEBUG_MODE" != true ]; then
+                echo ""  # Clear progress bar line
+            fi
+            echo -e "${GREEN}✓ All $app_label pods are ready ($ready_count/$total_count)${NC}"
+            return 0
+        fi
+        
+        sleep 10
+    done
 }
 
 # AWS Profile detection and confirmation
@@ -357,26 +468,45 @@ install_gpu_operator() {
             break
         fi
         
-        # Show detailed status if there are issues
+        # Show status based on debug mode
         if [ "$FAILED_PODS" -gt "0" ] || [ "$CRASHLOOP_PODS" -gt "0" ]; then
-            echo -e "${RED}⚠ GPU Operator Issues Detected:${NC}"
-            echo "  Failed pods: $FAILED_PODS, CrashLooping pods: $CRASHLOOP_PODS"
-            echo ""
-            echo -e "${YELLOW}Current GPU operator pod status:${NC}"
-            kubectl get pods -n gpu-operator --no-headers | head -10
-            echo ""
-            echo -e "${YELLOW}Problematic pods details:${NC}"
-            kubectl get pods -n gpu-operator | grep -E "CrashLoopBackOff|ImagePullBackOff|Error|Failed" || echo "  (No critical failures found)"
-            echo ""
+            if [ "$DEBUG_MODE" = true ]; then
+                debug_log "⚠ GPU Operator Issues Detected:"
+                debug_log "  Failed pods: $FAILED_PODS, CrashLooping pods: $CRASHLOOP_PODS"
+                debug_log ""
+                debug_log "Current GPU operator pod status:"
+                kubectl get pods -n gpu-operator --no-headers | head -10
+                debug_log ""
+                debug_log "Problematic pods details:"
+                kubectl get pods -n gpu-operator | grep -E "CrashLoopBackOff|ImagePullBackOff|Error|Failed" || debug_log "  (No critical failures found)"
+                debug_log ""
+            else
+                echo -e "${YELLOW}⚠️  Some GPU operator pods having issues (use --debug for details)${NC}"
+            fi
+            
             if [ $attempt -gt 30 ]; then
                 echo -e "${RED}GPU operator appears to be having persistent issues.${NC}"
                 echo "Check logs with: kubectl logs -n gpu-operator -l app=nvidia-operator --tail=20"
-                echo "Or examine failing pods: kubectl describe pods -n gpu-operator | grep -A 10 -B 5 Error"
+                echo "Or use: $0 --debug to see detailed pod status"
                 break
             fi
         fi
         
-        echo "  Waiting for GPU drivers... ($READY_DRIVERS/$gpu_nodes ready, attempt $attempt/$max_attempts)"
+        if [ "$DEBUG_MODE" = true ]; then
+            debug_log "Waiting for GPU drivers... ($READY_DRIVERS/$gpu_nodes ready, attempt $attempt/$max_attempts)"
+        else
+            # Simple progress indicator for normal mode
+            local progress_bar=""
+            local filled=$((READY_DRIVERS * 20 / gpu_nodes))
+            for ((i=1; i<=20; i++)); do
+                if [ $i -le $filled ]; then
+                    progress_bar+="█"
+                else
+                    progress_bar+="░"
+                fi
+            done
+            echo -ne "\r🎮 Installing GPU drivers... [$progress_bar] $READY_DRIVERS/$gpu_nodes nodes ready"
+        fi
         sleep 10
         ((attempt++))
     done
@@ -414,7 +544,7 @@ setup_kubernetes_resources() {
 # Install Audio2Face
 install_a2f() {
     echo "🎭 Installing Audio2Face..."
-    echo -e "${BLUE}This will take approximately 3-5 minutes${NC}"
+    echo -e "${BLUE}This will take approximately 10-20 minutes (35GB images)${NC}"
     
     # Get Docker credentials
     cd "$PROJECT_DIR/terraform"
@@ -426,17 +556,17 @@ install_a2f() {
     echo "Logging into Docker Hub..."
     echo "$DOCKER_PASSWORD" | helm registry login registry-1.docker.io -u "$DOCKER_USERNAME" --password-stdin
     
-    # Install A2F
+    # Install A2F with extended timeout for large images
     echo "Installing Audio2Face Helm chart..."
     helm upgrade --install a2f oci://registry-1.docker.io/facemeproduction/a2f \
         --version 0.1-alpha \
         --namespace uneeq-renderer \
         -f "$PROJECT_DIR/values/a2f-values.yaml" \
-        --wait --timeout 10m
+        --wait --timeout 30m
     
-    # Wait for A2F pods to be ready
-    echo "Waiting for Audio2Face pods to be ready..."
-    kubectl wait --for=condition=ready pod -l app=a2f -n uneeq-renderer --timeout=300s || true
+    # Wait for A2F pods to be ready with enhanced monitoring
+    echo "Waiting for Audio2Face pods to be ready (this may take 10-20 minutes for 35GB images)..."
+    wait_for_large_images "a2f" "uneeq-renderer" 1800  # 30 minutes for massive images
     
     # Verify A2F deployment
     echo "Audio2Face deployment status:"
@@ -449,7 +579,7 @@ install_a2f() {
 # Install Renny
 install_renny() {
     echo "🤖 Installing Renny..."
-    echo -e "${BLUE}This will take approximately 5-10 minutes${NC}"
+    echo -e "${BLUE}This will take approximately 10-15 minutes (large container images)${NC}"
     
     # Get DHOP credentials from terraform vars
     cd "$PROJECT_DIR/terraform"
@@ -465,12 +595,12 @@ install_renny() {
     sed -i.bak "s/apiKey: \"\"/apiKey: \"$DHOP_API_KEY\"/" "$PROJECT_DIR/values/renny-values-deployed.yaml"
     rm -f "$PROJECT_DIR/values/renny-values-deployed.yaml.bak"
     
-    # Install Renny
+    # Install Renny with extended timeout
     echo "Installing Renny Helm chart with 10 replicas..."
     helm upgrade --install renny "$PROJECT_DIR/renny-chart.tgz" \
         --namespace uneeq-renderer \
         -f "$PROJECT_DIR/values/renny-values-deployed.yaml" \
-        --wait --timeout 15m
+        --wait --timeout 25m
     
     # Wait for Renny pods to be ready
     echo "Waiting for Renny pods to be ready..."
