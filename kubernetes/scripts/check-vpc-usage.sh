@@ -23,6 +23,7 @@ NC='\033[0m' # No Color
 REGION=""
 SPECIFIC_VPC=""
 VPCS=()
+AWS_PROFILE_ARG=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -35,20 +36,43 @@ while [[ $# -gt 0 ]]; do
             SPECIFIC_VPC="$2"
             shift 2
             ;;
+        --profile|-p)
+            AWS_PROFILE_ARG="$2"
+            shift 2
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --region, -r REGION    AWS region to check (default: from terraform or us-east-1)"
-            echo "  --vpc, -v VPC_ID       Check specific VPC ID only"
-            echo "  --help, -h             Show this help message"
+            echo "  --region, -r REGION      AWS region to check (default: from terraform or us-east-1)"
+            echo "  --vpc, -v VPC_ID         Check specific VPC ID only"
+            echo "  --profile, -p PROFILE    Use specific AWS profile"
+            echo "  --help, -h               Show this help message"
             exit 0
             ;;
         *)
             echo "Unknown option: $1"
+            echo ""
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --region, -r REGION      AWS region to check (default: from terraform or us-east-1)"
+            echo "  --vpc, -v VPC_ID         Check specific VPC ID only"
+            echo "  --profile, -p PROFILE    Use specific AWS profile"
+            echo "  --help, -h               Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0                              # Check all VPCs in configured region"
+            echo "  $0 --region us-west-2           # Check VPCs in specific region"
+            echo "  $0 --vpc vpc-123456789          # Check specific VPC"
+            echo "  $0 --profile tyler@uneeq        # Use specific AWS profile"
             exit 1
             ;;
     esac
 done
+
+# Set profile if provided via command line
+if [ -n "$AWS_PROFILE_ARG" ]; then
+    export AWS_PROFILE="$AWS_PROFILE_ARG"
+fi
 
 # Determine region to use
 if [ -z "$REGION" ]; then
@@ -188,8 +212,8 @@ for vpc in "${VPCS[@]}"; do
     
     # Check EC2 Instances
     echo "--- EC2 Instances ---"
-    instances=$(aws ec2 describe-instances --region $REGION --filters "Name=vpc-id,Values=$vpc" --query 'Reservations[].Instances[?State.Name!=`terminated`].[InstanceId,State.Name,InstanceType,Tags[?Key==`Name`].Value|[0]]' --output table 2>/dev/null)
-    if [[ "$instances" == *"InstanceId"* ]]; then
+    instances=$(aws ec2 describe-instances --region $REGION --filters "Name=vpc-id,Values=$vpc" --query "Reservations[].Instances[?State.Name!=\`terminated\`].[InstanceId,State.Name,InstanceType,Tags[?Key==\`Name\`].Value|[0]]" --output table 2>/dev/null)
+    if [[ "$instances" == *"|"* ]] && [[ "$instances" != *"None"* ]]; then
         echo "$instances"
     else
         echo -e "${GREEN}No active instances found${NC}"
@@ -214,7 +238,7 @@ for vpc in "${VPCS[@]}"; do
     # Check RDS Instances
     echo "--- RDS Instances ---"
     rds_instances=$(aws rds describe-db-instances --region $REGION --query "DBInstances[?DBSubnetGroup.VpcId=='$vpc'].[DBInstanceIdentifier,DBInstanceStatus,Engine]" --output table 2>/dev/null)
-    if [[ "$rds_instances" == *"DBInstanceIdentifier"* ]]; then
+    if [[ "$rds_instances" == *"|"* ]] && [[ "$rds_instances" != *"None"* ]]; then
         echo "$rds_instances"
     else
         echo -e "${GREEN}No RDS instances found${NC}"
@@ -224,26 +248,26 @@ for vpc in "${VPCS[@]}"; do
     # Check Load Balancers
     echo "--- Load Balancers ---"
     albs=$(aws elbv2 describe-load-balancers --region $REGION --query "LoadBalancers[?VpcId=='$vpc'].[LoadBalancerName,State.Code,Type]" --output table 2>/dev/null)
-    if [[ "$albs" == *"LoadBalancerName"* ]]; then
+    if [[ "$albs" == *"|"* ]] && [[ "$albs" != *"None"* ]]; then
         echo "Application/Network Load Balancers:"
         echo "$albs"
     fi
     
     elbs=$(aws elb describe-load-balancers --region $REGION --query "LoadBalancerDescriptions[?VPCId=='$vpc'].[LoadBalancerName,Scheme]" --output table 2>/dev/null)
-    if [[ "$elbs" == *"LoadBalancerName"* ]]; then
+    if [[ "$elbs" == *"|"* ]] && [[ "$elbs" != *"None"* ]]; then
         echo "Classic Load Balancers:"
         echo "$elbs"
     fi
     
-    if [[ "$albs" != *"LoadBalancerName"* ]] && [[ "$elbs" != *"LoadBalancerName"* ]]; then
+    if [[ "$albs" != *"|"* ]] && [[ "$elbs" != *"|"* ]]; then
         echo -e "${GREEN}No load balancers found${NC}"
     fi
     echo ""
     
     # Check NAT Gateways
     echo "--- NAT Gateways ---"
-    nat_gateways=$(aws ec2 describe-nat-gateways --region $REGION --filter "Name=vpc-id,Values=$vpc" --query 'NatGateways[?State!=`deleted`].[NatGatewayId,State,SubnetId]' --output table 2>/dev/null)
-    if [[ "$nat_gateways" == *"NatGatewayId"* ]]; then
+    nat_gateways=$(aws ec2 describe-nat-gateways --region $REGION --filter "Name=vpc-id,Values=$vpc" --query "NatGateways[?State!=\`deleted\`].[NatGatewayId,State,SubnetId]" --output table 2>/dev/null)
+    if [[ "$nat_gateways" == *"|"* ]] && [[ "$nat_gateways" != *"None"* ]]; then
         echo "$nat_gateways"
     else
         echo -e "${GREEN}No NAT gateways found${NC}"
@@ -252,8 +276,8 @@ for vpc in "${VPCS[@]}"; do
     
     # Check Internet Gateways
     echo "--- Internet Gateways ---"
-    igws=$(aws ec2 describe-internet-gateways --region $REGION --filters "Name=attachment.vpc-id,Values=$vpc" --query 'InternetGateways[].[InternetGatewayId,Attachments[0].State]' --output table 2>/dev/null)
-    if [[ "$igws" == *"InternetGatewayId"* ]]; then
+    igws=$(aws ec2 describe-internet-gateways --region $REGION --filters "Name=attachment.vpc-id,Values=$vpc" --query "InternetGateways[].[InternetGatewayId,Attachments[0].State]" --output table 2>/dev/null)
+    if [[ "$igws" == *"|"* ]] && [[ "$igws" != *"None"* ]]; then
         echo "$igws"
     else
         echo -e "${GREEN}No internet gateways found${NC}"
@@ -262,8 +286,8 @@ for vpc in "${VPCS[@]}"; do
     
     # Check Security Groups (non-default)
     echo "--- Custom Security Groups ---"
-    custom_sgs=$(aws ec2 describe-security-groups --region $REGION --filters "Name=vpc-id,Values=$vpc" --query 'SecurityGroups[?GroupName!=`default`].[GroupId,GroupName,Description]' --output table 2>/dev/null)
-    if [[ "$custom_sgs" == *"GroupId"* ]]; then
+    custom_sgs=$(aws ec2 describe-security-groups --region $REGION --filters "Name=vpc-id,Values=$vpc" --query "SecurityGroups[?GroupName!=\`default\`].[GroupId,GroupName,Description]" --output table 2>/dev/null)
+    if [[ "$custom_sgs" == *"|"* ]] && [[ "$custom_sgs" != *"None"* ]]; then
         echo "$custom_sgs"
     else
         echo -e "${GREEN}No custom security groups found (only default)${NC}"
@@ -272,8 +296,8 @@ for vpc in "${VPCS[@]}"; do
     
     # Check VPC Endpoints
     echo "--- VPC Endpoints ---"
-    endpoints=$(aws ec2 describe-vpc-endpoints --region $REGION --filters "Name=vpc-id,Values=$vpc" --query 'VpcEndpoints[].[VpcEndpointId,ServiceName,State]' --output table 2>/dev/null)
-    if [[ "$endpoints" == *"VpcEndpointId"* ]]; then
+    endpoints=$(aws ec2 describe-vpc-endpoints --region $REGION --filters "Name=vpc-id,Values=$vpc" --query "VpcEndpoints[].[VpcEndpointId,ServiceName,State]" --output table 2>/dev/null)
+    if [[ "$endpoints" == *"|"* ]] && [[ "$endpoints" != *"None"* ]]; then
         echo "$endpoints"
     else
         echo -e "${GREEN}No VPC endpoints found${NC}"
