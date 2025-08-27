@@ -57,15 +57,15 @@ apt-mark hold kubelet kubeadm kubectl
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 
 # Get VPC information and calculate cluster DNS IP
-VPC_ID=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/)/vpc-id)
-VPC_CIDR=$(aws ec2 describe-vpcs --region $REGION --vpc-ids $VPC_ID --query 'Vpcs[0].CidrBlock' --output text)
+VPC_ID=$$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/)/vpc-id)
+VPC_CIDR=$$(aws ec2 describe-vpcs --region $$REGION --vpc-ids $$VPC_ID --query 'Vpcs[0].CidrBlock' --output text)
 
 # Calculate cluster DNS IP (VPC base + 10)
 # For example: 10.0.0.0/16 -> 10.0.0.10, 172.31.0.0/16 -> 172.31.0.10
-VPC_BASE=$(echo $VPC_CIDR | cut -d'/' -f1 | cut -d'.' -f1-2)
-CLUSTER_DNS="${VPC_BASE}.0.10"
+VPC_BASE=$$(echo $$VPC_CIDR | cut -d'/' -f1 | cut -d'.' -f1-2)
+CLUSTER_DNS="$${VPC_BASE}.0.10"
 
-echo "VPC CIDR: $VPC_CIDR, Cluster DNS: $CLUSTER_DNS"
+echo "VPC CIDR: $$VPC_CIDR, Cluster DNS: $$CLUSTER_DNS"
 
 # Configure kubelet for EKS cluster (Ubuntu requires manual configuration)
 echo "Configuring kubelet for EKS cluster: $CLUSTER_NAME"
@@ -114,7 +114,7 @@ cat > /etc/kubernetes/kubelet/kubelet-config.json <<EOF
     }
   },
   "clusterDomain": "cluster.local",
-  "clusterDNS": ["$CLUSTER_DNS"],
+  "clusterDNS": ["$$CLUSTER_DNS"],
   "resolvConf": "/run/systemd/resolve/resolv.conf",
   "runtimeRequestTimeout": "15m",
   "tlsCertFile": "/var/lib/kubelet/pki/kubelet.crt",
