@@ -1,6 +1,35 @@
 #!/bin/bash
 set -e
 
+# Parse command line arguments
+AWS_PROFILE_ARG=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            AWS_PROFILE_ARG="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --profile PROFILE_NAME    Use specific AWS profile"
+            echo "  --help, -h                Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Set AWS profile if provided
+if [ -n "$AWS_PROFILE_ARG" ]; then
+    export AWS_PROFILE="$AWS_PROFILE_ARG"
+    echo "Using AWS profile: $AWS_PROFILE"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -21,9 +50,11 @@ echo "======================================"
 echo ""
 echo -e "${RED}⚠️  WARNING: This will destroy all resources!${NC}"
 echo "This includes:"
-echo "  - EKS cluster and all nodes"
+echo "  - EKS cluster and all nodes (Ubuntu GPU + control nodes)"
 echo "  - VPC and networking resources"
-echo "  - All deployed applications"
+echo "  - Launch templates for GPU nodes"
+echo "  - Auto Scaling Groups"
+echo "  - All deployed applications (Renny, A2F, GPU Operator)"
 echo "  - All data in the cluster"
 echo "  - All load balancers"
 echo "  - All EBS volumes"
@@ -155,13 +186,21 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
     
     # Delete node groups in parallel but track them
     echo "Initiating node group deletion..."
-    for nodegroup in "${CLUSTER_NAME}-renny-gpu" "${CLUSTER_NAME}-a2f-gpu" "${CLUSTER_NAME}-control"; do
-        echo "  - Deleting $nodegroup..."
-        aws eks delete-nodegroup \
-            --cluster-name "$CLUSTER_NAME" \
-            --nodegroup-name "$nodegroup" \
-            --region "$REGION" 2>/dev/null || true
-    done
+    
+    # Get actual node groups from cluster (handles dynamic names)
+    ACTUAL_NODEGROUPS=$(aws eks list-nodegroups --cluster-name "$CLUSTER_NAME" --region "$REGION" --query 'nodegroups[]' --output text 2>/dev/null || echo "")
+    
+    if [ -n "$ACTUAL_NODEGROUPS" ]; then
+        for nodegroup in $ACTUAL_NODEGROUPS; do
+            echo "  - Deleting $nodegroup..."
+            aws eks delete-nodegroup \
+                --cluster-name "$CLUSTER_NAME" \
+                --nodegroup-name "$nodegroup" \
+                --region "$REGION" 2>/dev/null || true
+        done
+    else
+        echo "  No node groups found"
+    fi
     
     # Wait for all node groups to be deleted
     echo "Waiting for node groups to be deleted (this typically takes 5-10 minutes)..."
@@ -201,6 +240,39 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
         for vol in $VOLUMES; do
             echo "    Deleting $vol..."
             aws ec2 delete-volume --volume-id "$vol" --region "$REGION" 2>/dev/null || true
+        done
+    fi
+    
+    # Check for launch templates (Ubuntu GPU nodes)
+    echo "  - Checking for launch templates..."
+    LAUNCH_TEMPLATES=$(aws ec2 describe-launch-templates --region "$REGION" --filters "Name=tag:ManagedBy,Values=Terraform" "Name=launch-template-name,Values=${CLUSTER_NAME}*" --query "LaunchTemplates[].LaunchTemplateId" --output text 2>/dev/null || echo "")
+    if [ -n "$LAUNCH_TEMPLATES" ]; then
+        echo "  Found launch templates: $LAUNCH_TEMPLATES"
+        for template in $LAUNCH_TEMPLATES; do
+            echo "    Deleting $template..."
+            aws ec2 delete-launch-template --launch-template-id "$template" --region "$REGION" 2>/dev/null || true
+        done
+    fi
+    
+    # Check for Auto Scaling Groups from node groups
+    echo "  - Checking for Auto Scaling Groups..."
+    ASG_NAMES=$(aws autoscaling describe-auto-scaling-groups --region "$REGION" --query "AutoScalingGroups[?contains(AutoScalingGroupName, '$CLUSTER_NAME')].AutoScalingGroupName" --output text 2>/dev/null || echo "")
+    if [ -n "$ASG_NAMES" ]; then
+        echo "  Found Auto Scaling Groups: $ASG_NAMES"
+        for asg in $ASG_NAMES; do
+            echo "    Deleting $asg..."
+            aws autoscaling delete-auto-scaling-group --auto-scaling-group-name "$asg" --force-delete --region "$REGION" 2>/dev/null || true
+        done
+    fi
+    
+    # Check for remaining security groups
+    echo "  - Checking for security groups..."
+    SECURITY_GROUPS=$(aws ec2 describe-security-groups --region "$REGION" --filters "Name=group-name,Values=${CLUSTER_NAME}*" --query "SecurityGroups[].GroupId" --output text 2>/dev/null || echo "")
+    if [ -n "$SECURITY_GROUPS" ]; then
+        echo "  Found security groups: $SECURITY_GROUPS"
+        for sg in $SECURITY_GROUPS; do
+            echo "    Deleting $sg..."
+            aws ec2 delete-security-group --group-id "$sg" --region "$REGION" 2>/dev/null || true
         done
     fi
 fi
