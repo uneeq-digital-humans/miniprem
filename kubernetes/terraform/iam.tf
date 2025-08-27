@@ -36,6 +36,7 @@ resource "aws_iam_role_policy_attachment" "eks_node_group_AmazonEBSCSIDriverPoli
   role       = aws_iam_role.eks_node_group.name
 }
 
+
 # IAM role for cluster autoscaler
 resource "aws_iam_role" "cluster_autoscaler" {
   name = "${local.cluster_name}-cluster-autoscaler"
