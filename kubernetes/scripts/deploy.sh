@@ -365,9 +365,15 @@ deploy_infrastructure() {
     echo "Creating:"
     echo "  - VPC with 3 availability zones"
     echo "  - EKS cluster v1.31"
-    echo "  - 10 GPU nodes for Renny (g5.2xlarge)"
-    echo "  - 2 GPU nodes for Audio2Face (g5.2xlarge)"
+    echo "  - 10 GPU nodes for Renny (g5.2xlarge, Ubuntu 22.04)"
+    echo "  - 2 GPU nodes for Audio2Face (g5.2xlarge, Ubuntu 22.04)"
     echo "  - 2 control plane nodes (t3.large)"
+    echo ""
+    echo "Ubuntu GPU nodes provide:"
+    echo "  - NVIDIA Driver 570+ for modern GPU support"
+    echo "  - Vulkan API compatibility for Unreal Engine"
+    echo "  - CUDA 12.4+ for latest AI workloads"
+    echo "  - 150GB storage for large container images"
     echo ""
     terraform apply tfplan
     rm -f tfplan
@@ -686,9 +692,9 @@ display_status() {
     echo ""
     
     echo "📋 Node Summary:"
-    echo "  - Control nodes: 2x t3.large"
-    echo "  - Renny GPU nodes: 10x g5.2xlarge"
-    echo "  - A2F GPU nodes: 2x g5.2xlarge"
+    echo "  - Control nodes: 2x t3.large (Amazon Linux 2023)"
+    echo "  - Renny GPU nodes: 10x g5.2xlarge (Ubuntu 22.04)"
+    echo "  - A2F GPU nodes: 2x g5.2xlarge (Ubuntu 22.04)"
     kubectl get nodes -L uneeq.io/node-type,nvidia.com/gpu
     echo ""
     
