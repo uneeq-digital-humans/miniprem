@@ -22,12 +22,17 @@ apt-get install -y \
     curl \
     gnupg \
     lsb-release \
-    awscli \
+    unzip \
     jq \
     build-essential \
     dkms \
     linux-headers-aws \
     linux-modules-extra-aws
+
+# Install AWS CLI v2 (required for EKS token authentication)
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+./aws/install
 
 # Install NVIDIA drivers (matches working infra: driver 570+)
 curl -sS "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb" -o "/tmp/cuda-keyring.deb"
@@ -98,7 +103,7 @@ cat > /etc/kubernetes/kubelet/kubelet-config.json <<EOF
     }
   },
   "clusterDomain": "cluster.local",
-  "clusterDNS": ["172.20.0.10"],
+  "clusterDNS": ["10.0.0.10"],
   "resolvConf": "/run/systemd/resolve/resolv.conf",
   "runtimeRequestTimeout": "15m",
   "tlsCertFile": "/var/lib/kubelet/pki/kubelet.crt",
@@ -161,7 +166,7 @@ users:
   user:
     exec:
       apiVersion: client.authentication.k8s.io/v1beta1
-      command: /usr/bin/aws
+      command: /usr/local/bin/aws
       args:
         - --region
         - $REGION
