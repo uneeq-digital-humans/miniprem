@@ -12,7 +12,8 @@ kubernetes/
 │   ├── outputs.tf      # Output definitions
 │   ├── vpc.tf          # VPC configuration
 │   ├── eks.tf          # EKS cluster configuration
-│   ├── node-groups.tf  # Node group configurations
+│   ├── node-groups.tf  # Node group configurations (Ubuntu EKS AMIs)
+│   ├── ubuntu_userdata.sh  # Ubuntu bootstrap script
 │   └── iam.tf          # IAM roles and policies
 ├── manifests/          # Kubernetes manifests
 │   ├── namespace.yaml  # Namespace definition
@@ -110,109 +111,6 @@ kubectl version    # Kubernetes CLI
 helm version       # Helm package manager
 ```
 
-1. **AWS Account** with appropriate permissions (see [AWS_SETUP.md](AWS_SETUP.md))
-2. **AWS CLI** configured with credentials
-3. **Terraform** >= 1.0
-4. **kubectl** 
-5. **Helm** >= 3.0
-6. **Docker Hub** account with access to UneeQ repositories
-7. **Renny Helm chart** (renny-chart.tgz file)
-
-### Step -1: Install Required Tools
-
-**Terraform Installation:**
-
-*macOS:*
-```bash
-# Using Homebrew (recommended)
-brew tap hashicorp/tap
-brew install hashicorp/tap/terraform
-
-# Or download binary
-curl -LO https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_darwin_arm64.zip
-
-unzip terraform_1.6.6_darwin_arm64.zip
-sudo mv terraform /usr/local/bin/
-```
-
-*Linux:*
-```bash
-# Using package manager (Ubuntu/Debian)
-wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
-echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
-sudo apt update && sudo apt install terraform
-
-# Or download binary
-wget https://releases.hashicorp.com/terraform/1.6.6/terraform_1.6.6_linux_amd64.zip
-unzip terraform_1.6.6_linux_amd64.zip
-sudo mv terraform /usr/local/bin/
-```
-
-*Windows:*
-```powershell
-# Using Chocolatey (recommended)
-choco install terraform
-
-# Using Scoop
-scoop install terraform
-
-# Manual: Download from https://releases.hashicorp.com/terraform/
-# Extract terraform.exe and add directory to PATH
-```
-
-**AWS CLI Installation (Required: v2.3.0+):**
-
-⚠️ **CRITICAL**: AWS CLI versions < 2.3.0 cause kubectl authentication issues with modern Kubernetes versions.
-
-*macOS:*
-```bash
-# Official installer (recommended)
-curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
-sudo installer -pkg AWSCLIV2.pkg -target /
-
-# Or via Homebrew
-brew install awscli
-```
-
-*Linux:*
-```bash
-# Official installer (recommended)
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-
-# Or via package manager (may be older)
-sudo apt install awscli  # Check version with aws --version
-```
-
-*Windows:*
-```powershell
-# Download and run the AWS CLI MSI installer from:
-# https://awscli.amazonaws.com/AWSCLIV2.msi
-
-# Or via Chocolatey
-choco install awscli
-```
-
-**Other Required Tools:**
-
-*kubectl:*
-- macOS: `brew install kubectl`
-- Linux: `sudo snap install kubectl --classic`
-- Windows: `choco install kubernetes-cli`
-
-*Helm:*
-- macOS: `brew install helm`
-- Linux: `sudo snap install helm --classic`
-- Windows: `choco install kubernetes-helm`
-
-**Verify Installations:**
-```bash
-terraform version  # Should show v1.6.6 or higher
-aws --version      # AWS CLI version
-kubectl version    # Kubernetes CLI
-helm version       # Helm package manager
-```
 
 ### Step 0: Setup AWS Credentials
 
@@ -349,10 +247,26 @@ This will:
 
 - **Region**: Configurable (default: us-east-2)
 - **Kubernetes Version**: 1.31
+- **Operating System**: Ubuntu 22.04 EKS AMIs for GPU nodes (optimized for Vulkan/Unreal Engine)
 - **Node Groups**:
   - **Control Plane**: 2x t3.large nodes (for management)
-  - **Renny Nodes**: 10-20x g5.2xlarge GPU instances
-  - **A2F Nodes**: 2-5x g5.2xlarge GPU instances
+  - **Renny Nodes**: 10-20x g5.2xlarge GPU instances (Ubuntu)
+  - **A2F Nodes**: 2-5x g5.2xlarge GPU instances (Ubuntu)
+
+### GPU Configuration & Compatibility
+
+This deployment uses **Ubuntu 22.04 EKS AMIs** with custom launch templates for GPU nodes, providing:
+
+- **NVIDIA Driver 570+**: Latest drivers for RTX/A10G GPU support
+- **CUDA 12.4+**: Modern CUDA runtime for Unreal Engine 5.6 compatibility  
+- **Vulkan API Support**: Full Vulkan graphics pipeline support for Renny rendering
+- **150GB EBS Storage**: Accommodates large AI container images (35GB+)
+
+**Why Ubuntu over Amazon Linux?**
+- **Vulkan Compatibility**: Ubuntu provides complete Vulkan API support required by Unreal Engine
+- **Graphics Stack**: More comprehensive graphics libraries and driver ecosystem
+- **GLIBC 2.35**: Modern system libraries required by latest Unreal Engine builds
+- **Container Compatibility**: Better compatibility with AI/ML container images
 
 ### Network Architecture
 
@@ -440,6 +354,72 @@ kubectl describe nodes -l uneeq.io/node-type=renny
 
 # View detailed pod status
 kubectl describe pods -n uneeq-renderer
+```
+
+## 🔧 Troubleshooting & Debugging
+
+### Pod Debugging Commands
+
+**When pods are stuck in `ContainerCreating`, `Pending`, or `ErrImagePull`:**
+
+```bash
+# 1. Check overall pod status
+kubectl get pods -n uneeq-renderer -o wide
+
+# 2. Watch pods in real-time (Ctrl+C to exit)
+kubectl get pods -n uneeq-renderer -w
+
+# 3. Check detailed events for specific pod
+kubectl describe pod -n uneeq-renderer <pod-name>
+
+# 4. Check recent events across namespace
+kubectl get events -n uneeq-renderer --sort-by='.lastTimestamp' | tail -20
+
+# 5. Check logs for running pods
+kubectl logs -n uneeq-renderer <pod-name> -c <container-name>
+
+# 6. Check node resources and scheduling issues
+kubectl describe nodes -l uneeq.io/node-type=renny | grep -A10 "Allocated resources"
+kubectl describe nodes -l uneeq.io/node-type=a2f | grep -A10 "Allocated resources"
+```
+
+**Common Issues & Solutions:**
+
+- **`ErrImagePull/ImagePullBackOff`**: Check Docker authentication
+  ```bash
+  kubectl get secret docker-config -n uneeq-renderer
+  ```
+
+- **`FailedMount`**: Check secret keys exist
+  ```bash
+  kubectl get secret renderer -n uneeq-renderer -o yaml
+  ```
+
+- **`Insufficient resources`**: Check node capacity
+  ```bash
+  kubectl top nodes
+  kubectl describe nodes | grep -E "(Name:|Allocated resources:)" -A10
+  ```
+
+- **Long `ContainerCreating`**: Large images (35GB+) take 10-20 minutes
+  ```bash
+  # Check image pull progress
+  kubectl describe pod -n uneeq-renderer <pod-name> | grep -E "(Pulling|Pulled)"
+  ```
+
+### Interactive Debugging
+
+**Connect to running containers:**
+```bash
+# Debug Renny container
+kubectl exec -it -n uneeq-renderer <renny-pod-name> -- /bin/bash
+
+# Debug A2F container (has 2 containers)
+kubectl exec -it -n uneeq-renderer <a2f-pod-name> -c a2x -- /bin/bash
+kubectl exec -it -n uneeq-renderer <a2f-pod-name> -c a2f-controller -- /bin/bash
+
+# Debug node directly
+kubectl debug node/<node-name> -it --image=busybox
 ```
 
 #### GPU Monitoring Commands
