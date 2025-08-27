@@ -1,0 +1,5 @@
+apiVersion: v2
+description: Uneeq Digital Human Engine
+name: renny
+type: application
+version: 0.632-47d09

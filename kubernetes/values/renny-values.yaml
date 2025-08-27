@@ -1,35 +1,57 @@
 # Renny Helm values
+image: "facemeproduction/renny:0.632-47d09"
+
 deployment:
   nodeType: renny
-  replicas: 10  # This will scale with the node group
+  replicas: 2  # Start small - one per Renny node
 
 renderer:
   a2f:
     url: http://audio2face-gateway.uneeq-renderer.svc.cluster.local:52000
+    audioDelayMs: 240        # A2F_AUDIO_DELAY_TIME_MS from docker
+    audioSampleRate: 16000   # A2F_AUDIO_SAMPLE_RATE from docker
   
+  # Required for secret template
   cp:
-    flowiseApiKey: ""  # Add your base64 encoded key here if using Flowise
-    flowiseUrl: ""     # Add if using Flowise (e.g., http://flowise.uneeq-renderer.svc.cluster.local:3000)
+    flowiseApiKey: ""        # Optional
+  
+  launchDarkly:
+    key: ""                  # Optional
+  
+  dhop:
+    apiKey: "your-dhop-api-key-here"
+    tenantId: "your-dhop-tenant-id-here"
+    url: wss://api.enterprise.uneeq.io:443/signalling-service
+  
+  tts:
+    veritoneApiKey: ""       # Optional
+    azureSpeechKey: ""       # Base64 encoded
+    elevenlabsApiKey: ""     # Base64 encoded  
+    gcpCredentials: ""       # Base64 encoded GCP service account JSON
   
   unrealEngine:
     config: ""  # Base64 encoded UneeQ's Unreal Engine SDK licence file
-    # Command line arguments for Unreal Engine
+    # Command line arguments for Unreal Engine (from docker-compose.default.yml)
     args:
       - "/Game/Live_Levels/BlankScene"
       - "-RenderOffScreen"
-      - "-ResX=1920"
+      - "-ResX=1920" 
       - "-ResY=1080"
       - "-NoTextureStreaming"
+  
+  # Health check configuration (from docker-compose.default.yml)
+  health:
+    url: "http://0.0.0.0:8081/health"
+  
+  # Sleep timer configuration
+  sleepTimer:
+    seconds: 5.0
+  
+  # Reconnection settings
+  reconnect:
+    backoffRate: 1.5
+    intervalSeconds: 5.0
 
-dhop:
-  url: wss://api.enterprise.uneeq.io:443/signalling-service
-  tenantId: ""  # Will be filled from terraform.tfvars
-  apiKey: ""    # Base64 encoded - Will be filled from terraform.tfvars
-
-tts:
-  azureRegion: eastus
-  azureSpeechKey: ""     # Base64 encoded Azure Speech API key
-  elevenlabsApiKey: ""   # Base64 encoded Eleven Labs API key
 
 logLevel: "4"
 
@@ -38,10 +60,12 @@ resources:
     nvidia.com/gpu: 1
     memory: "32Gi"
     cpu: "8"
+    gpu: 1
   requests:
     nvidia.com/gpu: 1
     memory: "16Gi"
     cpu: "3"
+    gpu: 1
 
 nodeSelector:
   uneeq.io/node-type: renny

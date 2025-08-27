@@ -1,0 +1,38 @@
+deployment:
+  # value for uneeq.io/node-type label used as a nodeSelector
+  nodeType: renderer
+  replicas: 4
+
+renderer:
+  a2f:
+    url: ""
+    # The 'url' parameter is required
+  cp:
+    flowiseApiKey: ""  # the 'flowiseApiKey' is optional, can be set at Persona level
+    flowiseUrl: "" # the 'flowiseUrl' is required
+  dhop:
+    apiKey: "" # The 'apiKey' parameter is required and should be base64-encoded
+    tenantId: "" # The 'tenantId' parameter is required
+    url: "" # The 'url' parameter is required
+  launchDarkly:
+    key: "" # The 'key' parameter is required
+  tts:
+    proxyUrl: ""
+    proxyApiKey: ""
+    veritoneApiKey: ""
+    azureRegion: ""
+    azureSpeechKey: ""
+    elevenlabsApiKey: ""
+    elevenlabsModelId: ""
+    gcpCreds: ""
+    # The 'url' parameter is required
+    # The 'apiKey' parameter is required and should be base64-encoded
+    # The 'proxyApiKey'  is optional, without it will default to eTTS
+  container:
+    requests:
+      cpu: 3200m
+      memory: 7Gi
+    limits:
+      cpu: 3200m
+      memory: 7Gi
+  logLevel: "4"

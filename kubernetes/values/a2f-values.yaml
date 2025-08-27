@@ -13,12 +13,12 @@ a2x:
 resources:
   limits:
     nvidia.com/gpu: 1
-    memory: "16Gi"
-    cpu: "4"
+    memory: "18Gi"    # 16Gi + 12.5% headroom (rounded up for safety)
+    cpu: "6"          # 5.5 CPU + 10% headroom (rounded up for k8s)
   requests:
     nvidia.com/gpu: 1
-    memory: "8Gi"
-    cpu: "2"
+    memory: "9Gi"     # 8Gi + 12.5% headroom
+    cpu: "5500m"      # Keep current working value (5.5 cores)
 
 nodeSelector:
   uneeq.io/node-type: a2f
