@@ -51,16 +51,161 @@ apt-mark hold kubelet kubeadm kubectl
 # Get AWS region
 REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 
-# Bootstrap the node to join EKS cluster (Ubuntu EKS AMIs have bootstrap script)
-if [ -f /etc/eks/bootstrap.sh ]; then
-    /etc/eks/bootstrap.sh \
-        --apiserver-endpoint "$CLUSTER_ENDPOINT" \
-        --b64-cluster-ca "$CLUSTER_CA" \
-        --kubelet-extra-args "--node-labels=$NODE_LABELS" \
-        "$CLUSTER_NAME"
-else
-    echo "Warning: /etc/eks/bootstrap.sh not found, manual kubelet config needed"
-    # Manual kubelet configuration would go here if needed
-fi
+# Configure kubelet for EKS cluster (Ubuntu requires manual configuration)
+echo "Configuring kubelet for EKS cluster: $CLUSTER_NAME"
+
+# Create kubelet configuration directory
+mkdir -p /etc/kubernetes/kubelet
+mkdir -p /var/lib/kubelet
+mkdir -p /opt/cni/bin
+
+# Install AWS EKS CNI plugin
+curl -L "https://github.com/aws/amazon-vpc-cni-k8s/releases/download/v1.15.4/aws-k8s-cni-v1.15.4.tar.gz" | tar -xz -C /opt/cni/bin/
+
+# Create cluster CA certificate file
+echo "$CLUSTER_CA" | base64 -d > /etc/kubernetes/ca.crt
+
+# Get instance metadata
+INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+PRIVATE_DNS=$(curl -s http://169.254.169.254/latest/meta-data/local-hostname)
+PRIVATE_IP=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+
+# Create kubelet configuration
+cat > /etc/kubernetes/kubelet/kubelet-config.json <<EOF
+{
+  "kind": "KubeletConfiguration",
+  "apiVersion": "kubelet.config.k8s.io/v1beta1",
+  "address": "0.0.0.0",
+  "port": 10250,
+  "readOnlyPort": 0,
+  "authentication": {
+    "anonymous": {
+      "enabled": false
+    },
+    "webhook": {
+      "enabled": true,
+      "cacheTTL": "2m0s"
+    },
+    "x509": {
+      "clientCAFile": "/etc/kubernetes/ca.crt"
+    }
+  },
+  "authorization": {
+    "mode": "Webhook",
+    "webhook": {
+      "cacheAuthorizedTTL": "5m0s",
+      "cacheUnauthorizedTTL": "30s"
+    }
+  },
+  "clusterDomain": "cluster.local",
+  "clusterDNS": ["172.20.0.10"],
+  "resolvConf": "/run/systemd/resolve/resolv.conf",
+  "runtimeRequestTimeout": "15m",
+  "tlsCertFile": "/var/lib/kubelet/pki/kubelet.crt",
+  "tlsPrivateKeyFile": "/var/lib/kubelet/pki/kubelet.key",
+  "cgroupDriver": "systemd",
+  "nodeStatusUpdateFrequency": "10s",
+  "nodeStatusReportFrequency": "5m",
+  "imageMinimumGCAge": "2m",
+  "imageGCHighThresholdPercent": 85,
+  "imageGCLowThresholdPercent": 80,
+  "volumeStatsAggPeriod": "1m",
+  "kubeletCgroups": "/systemd/system.slice",
+  "systemCgroups": "/systemd/system.slice",
+  "cgroupRoot": "/",
+  "maxPods": 110,
+  "staticPodPath": "/etc/kubernetes/manifests",
+  "containerRuntimeEndpoint": "unix:///run/containerd/containerd.sock"
+}
+EOF
+
+# Create kubelet service
+cat > /etc/systemd/system/kubelet.service <<EOF
+[Unit]
+Description=kubelet: The Kubernetes Node Agent
+Documentation=https://kubernetes.io/docs/home/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/kubelet \\
+  --config=/etc/kubernetes/kubelet/kubelet-config.json \\
+  --kubeconfig=/var/lib/kubelet/kubeconfig \\
+  --container-runtime-endpoint=unix:///run/containerd/containerd.sock \\
+  --node-labels=$NODE_LABELS \\
+  --v=2
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Create kubeconfig for kubelet
+cat > /var/lib/kubelet/kubeconfig <<EOF
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority: /etc/kubernetes/ca.crt
+    server: $CLUSTER_ENDPOINT
+  name: kubernetes
+contexts:
+- context:
+    cluster: kubernetes
+    user: kubelet
+  name: kubelet
+current-context: kubelet
+kind: Config
+users:
+- name: kubelet
+  user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1beta1
+      command: /usr/bin/aws
+      args:
+        - --region
+        - $REGION
+        - eks
+        - get-token
+        - --cluster-name
+        - $CLUSTER_NAME
+EOF
+
+# Configure containerd for EKS
+cat > /etc/containerd/config.toml <<EOF
+version = 2
+root = "/var/lib/containerd"
+state = "/run/containerd"
+oom_score = 0
+
+[grpc]
+address = "/run/containerd/containerd.sock"
+uid = 0
+gid = 0
+
+[plugins."io.containerd.grpc.v1.cri"]
+enable_selinux = false
+sandbox_image = "602401143452.dkr.ecr.$REGION.amazonaws.com/eks/pause:3.5"
+
+[plugins."io.containerd.grpc.v1.cri".containerd]
+snapshotter = "overlayfs"
+default_runtime_name = "nvidia"
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia]
+runtime_type = "io.containerd.runc.v2"
+
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.nvidia.options]
+BinaryName = "/usr/bin/nvidia-container-runtime"
+
+[plugins."io.containerd.grpc.v1.cri".cni]
+bin_dir = "/opt/cni/bin"
+conf_dir = "/etc/cni/net.d"
+EOF
+
+# Start and enable services
+systemctl daemon-reload
+systemctl restart containerd
+systemctl enable kubelet
+systemctl start kubelet
 
 echo "Ubuntu EKS GPU node bootstrap completed successfully"
