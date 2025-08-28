@@ -425,22 +425,69 @@ wait_for_large_images() {
     done
 }
 
-# Check if target cluster already exists
+# Check if target cluster exists and is healthy
 check_existing_cluster() {
     local cluster_name="${CLUSTER_NAME:-renny-production}"
+    local region="${AWS_REGION:-us-east-2}"
     
-    echo "🔍 Checking if cluster '$cluster_name' already exists..."
+    echo "🔍 Checking cluster health for '$cluster_name'..."
     
-    if aws eks describe-cluster --name "$cluster_name" --region "${AWS_REGION:-us-east-2}" >/dev/null 2>&1; then
-        echo -e "${GREEN}✅ Found existing cluster: $cluster_name${NC}"
-        echo "Since the cluster already exists, skipping infrastructure setup..."
-        echo ""
-        return 0  # Cluster exists
-    else
+    # Check if cluster control plane exists
+    if ! aws eks describe-cluster --name "$cluster_name" --region "$region" >/dev/null 2>&1; then
         echo -e "${YELLOW}⚡ Cluster '$cluster_name' not found - will create new infrastructure${NC}"
         echo ""
         return 1  # Cluster doesn't exist
     fi
+    
+    echo -e "${GREEN}✅ Found cluster: $cluster_name${NC}"
+    
+    # Check cluster status
+    local cluster_status=$(aws eks describe-cluster --name "$cluster_name" --region "$region" --query 'cluster.status' --output text 2>/dev/null)
+    if [ "$cluster_status" != "ACTIVE" ]; then
+        echo -e "${RED}❌ Cluster status: $cluster_status (not ACTIVE)${NC}"
+        echo "Infrastructure appears incomplete - will run full deployment"
+        echo ""
+        return 1  # Cluster exists but not healthy
+    fi
+    
+    # Check if required node groups exist
+    local missing_nodegroups=()
+    local expected_nodegroups=("${cluster_name}-control" "${cluster_name}-renny-gpu-v4" "${cluster_name}-a2f-gpu-v4")
+    
+    echo "Validating node groups..."
+    for ng in "${expected_nodegroups[@]}"; do
+        if ! aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$ng" --region "$region" >/dev/null 2>&1; then
+            missing_nodegroups+=("$ng")
+        else
+            local ng_status=$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$ng" --region "$region" --query 'nodegroup.status' --output text 2>/dev/null)
+            if [ "$ng_status" != "ACTIVE" ]; then
+                echo -e "${YELLOW}⚠️  Node group $ng status: $ng_status${NC}"
+                missing_nodegroups+=("$ng")
+            fi
+        fi
+    done
+    
+    if [ ${#missing_nodegroups[@]} -gt 0 ]; then
+        echo -e "${RED}❌ Missing or unhealthy node groups: ${missing_nodegroups[*]}${NC}"
+        echo "Infrastructure is incomplete - will run terraform to fix"
+        echo ""
+        return 1  # Infrastructure incomplete
+    fi
+    
+    # Check if VPC and subnets exist (basic validation)
+    local vpc_id=$(aws eks describe-cluster --name "$cluster_name" --region "$region" --query 'cluster.resourcesVpcConfig.vpcId' --output text 2>/dev/null)
+    if [ -z "$vpc_id" ] || [ "$vpc_id" = "None" ]; then
+        echo -e "${RED}❌ VPC information missing from cluster${NC}"
+        return 1
+    fi
+    
+    # All checks passed
+    echo -e "${GREEN}✓ Cluster status: ACTIVE${NC}"
+    echo -e "${GREEN}✓ All node groups: ACTIVE${NC}"
+    echo -e "${GREEN}✓ VPC configuration: Valid${NC}"
+    echo -e "${CYAN}📋 Infrastructure is healthy - skipping to application deployment${NC}"
+    echo ""
+    return 0  # Cluster exists and is healthy
 }
 
 # AWS Profile detection and confirmation
@@ -1449,12 +1496,14 @@ main() {
     check_prerequisites
     check_aws_credentials
     
-    # Check if cluster already exists - skip infrastructure if it does
+    # Check if cluster exists and is healthy - skip infrastructure if it is
     if check_existing_cluster; then
-        echo -e "${CYAN}📋 Existing cluster detected - skipping to application deployment${NC}"
+        # Cluster exists and is healthy - skip infrastructure setup
+        echo "🚀 Proceeding with application deployment on healthy cluster"
         echo ""
     else
-        echo -e "${CYAN}🏗️  Setting up new infrastructure${NC}"
+        # Cluster missing or unhealthy - run full infrastructure deployment
+        echo -e "${CYAN}🏗️  Setting up infrastructure (new or repair)${NC}"
         prompt_network_configuration
         validate_network_config
         check_aws_limits
