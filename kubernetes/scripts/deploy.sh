@@ -81,11 +81,212 @@ show_elapsed() {
     echo "Elapsed time: ${elapsed_min}m ${elapsed_sec}s"
 }
 
+# Adaptive waiting for cluster nodes to be ready
+wait_for_cluster_nodes_ready() {
+    local max_timeout="${1:-1800}"  # Default 30 minutes
+    local start_time=$(date +%s)
+    local last_status=""
+    local expected_nodes=14  # 2 control + 10 renny + 2 a2f
+    
+    echo "⏰ Maximum wait time: $((max_timeout/60)) minutes"
+    
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        
+        if [ $elapsed -ge $max_timeout ]; then
+            echo -e "${RED}❌ Timeout waiting for cluster nodes after $((max_timeout/60)) minutes${NC}"
+            kubectl get nodes -o wide
+            echo "Recent events:"
+            kubectl get events --sort-by='.lastTimestamp' | tail -10
+            return 1
+        fi
+        
+        # Get node status with error handling
+        local nodes_output
+        if ! nodes_output=$(kubectl get nodes --no-headers 2>/dev/null); then
+            debug_log "Waiting for kubectl connectivity..."
+            sleep 15
+            continue
+        fi
+        
+        local ready_nodes=$(echo "$nodes_output" | grep -c " Ready " || echo "0")
+        local total_nodes=$(echo "$nodes_output" | wc -l || echo "0")
+        local not_ready=$(echo "$nodes_output" | grep -c " NotReady " || echo "0")
+        
+        # Status summary
+        local current_status="Ready: $ready_nodes/$total_nodes | NotReady: $not_ready"
+        
+        # Show status updates and progress
+        if [ "$current_status" != "$last_status" ] || [ $((elapsed % 30)) -eq 0 ]; then
+            local elapsed_min=$((elapsed / 60))
+            local elapsed_sec=$((elapsed % 60))
+            local remaining_time=$((max_timeout - elapsed))
+            local remaining_min=$((remaining_time / 60))
+            
+            if [ "$DEBUG_MODE" = true ]; then
+                debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
+                if [ "$not_ready" -gt "0" ]; then
+                    debug_log "NotReady nodes:"
+                    echo "$nodes_output" | grep " NotReady " | head -3
+                fi
+            else
+                # Progress bar for normal mode
+                local progress=0
+                if [ "$expected_nodes" -gt "0" ]; then
+                    progress=$((ready_nodes * 100 / expected_nodes))
+                    if [ $progress -gt 100 ]; then progress=100; fi
+                fi
+                
+                local progress_bar=""
+                local filled=$((progress / 5))  # 20-character bar
+                for ((i=1; i<=20; i++)); do
+                    if [ $i -le $filled ]; then
+                        progress_bar+="█"
+                    else
+                        progress_bar+="░"
+                    fi
+                done
+                echo -ne "\r🚀 Nodes joining cluster... [$progress_bar] $ready_nodes/$total_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+            fi
+            
+            last_status="$current_status"
+        fi
+        
+        # Success condition - all nodes ready
+        if [ "$total_nodes" -gt "0" ] && [ "$ready_nodes" -eq "$total_nodes" ] && [ "$ready_nodes" -ge $((expected_nodes - 2)) ]; then
+            if [ "$DEBUG_MODE" != true ]; then
+                echo ""  # Clear progress bar line
+            fi
+            echo -e "${GREEN}✓ All $total_nodes nodes are ready${NC}"
+            kubectl get nodes -L uneeq.io/node-type,nvidia.com/gpu
+            return 0
+        fi
+        
+        sleep 15  # Check every 15 seconds
+    done
+}
+
+# Adaptive waiting for GPU operator installation
+wait_for_gpu_operator_ready() {
+    local max_timeout="${1:-2400}"  # Default 40 minutes
+    local start_time=$(date +%s)
+    local last_status=""
+    
+    echo "⏰ Maximum wait time: $((max_timeout/60)) minutes"
+    
+    # First wait for GPU nodes to be labeled
+    local gpu_nodes=0
+    local attempts=0
+    while [ $gpu_nodes -eq 0 ] && [ $attempts -lt 60 ]; do
+        gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu.present=true --no-headers 2>/dev/null | wc -l || echo "0")
+        if [ $gpu_nodes -eq 0 ]; then
+            debug_log "Waiting for GPU nodes to be detected..."
+            sleep 10
+            ((attempts++))
+        fi
+    done
+    
+    if [ $gpu_nodes -eq 0 ]; then
+        echo -e "${YELLOW}⚠️  No GPU nodes detected yet, continuing anyway${NC}"
+        # Estimate based on node group configuration
+        gpu_nodes=12  # 10 renny + 2 a2f
+    fi
+    
+    echo "Targeting $gpu_nodes GPU nodes for driver installation"
+    
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        
+        if [ $elapsed -ge $max_timeout ]; then
+            echo -e "${RED}❌ Timeout waiting for GPU operator after $((max_timeout/60)) minutes${NC}"
+            kubectl get pods -n gpu-operator -o wide
+            echo "Problematic pods:"
+            kubectl get pods -n gpu-operator | grep -E "CrashLoopBackOff|ImagePullBackOff|Error|Failed" || echo "No failed pods found"
+            return 1
+        fi
+        
+        # Get GPU operator status
+        local driver_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
+        local failed_pods=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l || echo "0")
+        local crashloop_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff\|ImagePullBackOff\|Error" || echo "0")
+        local total_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | wc -l || echo "0")
+        
+        # Status summary
+        local current_status="Drivers: $driver_pods/$gpu_nodes | Failed: $failed_pods | Crashes: $crashloop_pods | Total: $total_pods"
+        
+        # Show status updates
+        if [ "$current_status" != "$last_status" ] || [ $((elapsed % 45)) -eq 0 ]; then
+            local elapsed_min=$((elapsed / 60))
+            local elapsed_sec=$((elapsed % 60))
+            local remaining_time=$((max_timeout - elapsed))
+            local remaining_min=$((remaining_time / 60))
+            
+            if [ "$DEBUG_MODE" = true ]; then
+                debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
+                
+                if [ "$failed_pods" -gt "0" ] || [ "$crashloop_pods" -gt "0" ]; then
+                    debug_log "Issue detected - showing pod details:"
+                    kubectl get pods -n gpu-operator --no-headers | grep -E "Failed|CrashLoopBackOff|ImagePullBackOff|Error" || debug_log "  No critical failures in current status"
+                fi
+            else
+                # Progress bar
+                local progress=0
+                if [ "$gpu_nodes" -gt "0" ]; then
+                    progress=$((driver_pods * 100 / gpu_nodes))
+                    if [ $progress -gt 100 ]; then progress=100; fi
+                fi
+                
+                local progress_bar=""
+                local filled=$((progress / 5))
+                for ((i=1; i<=20; i++)); do
+                    if [ $i -le $filled ]; then
+                        progress_bar+="█"
+                    else
+                        progress_bar+="░"
+                    fi
+                done
+                echo -ne "\r🎮 Installing GPU drivers... [$progress_bar] $driver_pods/$gpu_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+                
+                if [ "$failed_pods" -gt "0" ] || [ "$crashloop_pods" -gt "0" ]; then
+                    echo -ne " ⚠️ $failed_pods failed"
+                fi
+            fi
+            
+            last_status="$current_status"
+        fi
+        
+        # Success condition
+        if [ "$driver_pods" -ge "$gpu_nodes" ] && [ "$gpu_nodes" -gt "0" ]; then
+            if [ "$DEBUG_MODE" != true ]; then
+                echo ""  # Clear progress bar line
+            fi
+            echo -e "${GREEN}✓ GPU drivers installed on all $gpu_nodes GPU nodes${NC}"
+            return 0
+        fi
+        
+        # Check for persistent issues
+        if [ "$failed_pods" -gt "0" ] || [ "$crashloop_pods" -gt "0" ]; then
+            if [ $elapsed -gt 1200 ]; then  # After 20 minutes
+                echo -e "${YELLOW}⚠️  GPU operator has persistent issues after $((elapsed/60)) minutes${NC}"
+                echo "Consider using --debug flag for detailed troubleshooting"
+                if [ $elapsed -gt 2000 ]; then  # After 33 minutes
+                    echo -e "${RED}GPU operator installation appears to have failed${NC}"
+                    return 1
+                fi
+            fi
+        fi
+        
+        sleep 20  # Check every 20 seconds
+    done
+}
+
 # Function to wait for large image pulls with detailed monitoring
 wait_for_large_images() {
     local app_label="$1"
     local namespace="$2"
-    local max_timeout="${3:-1800}"  # Default 30 minutes
+    local max_timeout="${3:-2400}"  # Default 40 minutes for large images
     local start_time=$(date +%s)
     local last_status=""
     
@@ -117,12 +318,14 @@ wait_for_large_images() {
         local current_status="Ready: $ready_count/$total_count | Pulling: $pulling_count | Failed: $failed_count"
         
         # Show status based on debug mode and changes
-        if [ "$current_status" != "$last_status" ] || [ $((elapsed % 30)) -eq 0 ]; then
+        if [ "$current_status" != "$last_status" ] || [ $((elapsed % 45)) -eq 0 ]; then
             local elapsed_min=$((elapsed / 60))
             local elapsed_sec=$((elapsed % 60))
+            local remaining_time=$((max_timeout - elapsed))
+            local remaining_min=$((remaining_time / 60))
             
             if [ "$DEBUG_MODE" = true ]; then
-                debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status"
+                debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
                 
                 # Show detailed issues in debug mode
                 if [ "$failed_count" -gt "0" ]; then
@@ -141,14 +344,14 @@ wait_for_large_images() {
                             progress_bar+="░"
                         fi
                     done
-                    echo -ne "\r🖼️ Pulling $app_label images... [$progress_bar] $ready_count/$total_count ready (${elapsed_min}m${elapsed_sec}s)"
+                    echo -ne "\r🖼️ Pulling $app_label images... [$progress_bar] $ready_count/$total_count ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
                     
                     # Show brief warning for failures in normal mode
                     if [ "$failed_count" -gt "0" ]; then
                         echo -ne " ⚠️ $failed_count issues"
                     fi
                 else
-                    echo -ne "\r🖼️ Pulling $app_label images... Waiting for pods... (${elapsed_min}m${elapsed_sec}s)"
+                    echo -ne "\r🖼️ Pulling $app_label images... Waiting for pods... (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
                 fi
             fi
             
@@ -164,7 +367,7 @@ wait_for_large_images() {
             return 0
         fi
         
-        sleep 10
+        sleep 15  # Check every 15 seconds for large images
     done
 }
 
@@ -267,42 +470,458 @@ check_aws_profile() {
     fi
 }
 
+# Check AWS credential expiration and validity
+check_aws_credentials() {
+    debug_log "Checking AWS credential expiration..."
+    
+    # Get current credentials info
+    local identity_output
+    if ! identity_output=$(aws sts get-caller-identity 2>/dev/null); then
+        echo -e "${RED}❌ AWS credentials not configured or expired${NC}"
+        return 1
+    fi
+    
+    # Check if this is an assumed role (SSO or assume role)
+    local identity_arn=$(echo "$identity_output" | jq -r '.Arn' 2>/dev/null || echo "")
+    if [[ "$identity_arn" == *"assumed-role"* ]]; then
+        debug_log "Detected assumed role credentials: $identity_arn"
+        
+        # Try to get session token info if available
+        local session_info
+        if session_info=$(aws sts get-session-token --duration-seconds 900 2>/dev/null); then
+            debug_log "Credentials appear to be valid for session operations"
+        else
+            echo -e "${YELLOW}⚠️  Warning: Unable to test credential duration. Deployment may fail if credentials expire during the ~60-90 minute deployment process.${NC}"
+            echo "Consider refreshing your credentials before proceeding:"
+            echo "  AWS SSO: aws sso login --profile $AWS_PROFILE"
+            echo ""
+            echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
+            read -r response
+            if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                echo "Deployment cancelled. Please refresh credentials and retry."
+                exit 1
+            fi
+        fi
+    fi
+    
+    debug_log "✅ AWS credentials validated"
+    return 0
+}
+
+# Check AWS service limits and resource availability
+check_aws_limits() {
+    echo "🔍 Checking AWS service limits and availability..."
+    local region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    
+    # Check VPC limit using existing script
+    echo "Checking VPC availability..."
+    local vpc_check_output
+    if vpc_check_output=$("$SCRIPT_DIR/check-vpc-usage.sh" --region "$region" 2>&1); then
+        debug_log "✅ VPC availability check passed"
+        # Look for warning indicators in output
+        if echo "$vpc_check_output" | grep -qi "limit\|warning\|full"; then
+            echo -e "${YELLOW}⚠️  VPC usage warning detected${NC}"
+            echo "Run './scripts/check-vpc-usage.sh' for details"
+            echo ""
+            echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
+            read -r response
+            if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                echo "Please free up VPC capacity and retry"
+                exit 1
+            fi
+        fi
+    else
+        echo -e "${RED}❌ VPC availability check failed${NC}"
+        echo "Error output:"
+        echo "$vpc_check_output"
+        echo ""
+        echo "This may indicate:"
+        echo "  1. VPC limit exceeded (default: 5 per region)"
+        echo "  2. Insufficient permissions to check VPCs"
+        echo "  3. Network connectivity issues"
+        echo ""
+        echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo "Please resolve VPC issues and retry"
+            exit 1
+        fi
+    fi
+    
+    # Check instance type availability for g5.2xlarge
+    echo "Checking GPU instance availability..."
+    local instance_types=("g5.2xlarge" "g5.xlarge" "g5.4xlarge")
+    local available_types=()
+    
+    for instance_type in "${instance_types[@]}"; do
+        if aws ec2 describe-instance-type-offerings \
+           --location-type availability-zone \
+           --filters "Name=instance-type,Values=$instance_type" \
+           --region "$region" \
+           --query 'InstanceTypeOfferings[0].InstanceType' \
+           --output text 2>/dev/null | grep -q "$instance_type"; then
+            available_types+=("$instance_type")
+            debug_log "✅ $instance_type available in $region"
+        else
+            debug_log "❌ $instance_type not available in $region"
+        fi
+    done
+    
+    if [ ${#available_types[@]} -eq 0 ]; then
+        echo -e "${RED}❌ No GPU instance types (g5.xlarge, g5.2xlarge, g5.4xlarge) available in region $region${NC}"
+        echo "Consider:"
+        echo "  1. Changing to a different region with GPU availability"
+        echo "  2. Requesting quota increase for GPU instances"
+        echo "  3. Using different instance types (modify terraform/variables.tf)"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}✅ Available GPU instance types in $region: ${available_types[*]}${NC}"
+    
+    # Check Elastic IP limits (each NAT gateway needs one)
+    echo "Checking Elastic IP availability..."
+    local eip_used=$(aws ec2 describe-addresses --region "$region" --query 'Addresses[?Domain==`vpc`]' --output json | jq length)
+    local eip_limit=5  # Default AWS limit
+    
+    # We need 1 EIP for single NAT or 3 EIPs for HA NAT
+    local eip_needed=1
+    if [ "${CONFIGURED_NAT_HA:-true}" = "true" ]; then
+        eip_needed=3
+    fi
+    
+    if [ $((eip_used + eip_needed)) -gt $eip_limit ]; then
+        echo -e "${RED}❌ Insufficient Elastic IP addresses${NC}"
+        echo "Current usage: $eip_used/$eip_limit"
+        echo "This deployment needs: $eip_needed additional EIPs"
+        echo "Consider:"
+        echo "  1. Release unused Elastic IPs"
+        echo "  2. Request EIP limit increase"
+        echo "  3. Use single NAT gateway (set enable_nat_ha = false)"
+        exit 1
+    fi
+    
+    debug_log "✅ Elastic IP check passed: $eip_used/$eip_limit used, need $eip_needed more"
+    
+    echo -e "${GREEN}✅ AWS service limits check passed${NC}"
+}
+
+# Validate network CIDR configuration for conflicts
+validate_network_config() {
+    echo "🌐 Validating network configuration..."
+    local vpc_cidr="$CONFIGURED_VPC_CIDR"
+    local service_cidr="$CONFIGURED_SERVICE_CIDR"
+    local region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    
+    # Basic CIDR format validation
+    if ! [[ "$vpc_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+        echo -e "${RED}❌ Invalid VPC CIDR format: $vpc_cidr${NC}"
+        exit 1
+    fi
+    
+    if ! [[ "$service_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+        echo -e "${RED}❌ Invalid Service CIDR format: $service_cidr${NC}"
+        exit 1
+    fi
+    
+    # Check for overlap between VPC and Service CIDRs
+    # This is a simplified check - a full implementation would use proper CIDR math
+    local vpc_prefix=$(echo "$vpc_cidr" | cut -d'.' -f1-2)
+    local service_prefix=$(echo "$service_cidr" | cut -d'.' -f1-2)
+    
+    if [ "$vpc_prefix" = "$service_prefix" ]; then
+        echo -e "${RED}❌ VPC CIDR ($vpc_cidr) and Service CIDR ($service_cidr) appear to overlap${NC}"
+        echo "VPC and Kubernetes service networks must use different IP ranges"
+        exit 1
+    fi
+    
+    # Check for conflicts with existing VPCs in region
+    echo "Checking for conflicts with existing VPCs..."
+    local existing_cidrs
+    existing_cidrs=$(aws ec2 describe-vpcs --region "$region" --query 'Vpcs[].CidrBlock' --output text 2>/dev/null || echo "")
+    
+    if [ -n "$existing_cidrs" ]; then
+        local conflict_found=false
+        while IFS= read -r existing_cidr; do
+            if [ "$existing_cidr" = "$vpc_cidr" ]; then
+                echo -e "${RED}❌ VPC CIDR $vpc_cidr already exists in region $region${NC}"
+                echo "Choose a different VPC CIDR range to avoid conflicts"
+                exit 1
+            fi
+            
+            # Basic overlap check (simplified)
+            local existing_prefix=$(echo "$existing_cidr" | cut -d'.' -f1-2)
+            if [ "$existing_prefix" = "$vpc_prefix" ]; then
+                echo -e "${YELLOW}⚠️  Warning: VPC CIDR $vpc_cidr may overlap with existing VPC $existing_cidr${NC}"
+                echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
+                read -r response
+                if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                    echo "Please choose a different VPC CIDR range"
+                    exit 1
+                fi
+            fi
+        done <<< "$existing_cidrs"
+    fi
+    
+    # Check for reserved/problematic ranges
+    case "$vpc_cidr" in
+        "169.254."*) 
+            echo -e "${RED}❌ VPC CIDR cannot use link-local range (169.254.0.0/16)${NC}"
+            exit 1
+            ;;
+        "127."*)
+            echo -e "${RED}❌ VPC CIDR cannot use loopback range (127.0.0.0/8)${NC}"
+            exit 1
+            ;;
+        "224."*|"225."*|"226."*|"227."*|"228."*|"229."*|"230."*|"231."*|"232."*|"233."*|"234."*|"235."*|"236."*|"237."*|"238."*|"239."*)
+            echo -e "${RED}❌ VPC CIDR cannot use multicast range (224.0.0.0/4)${NC}"
+            exit 1
+            ;;
+    esac
+    
+    echo -e "${GREEN}✅ Network configuration validated${NC}"
+    echo "  VPC CIDR: $vpc_cidr"
+    echo "  Service CIDR: $service_cidr" 
+}
+
+# Test external service connectivity
+test_external_dependencies() {
+    echo "🔗 Testing external service connectivity..."
+    
+    # Test Docker Hub connectivity
+    echo "Testing Docker Hub connectivity..."
+    if ! curl -s --connect-timeout 10 https://index.docker.io/v2/ > /dev/null; then
+        echo -e "${RED}❌ Cannot reach Docker Hub (https://index.docker.io)${NC}"
+        echo "Check your internet connection and firewall settings"
+        exit 1
+    fi
+    debug_log "✅ Docker Hub connectivity verified"
+    
+    # Test AWS API connectivity
+    echo "Testing AWS API connectivity..."
+    if ! aws sts get-caller-identity --query 'Account' --output text > /dev/null; then
+        echo -e "${RED}❌ Cannot reach AWS API${NC}"
+        echo "Check your internet connection and AWS credentials"
+        exit 1
+    fi
+    debug_log "✅ AWS API connectivity verified"
+    
+    # Test Helm chart file
+    echo "Validating Helm chart..."
+    if [ ! -f "$PROJECT_DIR/renny-chart.tgz" ]; then
+        echo -e "${RED}❌ renny-chart.tgz not found in $PROJECT_DIR${NC}"
+        echo "Please place the Renny Helm chart tar file in the kubernetes/ directory"
+        exit 1
+    fi
+    
+    # Basic validation that it's a valid tar file
+    if ! tar -tzf "$PROJECT_DIR/renny-chart.tgz" > /dev/null 2>&1; then
+        echo -e "${RED}❌ renny-chart.tgz appears to be corrupted${NC}"
+        echo "Please obtain a fresh copy of the Renny Helm chart"
+        exit 1
+    fi
+    debug_log "✅ Helm chart file validated"
+    
+    echo -e "${GREEN}✅ External dependencies verified${NC}"
+}
+
 # Check prerequisites
 check_prerequisites() {
     echo "📋 Checking prerequisites..."
     
     # Check for required tools
-    for tool in terraform aws kubectl helm; do
+    for tool in terraform aws kubectl helm jq curl; do
         if ! command -v $tool &> /dev/null; then
             echo -e "${RED}❌ $tool is not installed${NC}"
             echo "Please install $tool and try again"
+            if [ "$tool" = "jq" ]; then
+                echo "Install jq: https://stedolan.github.io/jq/download/"
+            fi
             exit 1
         fi
     done
     
-    # Check AWS credentials
-    if ! aws sts get-caller-identity &> /dev/null; then
-        echo -e "${RED}❌ AWS credentials not configured${NC}"
-        echo "Please configure AWS credentials and try again"
-        exit 1
+    # Check AWS CLI version (need 2.3.0+ for proper kubectl auth)
+    local aws_version=$(aws --version 2>&1 | cut -d/ -f2 | cut -d' ' -f1)
+    local required_version="2.3.0"
+    if [ "$(printf '%s\n' "$required_version" "$aws_version" | sort -V | head -n1)" != "$required_version" ]; then
+        echo -e "${YELLOW}⚠️  AWS CLI version $aws_version detected. Version 2.3.0+ recommended${NC}"
+        echo "Older versions may cause kubectl authentication issues"
+        echo "Update with: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
+        echo ""
+        echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
     fi
-    
-    # Check for Helm chart
-    if [ ! -f "$PROJECT_DIR/renny-chart.tgz" ]; then
-        echo -e "${YELLOW}⚠️  renny-chart.tgz not found in $PROJECT_DIR${NC}"
-        echo "Please place the Renny Helm chart tar file in the kubernetes/ directory"
-        exit 1
-    fi
+    debug_log "✅ AWS CLI version $aws_version"
     
     echo -e "${GREEN}✅ All prerequisites met${NC}"
+}
+
+# Network and cost configuration prompts
+prompt_network_configuration() {
+    echo ""
+    echo -e "${CYAN}╔═══════════════════════════════════════════════════════╗${NC}"
+    echo -e "${CYAN}║              Network Configuration Setup              ║${NC}"
+    echo -e "${CYAN}╚═══════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BLUE}Before deploying your EKS cluster, we need to configure network settings.${NC}"
+    echo -e "${YELLOW}⚠️  IMPORTANT: Some decisions are permanent and require cluster rebuild to change.${NC}"
+    echo ""
+    
+    # VPC CIDR Configuration
+    echo -e "${CYAN}1. VPC Network Range (PERMANENT DECISION)${NC}"
+    echo "This sets the IP range for your entire AWS network infrastructure."
+    echo "Choose a range that won't conflict with your existing networks."
+    echo ""
+    echo "Common options:"
+    echo "  A) 10.17.0.0/16    - Recommended (65,534 IPs)"
+    echo "  B) 10.50.0.0/16    - Alternative if 10.17.x conflicts"
+    echo "  C) 192.168.0.0/16  - Private network standard"
+    echo "  D) Custom range    - Enter your own CIDR"
+    echo ""
+    echo -e "${RED}⚠️  This cannot be changed without destroying and rebuilding the cluster${NC}"
+    echo -e "${YELLOW}Enter your choice (A/B/C/D):${NC}"
+    
+    local vpc_choice
+    read -r vpc_choice
+    
+    local vpc_cidr
+    case $vpc_choice in
+        A|a) vpc_cidr="10.17.0.0/16" ;;
+        B|b) vpc_cidr="10.50.0.0/16" ;;
+        C|c) vpc_cidr="192.168.0.0/16" ;;
+        D|d) 
+            echo "Enter custom CIDR (e.g., 10.100.0.0/16):"
+            read -r vpc_cidr
+            if ! [[ "$vpc_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+                echo -e "${RED}Invalid CIDR format. Using default 10.17.0.0/16${NC}"
+                vpc_cidr="10.17.0.0/16"
+            fi
+            ;;
+        *) 
+            echo -e "${YELLOW}Invalid choice. Using default 10.17.0.0/16${NC}"
+            vpc_cidr="10.17.0.0/16"
+            ;;
+    esac
+    
+    echo -e "${GREEN}✓ VPC CIDR: $vpc_cidr${NC}"
+    echo ""
+    
+    # EKS Service CIDR Configuration
+    echo -e "${CYAN}2. Kubernetes Service Network (PERMANENT DECISION)${NC}"
+    echo "This sets the IP range for Kubernetes internal services and DNS."
+    echo "Must not overlap with your VPC range."
+    echo ""
+    
+    # Suggest compatible service CIDR based on VPC choice
+    local service_cidr
+    if [[ "$vpc_cidr" == "10.17.0.0/16" ]]; then
+        service_cidr="10.117.0.0/16"
+        echo "Recommended: 10.117.0.0/16 (compatible with your VPC choice)"
+    elif [[ "$vpc_cidr" == "10.50.0.0/16" ]]; then
+        service_cidr="10.150.0.0/16"
+        echo "Recommended: 10.150.0.0/16 (compatible with your VPC choice)"
+    elif [[ "$vpc_cidr" == "192.168.0.0/16" ]]; then
+        service_cidr="10.117.0.0/16"
+        echo "Recommended: 10.117.0.0/16 (compatible with your VPC choice)"
+    else
+        service_cidr="10.117.0.0/16"
+        echo "Recommended: 10.117.0.0/16"
+    fi
+    
+    echo ""
+    echo -e "${RED}⚠️  This cannot be changed without destroying and rebuilding the cluster${NC}"
+    echo -e "${YELLOW}Use recommended setting? (Y/n):${NC}"
+    
+    local service_choice
+    read -r service_choice
+    
+    if [[ "$service_choice" =~ ^[Nn]$ ]]; then
+        echo "Enter custom service CIDR (e.g., 10.100.0.0/16):"
+        read -r service_cidr
+        if ! [[ "$service_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+            echo -e "${RED}Invalid CIDR format. Using default 10.117.0.0/16${NC}"
+            service_cidr="10.117.0.0/16"
+        fi
+    fi
+    
+    echo -e "${GREEN}✓ Service CIDR: $service_cidr${NC}"
+    echo ""
+    
+    # NAT Gateway Configuration
+    echo -e "${CYAN}3. NAT Gateway Configuration (Can be changed later)${NC}"
+    echo "NAT Gateways provide internet access to your private nodes."
+    echo ""
+    echo "Options:"
+    echo "  A) High Availability - 3 NAT Gateways (~\$135/month extra)"
+    echo "     • One per availability zone"
+    echo "     • Survives single AZ failures"  
+    echo "     • Recommended for production"
+    echo ""
+    echo "  B) Cost Optimized - 1 NAT Gateway (~\$45/month)"
+    echo "     • Single point of failure"
+    echo "     • Good for development/testing"
+    echo ""
+    echo -e "${GREEN}✓ This setting can be changed after deployment without cluster rebuild${NC}"
+    echo -e "${YELLOW}Choose NAT Gateway setup (A for HA, B for cost-optimized):${NC}"
+    
+    local nat_choice
+    read -r nat_choice
+    
+    local enable_nat_ha
+    case $nat_choice in
+        A|a) 
+            enable_nat_ha="true"
+            echo -e "${GREEN}✓ High availability NAT Gateways selected${NC}"
+            ;;
+        B|b) 
+            enable_nat_ha="false"
+            echo -e "${GREEN}✓ Cost-optimized single NAT Gateway selected${NC}"
+            ;;
+        *) 
+            enable_nat_ha="true"
+            echo -e "${YELLOW}Invalid choice. Using high availability (recommended)${NC}"
+            ;;
+    esac
+    
+    echo ""
+    echo -e "${CYAN}═══════════════ Configuration Summary ═══════════════${NC}"
+    echo "VPC Network Range:      $vpc_cidr (PERMANENT)"
+    echo "Service Network Range:  $service_cidr (PERMANENT)"
+    echo "NAT Gateway Setup:      $([ "$enable_nat_ha" = "true" ] && echo "High Availability" || echo "Cost Optimized") (changeable)"
+    echo ""
+    echo -e "${YELLOW}Is this configuration correct? (yes/no):${NC}"
+    
+    local confirm
+    read -r confirm
+    
+    if [[ "$confirm" != "yes" ]]; then
+        echo "Configuration cancelled. Please restart deployment to reconfigure."
+        exit 1
+    fi
+    
+    # Store configuration in variables for terraform.tfvars creation
+    CONFIGURED_VPC_CIDR="$vpc_cidr"
+    CONFIGURED_SERVICE_CIDR="$service_cidr"
+    CONFIGURED_NAT_HA="$enable_nat_ha"
+    
+    echo -e "${GREEN}✓ Network configuration saved${NC}"
+    echo ""
 }
 
 # Create terraform.tfvars if it doesn't exist
 create_tfvars() {
     if [ ! -f "$PROJECT_DIR/terraform/terraform.tfvars" ]; then
-        echo "📝 Creating terraform.tfvars template..."
+        echo "📝 Creating terraform.tfvars with your configuration..."
         cat > "$PROJECT_DIR/terraform/terraform.tfvars" <<EOF
-# REQUIRED: Please fill in these values before running the deployment
+# Network Configuration (configured during deployment)
+vpc_cidr = "$CONFIGURED_VPC_CIDR"
+service_cidr = "$CONFIGURED_SERVICE_CIDR"
+enable_nat_ha = $CONFIGURED_NAT_HA
+
+# REQUIRED: Please fill in these values before continuing
 
 # DHOP Configuration
 dhop_tenant_id = ""  # Your DHOP tenant ID
@@ -330,8 +949,14 @@ EOF
     fi
     
     # Validate that required values are filled
-    if grep -q '""' "$PROJECT_DIR/terraform/terraform.tfvars"; then
-        echo -e "${RED}❌ terraform.tfvars contains empty values${NC}"
+    if grep -q 'dhop_tenant_id = ""' "$PROJECT_DIR/terraform/terraform.tfvars" || grep -q 'dhop_api_key = ""' "$PROJECT_DIR/terraform/terraform.tfvars"; then
+        echo -e "${RED}❌ terraform.tfvars contains empty DHOP values${NC}"
+        echo "Please fill in all required values in terraform/terraform.tfvars"
+        exit 1
+    fi
+    
+    if grep -q 'docker_username = ""' "$PROJECT_DIR/terraform/terraform.tfvars" || grep -q 'docker_password = ""' "$PROJECT_DIR/terraform/terraform.tfvars"; then
+        echo -e "${RED}❌ terraform.tfvars contains empty Docker credentials${NC}"
         echo "Please fill in all required values in terraform/terraform.tfvars"
         exit 1
     fi
@@ -370,7 +995,8 @@ deploy_infrastructure() {
     echo "  - 2 control plane nodes (t3.large)"
     echo ""
     echo "Ubuntu GPU nodes provide:"
-    echo "  - NVIDIA Driver 570+ for modern GPU support"
+    echo "  - Fast cluster join (~3 minutes) without NVIDIA driver delays"
+    echo "  - NVIDIA GPU Operator will install latest compatible drivers"
     echo "  - Vulkan API compatibility for Unreal Engine"
     echo "  - CUDA 12.4+ for latest AI workloads"
     echo "  - 150GB storage for large container images"
@@ -403,37 +1029,19 @@ configure_kubectl() {
         echo "  ✅ Kubeconfig authentication fixed"
     fi
     
-    # Wait for nodes to be ready
-    echo "Waiting for all nodes to be ready..."
-    local max_attempts=60
-    local attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " || echo "0")
-        TOTAL_NODES=$(kubectl get nodes --no-headers 2>/dev/null | wc -l || echo "0")
-        
-        # Check if we have nodes and all of them are ready
-        if [ "$TOTAL_NODES" -gt "0" ] && [ "$READY_NODES" -eq "$TOTAL_NODES" ]; then
-            echo -e "${GREEN}✓ All $TOTAL_NODES nodes are ready${NC}"
-            kubectl get nodes
-            break
-        fi
-        
-        echo "  Waiting for nodes... ($READY_NODES/$TOTAL_NODES ready, attempt $attempt/$max_attempts)"
-        sleep 10
-        ((attempt++))
-    done
-    
-    if [ $attempt -gt $max_attempts ]; then
-        echo -e "${YELLOW}⚠ Some nodes may not be fully ready yet${NC}"
-        kubectl get nodes
-    fi
+    # Wait for nodes to be ready (fast cluster join without NVIDIA drivers)
+    echo "🚀 Waiting for nodes to join cluster (fast boot without GPU drivers)..."
+    wait_for_cluster_nodes_ready 1800  # 30 minutes max for node readiness
 }
 
 # Install NVIDIA GPU Operator
 install_gpu_operator() {
     echo "🎮 Installing NVIDIA GPU Operator..."
-    echo -e "${BLUE}This will take approximately 5-10 minutes${NC}"
+    echo -e "${BLUE}This will install GPU drivers automatically (10-25 minutes)${NC}"
+    echo "GPU Operator will:"
+    echo "  - Install NVIDIA driver 570+ on all GPU nodes"
+    echo "  - Configure containerd with NVIDIA runtime"
+    echo "  - Enable GPU device plugin and monitoring"
     
     # Add NVIDIA Helm repository
     helm repo add nvidia https://helm.ngc.nvidia.com/nvidia || true
@@ -442,7 +1050,7 @@ install_gpu_operator() {
     # Create namespace
     kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
     
-    # Install GPU Operator
+    # Install GPU Operator with longer timeout for driver compilation
     echo "Installing GPU operator..."
     helm upgrade --install gpu-operator nvidia/gpu-operator \
         --namespace gpu-operator \
@@ -451,71 +1059,14 @@ install_gpu_operator() {
         --set toolkit.enabled=true \
         --set devicePlugin.enabled=true \
         --set dcgmExporter.enabled=true \
-        --wait --timeout 15m
+        --wait --timeout 25m
     
     echo "⏳ Waiting for GPU operator pods to be ready..."
-    kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=600s || true
+    kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s || true
     
-    # Wait for GPU drivers to be installed on all GPU nodes
+    # Wait for GPU drivers using adaptive waiting
     echo "Waiting for GPU drivers to be installed on all nodes..."
-    local gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu=true --no-headers | wc -l)
-    local max_attempts=60
-    local attempt=1
-    
-    while [ $attempt -le $max_attempts ]; do
-        READY_DRIVERS=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
-        
-        # Check for failed/crashing pods
-        FAILED_PODS=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l || echo "0")
-        CRASHLOOP_PODS=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff\|ImagePullBackOff\|Error" || echo "0")
-        
-        if [ "$READY_DRIVERS" -ge "$gpu_nodes" ]; then
-            echo -e "${GREEN}✓ GPU drivers installed on all $gpu_nodes GPU nodes${NC}"
-            break
-        fi
-        
-        # Show status based on debug mode
-        if [ "$FAILED_PODS" -gt "0" ] || [ "$CRASHLOOP_PODS" -gt "0" ]; then
-            if [ "$DEBUG_MODE" = true ]; then
-                debug_log "⚠ GPU Operator Issues Detected:"
-                debug_log "  Failed pods: $FAILED_PODS, CrashLooping pods: $CRASHLOOP_PODS"
-                debug_log ""
-                debug_log "Current GPU operator pod status:"
-                kubectl get pods -n gpu-operator --no-headers | head -10
-                debug_log ""
-                debug_log "Problematic pods details:"
-                kubectl get pods -n gpu-operator | grep -E "CrashLoopBackOff|ImagePullBackOff|Error|Failed" || debug_log "  (No critical failures found)"
-                debug_log ""
-            else
-                echo -e "${YELLOW}⚠️  Some GPU operator pods having issues (use --debug for details)${NC}"
-            fi
-            
-            if [ $attempt -gt 30 ]; then
-                echo -e "${RED}GPU operator appears to be having persistent issues.${NC}"
-                echo "Check logs with: kubectl logs -n gpu-operator -l app=nvidia-operator --tail=20"
-                echo "Or use: $0 --debug to see detailed pod status"
-                break
-            fi
-        fi
-        
-        if [ "$DEBUG_MODE" = true ]; then
-            debug_log "Waiting for GPU drivers... ($READY_DRIVERS/$gpu_nodes ready, attempt $attempt/$max_attempts)"
-        else
-            # Simple progress indicator for normal mode
-            local progress_bar=""
-            local filled=$((READY_DRIVERS * 20 / gpu_nodes))
-            for ((i=1; i<=20; i++)); do
-                if [ $i -le $filled ]; then
-                    progress_bar+="█"
-                else
-                    progress_bar+="░"
-                fi
-            done
-            echo -ne "\r🎮 Installing GPU drivers... [$progress_bar] $READY_DRIVERS/$gpu_nodes nodes ready"
-        fi
-        sleep 10
-        ((attempt++))
-    done
+    wait_for_gpu_operator_ready 2400  # 40 minutes max for driver installation
     
     # Verify GPU nodes
     echo "GPU node status:"
@@ -736,9 +1287,17 @@ main() {
     echo "======================================"
     echo ""
     
+    # Pre-flight checks
     check_aws_profile
     check_prerequisites
+    check_aws_credentials
+    prompt_network_configuration
+    validate_network_config
+    check_aws_limits
+    test_external_dependencies
     create_tfvars
+    
+    # Infrastructure deployment
     deploy_infrastructure
     configure_kubectl
     install_gpu_operator
@@ -749,8 +1308,47 @@ main() {
     display_status
 }
 
-# Handle errors
-trap 'echo -e "${RED}❌ An error occurred. Deployment failed.${NC}"' ERR
+# Enhanced error handling and cleanup
+cleanup_on_error() {
+    local exit_code=$?
+    echo ""
+    echo -e "${RED}❌ Deployment failed with exit code $exit_code${NC}"
+    echo ""
+    
+    # Show helpful information for common failure points
+    if [ -f "$PROJECT_DIR/terraform/terraform.tfstate" ]; then
+        echo "⚠️  Partial infrastructure may have been created."
+        echo "Check your AWS console for resources that may be incurring charges."
+        echo ""
+        echo "To clean up:"
+        echo "1. Run: ./scripts/destroy.sh"
+        echo "2. Or manually check AWS console for:"
+        echo "   - EKS clusters"
+        echo "   - EC2 instances"
+        echo "   - VPCs and NAT gateways"
+        echo "   - Load balancers"
+    fi
+    
+    # Show recent events if kubectl is working
+    if kubectl get nodes &>/dev/null; then
+        echo ""
+        echo "Recent cluster events:"
+        kubectl get events --sort-by='.lastTimestamp' | tail -5 || true
+    fi
+    
+    echo ""
+    echo "💡 Troubleshooting tips:"
+    echo "1. Re-run with --debug flag for verbose output"
+    echo "2. Check AWS service limits and quotas"
+    echo "3. Verify your credentials haven't expired"
+    echo "4. Check the specific error messages above"
+    echo ""
+    
+    exit $exit_code
+}
+
+# Handle errors with enhanced cleanup
+trap cleanup_on_error ERR
 
 # Run main function
 main
