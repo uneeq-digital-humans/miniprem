@@ -86,7 +86,14 @@ wait_for_cluster_nodes_ready() {
     local max_timeout="${1:-1800}"  # Default 30 minutes
     local start_time=$(date +%s)
     local last_status=""
-    local expected_nodes=14  # 2 control + 10 renny + 2 a2f
+    
+    # Calculate expected nodes from terraform.tfvars
+    local control_nodes=2  # Fixed from node-groups.tf
+    local renny_desired=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
+    local a2f_desired=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
+    local expected_nodes=$((control_nodes + renny_desired + a2f_desired))
+    
+    echo "Expected nodes: $control_nodes control + $renny_desired renny + $a2f_desired a2f = $expected_nodes total"
     
     echo "⏰ Maximum wait time: $((max_timeout/60)) minutes"
     
@@ -203,8 +210,8 @@ wait_for_cluster_nodes_ready() {
             echo -ne "\r🚀 Nodes joining cluster... [$progress_bar] $ready_nodes/$total_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
         fi
         
-        # Success condition - all nodes ready
-        if [ "$total_nodes" -gt "0" ] && [ "$ready_nodes" -eq "$total_nodes" ] && [ "$ready_nodes" -ge $((expected_nodes - 2)) ]; then
+        # Success condition - all nodes ready (simplified logic)
+        if [ "$total_nodes" -gt "0" ] && [ "$ready_nodes" -eq "$total_nodes" ]; then
             if [ "$DEBUG_MODE" != true ]; then
                 echo ""  # Clear progress bar line
             fi
