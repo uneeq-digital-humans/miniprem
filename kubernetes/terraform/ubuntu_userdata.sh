@@ -41,17 +41,22 @@ echo "Skipping NVIDIA driver installation - GPU Operator will handle this later"
 curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list
 apt-get update -y
-apt-get install -y kubelet kubectl
+
+# Remove conflicting CNI packages first to avoid kubernetes-cni installation conflicts
+apt-get remove -y cnitool-plugins || true
+
+apt-get install -y kubelet kubectl kubernetes-cni
 apt-mark hold kubelet kubectl
 
 # Get VPC information and calculate cluster DNS IP
-VPC_ID=$$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/)/vpc-id)
-VPC_CIDR=$$(aws ec2 describe-vpcs --region $$REGION --vpc-ids $$VPC_ID --query 'Vpcs[0].CidrBlock' --output text)
+# Note: Using template substitution for these complex commands to avoid escaping issues
+VPC_ID=$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/)/vpc-id)
+VPC_CIDR=$(aws ec2 describe-vpcs --region $REGION --vpc-ids $VPC_ID --query 'Vpcs[0].CidrBlock' --output text)
 
 # Use cluster DNS from service CIDR (calculated by Terraform)
 CLUSTER_DNS="${cluster_dns_ip}"
 
-echo "VPC CIDR: $$VPC_CIDR, Cluster DNS: $$CLUSTER_DNS"
+echo "VPC CIDR: $VPC_CIDR, Cluster DNS: $CLUSTER_DNS"
 echo "Configuring kubelet for EKS cluster: $CLUSTER_NAME"
 
 # Create kubelet configuration directory
@@ -77,7 +82,7 @@ gid = 0
 
 [plugins."io.containerd.grpc.v1.cri"]
 enable_selinux = false
-sandbox_image = "602401143452.dkr.ecr.$$REGION.amazonaws.com/eks/pause:3.5"
+sandbox_image = "602401143452.dkr.ecr.$REGION.amazonaws.com/eks/pause:3.5"
 
 [plugins."io.containerd.grpc.v1.cri".containerd]
 snapshotter = "overlayfs"
@@ -123,7 +128,7 @@ cat > /etc/kubernetes/kubelet/kubelet-config.json <<EOF
     }
   },
   "clusterDomain": "cluster.local",
-  "clusterDNS": ["$$CLUSTER_DNS"],
+  "clusterDNS": ["$CLUSTER_DNS"],
   "resolvConf": "/run/systemd/resolve/resolv.conf",
   "runtimeRequestTimeout": "15m",
   "tlsCertFile": "/var/lib/kubelet/pki/kubelet.crt",
@@ -167,7 +172,7 @@ users:
       command: /usr/local/bin/aws
       args:
         - --region
-        - $$REGION
+        - $REGION
         - eks
         - get-token
         - --cluster-name
