@@ -122,8 +122,8 @@ readinessProbe:
 # HPA configuration for autoscaling
 autoscaling:
   enabled: true
-  minReplicas: 10
-  maxReplicas: 20
+  minReplicas: 2
+  maxReplicas: 4
   metrics:
     - type: Resource
       resource:
