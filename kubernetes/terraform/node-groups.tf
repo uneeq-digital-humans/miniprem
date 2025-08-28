@@ -33,7 +33,7 @@ resource "aws_launch_template" "renny_gpu" {
     }
   }
 
-  user_data = base64encode(templatefile("${path.module}/ubuntu_userdata.sh", {
+  user_data = base64encode(templatefile("${path.module}/ubuntu_eks_userdata.sh", {
     cluster_name        = local.cluster_name
     cluster_endpoint    = module.eks.cluster_endpoint
     cluster_ca          = module.eks.cluster_certificate_authority_data
@@ -118,7 +118,7 @@ resource "aws_launch_template" "a2f_gpu" {
     }
   }
 
-  user_data = base64encode(templatefile("${path.module}/ubuntu_userdata.sh", {
+  user_data = base64encode(templatefile("${path.module}/ubuntu_eks_userdata.sh", {
     cluster_name        = local.cluster_name
     cluster_endpoint    = module.eks.cluster_endpoint
     cluster_ca          = module.eks.cluster_certificate_authority_data
