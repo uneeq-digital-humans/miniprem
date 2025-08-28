@@ -96,14 +96,22 @@ fi
 if [ -n "$SPECIFIC_VPC" ]; then
     VPCS=("$SPECIFIC_VPC")
 else
-    # Get all VPCs in the region
+    # Get all VPCs in the region (compatible with bash 3.2+)
     echo "Discovering VPCs in region $REGION..."
-    mapfile -t VPCS < <(aws ec2 describe-vpcs --region $REGION --query 'Vpcs[].VpcId' --output text | tr '\t' '\n')
+    vpc_list=$(aws ec2 describe-vpcs --region $REGION --query 'Vpcs[].VpcId' --output text | tr '\t' '\n')
     
-    if [ ${#VPCS[@]} -eq 0 ]; then
+    if [ -z "$vpc_list" ]; then
         echo -e "${RED}No VPCs found in region $REGION${NC}"
         exit 1
     fi
+    
+    # Convert to array using bash 3.2+ compatible method
+    VPCS=()
+    while IFS= read -r vpc_id; do
+        if [ -n "$vpc_id" ]; then
+            VPCS+=("$vpc_id")
+        fi
+    done <<< "$vpc_list"
     
     echo "Found ${#VPCS[@]} VPCs to analyze"
 fi
