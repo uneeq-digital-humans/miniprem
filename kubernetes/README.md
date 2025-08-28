@@ -233,13 +233,16 @@ chmod +x scripts/*.sh
 
 This will:
 1. ✅ Check prerequisites
-2. 🏗️ Deploy VPC and EKS cluster via Terraform (~15-20 minutes)
-3. 🎮 Install NVIDIA GPU Operator (~5-10 minutes)
-4. 🎭 Deploy Audio2Face on dedicated GPU nodes (~3-5 minutes)
-5. 🤖 Deploy Renny on separate GPU nodes (10 instances) (~5-10 minutes)
-6. ⚖️ Configure autoscaling (10-20 instances)
+2. 🏗️ Deploy VPC and EKS cluster via Terraform (~15-20 minutes)  
+3. 🚀 Fast cluster join for Ubuntu nodes (~3-5 minutes)
+4. 🎮 Install NVIDIA GPU Operator for automatic driver installation (~5-10 minutes)
+5. 🎭 Deploy Audio2Face on dedicated GPU nodes (~3-5 minutes)
+6. 🤖 Deploy Renny on separate GPU nodes (10 instances) (~5-10 minutes)
+7. ⚖️ Configure autoscaling (10-20 instances)
 
 **Total deployment time: ~30-45 minutes**
+
+**Key Improvement**: Ubuntu nodes join the cluster quickly (~3 minutes) without waiting for NVIDIA driver compilation, then GPU Operator installs drivers automatically in the background.
 
 ## 📊 Architecture
 
@@ -255,9 +258,15 @@ This will:
 
 ### GPU Configuration & Compatibility
 
-This deployment uses **Ubuntu 22.04 EKS AMIs** with custom launch templates for GPU nodes, providing:
+This deployment uses **Ubuntu 22.04 EKS AMIs** with an optimized GPU driver installation approach:
 
-- **NVIDIA Driver 570+**: Latest drivers for RTX/A10G GPU support
+**Fast Cluster Join Approach:**
+- **Phase 1**: Nodes join cluster quickly (~3 minutes) without GPU drivers
+- **Phase 2**: NVIDIA GPU Operator automatically installs drivers (~5-10 minutes)
+- **Result**: Faster deployment and automatic driver management
+
+**GPU Capabilities:**
+- **NVIDIA Driver 570+**: Latest drivers for RTX/A10G GPU support (via GPU Operator)
 - **CUDA 12.4+**: Modern CUDA runtime for Unreal Engine 5.6 compatibility  
 - **Vulkan API Support**: Full Vulkan graphics pipeline support for Renny rendering
 - **150GB EBS Storage**: Accommodates large AI container images (35GB+)
@@ -302,6 +311,32 @@ Get a comprehensive status report:
 ```bash
 ./scripts/status.sh
 ```
+
+### Check GPU Driver Installation
+
+After deployment completes, verify GPU operators and drivers are working:
+
+```bash
+# Check GPU operator pods (should all be Running/Completed)
+kubectl get pods -n gpu-operator
+
+# Verify GPU drivers are installed on all GPU nodes
+kubectl get nodes -l nvidia.com/gpu.present=true
+
+# Test GPU functionality with nvidia-smi
+kubectl run gpu-test --image=nvidia/cuda:11.0-runtime-ubuntu18.04 --rm -it --restart=Never \
+  --overrides='{"spec":{"nodeSelector":{"uneeq.io/node-type":"renny"},"tolerations":[{"key":"nvidia.com/gpu","operator":"Equal","value":"true","effect":"NoSchedule"}]}}' \
+  -- nvidia-smi
+
+# Check GPU resource allocation on nodes
+kubectl describe nodes -l uneeq.io/node-type=renny | grep nvidia.com/gpu
+```
+
+**Expected Results:**
+- All GPU operator pods should be `Running` or `Completed`
+- GPU nodes should have label `nvidia.com/gpu.present=true`
+- `nvidia-smi` should show NVIDIA driver 570+ installed
+- Nodes should show `nvidia.com/gpu: 1` in allocatable resources
 
 ### Monitoring
 
@@ -607,6 +642,87 @@ For issues specific to:
 - **Renny/A2F**: Contact UneeQ support with pod logs
 
 ## 🔄 Updates and Maintenance
+
+### Post-Deployment Changes
+
+#### ✅ Changes You Can Make Without Cluster Rebuild
+
+These settings can be modified after deployment:
+
+**Cost and Scaling:**
+```bash
+# Change NAT Gateway configuration (single ↔ high availability)
+# Edit terraform/terraform.tfvars:
+enable_nat_ha = false  # Switch to single NAT gateway
+# Or:
+enable_nat_ha = true   # Switch to high availability
+
+# Apply changes
+cd terraform && terraform apply
+```
+
+**Instance Scaling:**
+```bash
+# Edit terraform/terraform.tfvars and modify any of:
+renny_min_size = 5         # Change minimum Renny nodes
+renny_max_size = 15        # Change maximum Renny nodes  
+renny_desired_size = 8     # Change current Renny nodes
+a2f_min_size = 1          # Change minimum A2F nodes
+a2f_max_size = 3          # Change maximum A2F nodes
+a2f_desired_size = 1      # Change current A2F nodes
+
+# Apply changes
+cd terraform && terraform apply
+
+# Or use the scaling script for immediate Renny changes:
+./scripts/scale.sh 12
+```
+
+**Application Configuration:**
+```bash
+# Update Renny configuration
+# Edit values/renny-values.yaml, then:
+helm upgrade renny ./renny-chart.tgz -n uneeq-renderer -f values/renny-values.yaml
+
+# Update A2F configuration  
+# Edit values/a2f-values.yaml, then:
+helm upgrade a2f oci://registry-1.docker.io/facemeproduction/a2f -n uneeq-renderer -f values/a2f-values.yaml
+```
+
+**Instance Types (with caution):**
+```bash
+# Edit terraform/terraform.tfvars:
+renny_instance_type = "g5.4xlarge"  # Upgrade instance type
+# Then: cd terraform && terraform apply
+
+# Note: This will cause rolling replacement of nodes, resulting in temporary disruption
+```
+
+#### ❌ Changes That Require Cluster Rebuild
+
+These settings are **permanent decisions** that require destroying and rebuilding the cluster:
+
+**Network Configuration:**
+- `vpc_cidr` - VPC network range
+- `service_cidr` - Kubernetes service network range  
+- AWS region change
+- Availability zone configuration
+
+**Why These Can't Be Changed:**
+- **VPC CIDR**: AWS doesn't allow changing VPC network ranges after creation
+- **Service CIDR**: EKS service network is set during cluster creation and cannot be modified
+- **Region**: Moving a cluster between regions requires complete recreation
+
+**To Change These Settings:**
+1. Run the destroy script: `./scripts/destroy.sh`
+2. Update your desired values in `terraform/terraform.tfvars`
+3. Run the deploy script again: `./scripts/deploy.sh`
+
+**⚠️ Important**: Changing permanent settings will result in:
+- Complete cluster recreation (~45 minutes downtime)
+- New cluster endpoints and certificates  
+- Need to reconfigure any external systems pointing to the cluster
+- Loss of any data stored in non-persistent volumes
 
 ### Updating EKS Version
 1. Update `kubernetes_version` in `terraform/variables.tf`
