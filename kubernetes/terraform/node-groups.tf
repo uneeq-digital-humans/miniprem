@@ -123,6 +123,7 @@ resource "aws_launch_template" "a2f_gpu" {
     cluster_endpoint    = module.eks.cluster_endpoint
     cluster_ca          = module.eks.cluster_certificate_authority_data
     node_labels         = "uneeq.io/node-type=a2f"
+    cluster_dns_ip      = cidrhost(var.service_cidr, 10)  # e.g., 10.117.0.10
   }))
 
   tag_specifications {
