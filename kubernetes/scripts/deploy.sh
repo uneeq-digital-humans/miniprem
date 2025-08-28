@@ -87,13 +87,10 @@ wait_for_cluster_nodes_ready() {
     local start_time=$(date +%s)
     local last_status=""
     
-    # Calculate expected nodes from terraform.tfvars
-    local control_nodes=2  # Fixed from node-groups.tf
-    local renny_desired=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
-    local a2f_desired=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
-    local expected_nodes=$((control_nodes + renny_desired + a2f_desired))
+    # Use dynamically loaded configuration
+    local expected_nodes=$TOTAL_EXPECTED_NODES
     
-    echo "Expected nodes: $control_nodes control + $renny_desired renny + $a2f_desired a2f = $expected_nodes total"
+    echo "Expected nodes: $CONTROL_NODES control + $RENNY_DESIRED_SIZE renny + $A2F_DESIRED_SIZE a2f = $expected_nodes total"
     
     echo "⏰ Maximum wait time: $((max_timeout/60)) minutes"
     
@@ -193,8 +190,8 @@ wait_for_cluster_nodes_ready() {
         # Always show progress bar in normal mode (updates every 15 seconds)
         if [ "$DEBUG_MODE" != true ]; then
             local progress=0
-            if [ "$expected_nodes" -gt "0" ]; then
-                progress=$((ready_nodes * 100 / expected_nodes))
+            if [ "$TOTAL_EXPECTED_NODES" -gt "0" ]; then
+                progress=$((ready_nodes * 100 / TOTAL_EXPECTED_NODES))
                 if [ $progress -gt 100 ]; then progress=100; fi
             fi
             
@@ -246,8 +243,9 @@ wait_for_gpu_operator_ready() {
     
     if [ $gpu_nodes -eq 0 ]; then
         echo -e "${YELLOW}⚠️  No GPU nodes detected yet, continuing anyway${NC}"
-        # Estimate based on node group configuration
-        gpu_nodes=12  # 10 renny + 2 a2f
+        # Use dynamically calculated GPU nodes
+        gpu_nodes=$GPU_NODES  # renny + a2f from config
+        echo "Using calculated GPU nodes: $RENNY_DESIRED_SIZE renny + $A2F_DESIRED_SIZE a2f = $gpu_nodes total"
     fi
     
     echo "Targeting $gpu_nodes GPU nodes for driver installation"
@@ -265,10 +263,10 @@ wait_for_gpu_operator_ready() {
         fi
         
         # Get GPU operator status
-        local driver_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
-        local failed_pods=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l || echo "0")
-        local crashloop_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff\|ImagePullBackOff\|Error" || echo "0")
-        local total_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | wc -l || echo "0")
+        local driver_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        local failed_pods=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        local crashloop_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff\|ImagePullBackOff\|Error" | tr -d ' \n' || echo "0")
+        local total_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
         
         # Status summary
         local current_status="Drivers: $driver_pods/$gpu_nodes | Failed: $failed_pods | Crashes: $crashloop_pods | Total: $total_pods"
@@ -432,10 +430,38 @@ wait_for_large_images() {
     done
 }
 
+# Load configuration from terraform.tfvars dynamically
+load_config() {
+    # Read values from terraform.tfvars with fallbacks
+    PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
+    ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
+    AWS_REGION=$(awk '/^aws_region[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "us-east-2")
+    
+    # Control nodes (fixed from node-groups.tf)
+    CONTROL_NODES=2
+    
+    # GPU node configuration
+    RENNY_DESIRED_SIZE=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
+    A2F_DESIRED_SIZE=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
+    
+    RENNY_INSTANCE_TYPE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.2xlarge")
+    A2F_INSTANCE_TYPE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.2xlarge")
+    
+    # Calculate cluster name and total nodes
+    CLUSTER_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+    TOTAL_EXPECTED_NODES=$((CONTROL_NODES + RENNY_DESIRED_SIZE + A2F_DESIRED_SIZE))
+    GPU_NODES=$((RENNY_DESIRED_SIZE + A2F_DESIRED_SIZE))
+    
+    # Export for use in other functions
+    export PROJECT_NAME ENVIRONMENT AWS_REGION CLUSTER_NAME
+    export CONTROL_NODES RENNY_DESIRED_SIZE A2F_DESIRED_SIZE TOTAL_EXPECTED_NODES GPU_NODES
+    export RENNY_INSTANCE_TYPE A2F_INSTANCE_TYPE
+}
+
 # Check if target cluster exists and is healthy
 check_existing_cluster() {
-    local cluster_name="${CLUSTER_NAME:-renny-production}"
-    local region="${AWS_REGION:-us-east-2}"
+    local cluster_name="$CLUSTER_NAME"
+    local region="$AWS_REGION"
     
     echo "🔍 Checking cluster health for '$cluster_name'..."
     
@@ -459,6 +485,7 @@ check_existing_cluster() {
     
     # Check if required node groups exist
     local missing_nodegroups=()
+    # Use dynamically constructed node group names matching Terraform
     local expected_nodegroups=("${cluster_name}-control" "${cluster_name}-renny-gpu-v4" "${cluster_name}-a2f-gpu-v4")
     
     echo "Validating node groups..."
@@ -1117,15 +1144,15 @@ deploy_infrastructure() {
     echo "  - VPC with 3 availability zones"
     echo "  - EKS cluster v1.31"
     
-    # Get values from terraform.tfvars with robust parsing
-    local renny_desired=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "10")
-    local renny_instance=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
-    local a2f_desired=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "2")
-    local a2f_instance=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
+    # Use dynamically loaded configuration
+    local renny_desired=$RENNY_DESIRED_SIZE
+    local renny_instance=$RENNY_INSTANCE_TYPE
+    local a2f_desired=$A2F_DESIRED_SIZE
+    local a2f_instance=$A2F_INSTANCE_TYPE
     
     echo "  - $renny_desired GPU nodes for Renny ($renny_instance, Ubuntu 22.04)"
     echo "  - $a2f_desired GPU nodes for Audio2Face ($a2f_instance, Ubuntu 22.04)"
-    echo "  - 2 control plane nodes (t3.large)"
+    echo "  - $CONTROL_NODES control plane nodes (t3.large)"
     echo ""
     echo "Ubuntu GPU nodes provide:"
     echo "  - Fast cluster join (~3 minutes) without NVIDIA driver delays"
@@ -1364,7 +1391,7 @@ install_renny() {
     rm -f "$PROJECT_DIR/values/renny-values-deployed.yaml.bak"
     
     # Install Renny with extended timeout
-    echo "Installing Renny Helm chart with 10 replicas..."
+    echo "Installing Renny Helm chart with $RENNY_DESIRED_SIZE replicas..."
     helm upgrade --install renny "$PROJECT_DIR/renny-chart.tgz" \
         --namespace uneeq-renderer \
         -f "$PROJECT_DIR/values/renny-values-deployed.yaml" \
@@ -1454,9 +1481,9 @@ display_status() {
     echo ""
     
     echo "📋 Node Summary:"
-    echo "  - Control nodes: 2x t3.large (Amazon Linux 2023)"
-    echo "  - Renny GPU nodes: 10x g5.2xlarge (Ubuntu 22.04)"
-    echo "  - A2F GPU nodes: 2x g5.2xlarge (Ubuntu 22.04)"
+    echo "  - Control nodes: ${CONTROL_NODES}x t3.large (Amazon Linux 2023)"
+    echo "  - Renny GPU nodes: ${RENNY_DESIRED_SIZE}x ${RENNY_INSTANCE_TYPE} (Ubuntu 22.04)"
+    echo "  - A2F GPU nodes: ${A2F_DESIRED_SIZE}x ${A2F_INSTANCE_TYPE} (Ubuntu 22.04)"
     kubectl get nodes -L uneeq.io/node-type,nvidia.com/gpu
     echo ""
     
@@ -1497,6 +1524,9 @@ main() {
     echo "   Renny EKS One-Click Deployment    "
     echo "======================================"
     echo ""
+    
+    # Load dynamic configuration first
+    load_config
     
     # Pre-flight checks
     check_aws_profile
