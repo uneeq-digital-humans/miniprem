@@ -4,6 +4,13 @@
 # Ubuntu EKS AMIs do not include /etc/eks/bootstrap.sh - manual configuration required
 
 set -o xtrace
+set -e  # Exit on error
+
+# Enhanced logging
+exec > >(tee -a /var/log/bootstrap.log)
+exec 2>&1
+
+echo "=== Ubuntu EKS Bootstrap Started: $(date) ==="
 
 # Variables from Terraform
 CLUSTER_NAME="${cluster_name}"
@@ -17,7 +24,7 @@ REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/region)
 # Update system packages
 apt-get update -y
 
-# Install required packages
+# Install required packages including systemd-resolved
 apt-get install -y \
     apt-transport-https \
     ca-certificates \
@@ -26,12 +33,18 @@ apt-get install -y \
     lsb-release \
     unzip \
     jq \
-    build-essential
+    build-essential \
+    systemd-resolved \
+    awscli
 
-# Install AWS CLI v2 (required for EKS token authentication)
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-./aws/install
+# Install AWS CLI v2 (required for EKS token authentication)  
+# Skip if already installed from apt package
+if ! command -v aws &> /dev/null || [[ $(aws --version) != *"aws-cli/2"* ]]; then
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    ./aws/install
+    rm -rf awscliv2.zip aws/
+fi
 
 # Skip NVIDIA driver installation at boot time for fast cluster join
 # GPU drivers will be installed via NVIDIA GPU Operator after cluster join
@@ -201,10 +214,35 @@ RestartSec=5
 WantedBy=multi-user.target
 EOF
 
-# Start and enable kubelet
+# Start and enable kubelet with status checks
+echo "=== Starting kubelet service ==="
 systemctl daemon-reload
 systemctl enable kubelet
+
+# Start kubelet and verify it's running
 systemctl start kubelet
 
-echo "Ubuntu EKS node bootstrap completed - ready to join cluster"
+# Wait a bit and check status
+sleep 5
+if systemctl is-active --quiet kubelet; then
+    echo "✅ Kubelet is running successfully"
+    systemctl status kubelet --no-pager -l
+else
+    echo "❌ Kubelet failed to start"
+    systemctl status kubelet --no-pager -l
+    journalctl -u kubelet --no-pager -l --since "5 minutes ago"
+    exit 1
+fi
+
+# Test AWS CLI authentication
+echo "=== Testing AWS authentication ==="
+if aws sts get-caller-identity > /dev/null; then
+    echo "✅ AWS authentication working"
+else
+    echo "❌ AWS authentication failed"
+    exit 1
+fi
+
+echo "=== Ubuntu EKS Bootstrap Completed: $(date) ==="
+echo "✅ Node should now join cluster within 2-3 minutes"
 echo "GPU drivers will be installed via NVIDIA GPU Operator after deployment"

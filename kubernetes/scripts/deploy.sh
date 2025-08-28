@@ -117,6 +117,54 @@ wait_for_cluster_nodes_ready() {
         # Status summary
         local current_status="Ready: $ready_nodes/$total_nodes | NotReady: $not_ready"
         
+        # Perform health checks every 5 minutes (300 seconds) to catch issues early
+        if [ $((elapsed % 300)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+            echo ""
+            echo "🔍 Running health checks (${elapsed}s elapsed)..."
+            
+            # Check for instances that failed to launch or are stuck
+            local stuck_instances=$(aws ec2 describe-instances \
+                --filters "Name=tag:aws:autoscaling:groupName,Values=eks-${CLUSTER_NAME}*gpu*" "Name=instance-state-name,Values=running" \
+                --query 'Reservations[].Instances[?LaunchTime<=`'$(date -u -d "10 minutes ago" +%Y-%m-%dT%H:%M:%S.000Z)'`].InstanceId' \
+                --output text 2>/dev/null || echo "")
+            
+            if [ -n "$stuck_instances" ] && [ "$stuck_instances" != "None" ]; then
+                echo "⚠️  Found instances running >10 minutes that haven't joined cluster:"
+                for instance in $stuck_instances; do
+                    local launch_time=$(aws ec2 describe-instances --instance-ids $instance --query 'Reservations[0].Instances[0].LaunchTime' --output text 2>/dev/null)
+                    echo "   Instance $instance (launched: $launch_time)"
+                done
+            fi
+            
+            # Check for warning events that indicate real problems
+            local critical_warnings=$(kubectl get events --field-selector type=Warning -o json 2>/dev/null | \
+                jq -r '.items[] | select(.lastTimestamp > "'$(date -u -d "5 minutes ago" +%Y-%m-%dT%H:%M:%S)'") | 
+                select(.reason | test("FailedMount|ImagePull|NetworkNotReady|NodeNotReady")) | 
+                "\(.reason): \(.message)"' 2>/dev/null | head -3 || echo "")
+            
+            if [ -n "$critical_warnings" ]; then
+                echo "⚠️  Recent critical warnings detected:"
+                echo "$critical_warnings" | sed 's/^/   /'
+            fi
+            
+            # If we have instances but no nodes, that's a bootstrap failure
+            local running_gpu_instances=$(aws ec2 describe-instances \
+                --filters "Name=tag:aws:autoscaling:groupName,Values=eks-${CLUSTER_NAME}*gpu*" "Name=instance-state-name,Values=running" \
+                --query 'length(Reservations[].Instances[])' \
+                --output text 2>/dev/null || echo "0")
+            
+            if [ "$running_gpu_instances" -gt 0 ] && [ "$total_nodes" -le 2 ]; then
+                echo "🚨 Detected bootstrap issue: $running_gpu_instances GPU instances running but not joining cluster"
+                echo "💡 This suggests userdata script failures - would normally take 35min to detect"
+                if [ $elapsed -gt 900 ]; then  # 15 minutes
+                    echo "❌ Early termination: Bootstrap appears to be failing"
+                    echo "Recent events:"
+                    kubectl get events --sort-by='.lastTimestamp' | tail -5
+                    return 1
+                fi
+            fi
+        fi
+        
         # Show status updates and progress
         if [ "$current_status" != "$last_status" ] || [ $((elapsed % 30)) -eq 0 ]; then
             local elapsed_min=$((elapsed / 60))
