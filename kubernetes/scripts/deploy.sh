@@ -991,11 +991,11 @@ deploy_infrastructure() {
     echo "  - VPC with 3 availability zones"
     echo "  - EKS cluster v1.31"
     
-    # Get values from terraform.tfvars with better parsing
-    local renny_desired=$(grep -E "^renny_desired_size\s*=" terraform.tfvars | sed 's/.*=\s*\([0-9]*\).*/\1/' || echo "10")
-    local renny_instance=$(grep -E "^renny_instance_type\s*=" terraform.tfvars | sed 's/.*=\s*"\([^"]*\)".*/\1/' || echo "g5.2xlarge")
-    local a2f_desired=$(grep -E "^a2f_desired_size\s*=" terraform.tfvars | sed 's/.*=\s*\([0-9]*\).*/\1/' || echo "2")
-    local a2f_instance=$(grep -E "^a2f_instance_type\s*=" terraform.tfvars | sed 's/.*=\s*"\([^"]*\)".*/\1/' || echo "g5.2xlarge")
+    # Get values from terraform.tfvars with robust parsing
+    local renny_desired=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "10")
+    local renny_instance=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
+    local a2f_desired=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "2")
+    local a2f_instance=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
     
     echo "  - $renny_desired GPU nodes for Renny ($renny_instance, Ubuntu 22.04)"
     echo "  - $a2f_desired GPU nodes for Audio2Face ($a2f_instance, Ubuntu 22.04)"
