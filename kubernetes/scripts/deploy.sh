@@ -165,12 +165,14 @@ wait_for_cluster_nodes_ready() {
             fi
         fi
         
+        # Calculate time values for display (moved outside condition)
+        local elapsed_min=$((elapsed / 60))
+        local elapsed_sec=$((elapsed % 60))
+        local remaining_time=$((max_timeout - elapsed))
+        local remaining_min=$((remaining_time / 60))
+        
         # Show status updates and progress
         if [ "$current_status" != "$last_status" ] || [ $((elapsed % 30)) -eq 0 ]; then
-            local elapsed_min=$((elapsed / 60))
-            local elapsed_sec=$((elapsed % 60))
-            local remaining_time=$((max_timeout - elapsed))
-            local remaining_min=$((remaining_time / 60))
             
             if [ "$DEBUG_MODE" = true ]; then
                 debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
@@ -264,12 +266,14 @@ wait_for_gpu_operator_ready() {
         # Status summary
         local current_status="Drivers: $driver_pods/$gpu_nodes | Failed: $failed_pods | Crashes: $crashloop_pods | Total: $total_pods"
         
+        # Calculate time values for display (moved outside condition)
+        local elapsed_min=$((elapsed / 60))
+        local elapsed_sec=$((elapsed % 60))
+        local remaining_time=$((max_timeout - elapsed))
+        local remaining_min=$((remaining_time / 60))
+        
         # Show status updates
         if [ "$current_status" != "$last_status" ] || [ $((elapsed % 45)) -eq 0 ]; then
-            local elapsed_min=$((elapsed / 60))
-            local elapsed_sec=$((elapsed % 60))
-            local remaining_time=$((max_timeout - elapsed))
-            local remaining_min=$((remaining_time / 60))
             
             if [ "$DEBUG_MODE" = true ]; then
                 debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
@@ -365,12 +369,14 @@ wait_for_large_images() {
         # Status summary
         local current_status="Ready: $ready_count/$total_count | Pulling: $pulling_count | Failed: $failed_count"
         
+        # Calculate time values for display (moved outside condition)
+        local elapsed_min=$((elapsed / 60))
+        local elapsed_sec=$((elapsed % 60))
+        local remaining_time=$((max_timeout - elapsed))
+        local remaining_min=$((remaining_time / 60))
+        
         # Show status based on debug mode and changes
         if [ "$current_status" != "$last_status" ] || [ $((elapsed % 45)) -eq 0 ]; then
-            local elapsed_min=$((elapsed / 60))
-            local elapsed_sec=$((elapsed % 60))
-            local remaining_time=$((max_timeout - elapsed))
-            local remaining_min=$((remaining_time / 60))
             
             if [ "$DEBUG_MODE" = true ]; then
                 debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
