@@ -4,6 +4,25 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
+# Network Configuration
+variable "vpc_cidr" {
+  description = "VPC CIDR block - PERMANENT DECISION (cannot be changed without cluster rebuild)"
+  type        = string
+  default     = "10.17.0.0/16"
+}
+
+variable "service_cidr" {
+  description = "EKS service CIDR block - PERMANENT DECISION (cannot be changed without cluster rebuild)"
+  type        = string
+  default     = "10.117.0.0/16"
+}
+
+variable "enable_nat_ha" {
+  description = "Enable high availability NAT gateways (3 vs 1) - Can be changed later"
+  type        = bool
+  default     = true
+}
+
 variable "project_name" {
   description = "Project name"
   type        = string

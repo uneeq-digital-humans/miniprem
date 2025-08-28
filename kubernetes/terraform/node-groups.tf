@@ -38,6 +38,7 @@ resource "aws_launch_template" "renny_gpu" {
     cluster_endpoint    = module.eks.cluster_endpoint
     cluster_ca          = module.eks.cluster_certificate_authority_data
     node_labels         = "uneeq.io/node-type=renny"
+    cluster_dns_ip      = cidrhost(var.service_cidr, 10)  # e.g., 10.117.0.10
   }))
 
   tag_specifications {
@@ -54,7 +55,7 @@ resource "aws_launch_template" "renny_gpu" {
 # Managed node group for Renny (GPU) using Ubuntu launch template
 resource "aws_eks_node_group" "renny" {
   cluster_name    = module.eks.cluster_name
-  node_group_name = "${local.cluster_name}-renny-gpu"
+  node_group_name = "${local.cluster_name}-renny-gpu-v4"
   node_role_arn   = aws_iam_role.eks_node_group.arn
   subnet_ids      = module.vpc.private_subnets
 
@@ -138,7 +139,7 @@ resource "aws_launch_template" "a2f_gpu" {
 # Managed node group for Audio2Face (GPU) using Ubuntu launch template
 resource "aws_eks_node_group" "a2f" {
   cluster_name    = module.eks.cluster_name
-  node_group_name = "${local.cluster_name}-a2f-gpu"
+  node_group_name = "${local.cluster_name}-a2f-gpu-v4"
   node_role_arn   = aws_iam_role.eks_node_group.arn
   subnet_ids      = module.vpc.private_subnets
 

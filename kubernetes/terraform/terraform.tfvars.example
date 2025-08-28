@@ -1,36 +1,71 @@
-# Example terraform.tfvars file
-# Copy this to terraform.tfvars and fill in your actual values
+# Renny EKS Deployment Configuration Example
+# Copy this file to terraform.tfvars and fill in your values
 
-# REQUIRED: DHOP Configuration
-dhop_tenant_id = "your-tenant-id-here"  # e.g., "361b9233-8c52-42fc-90f1-70ba93eba281"
-dhop_api_key   = "your-base64-encoded-api-key"  # Must be base64 encoded
+# ============================================================================
+# NETWORK CONFIGURATION (PERMANENT DECISIONS)
+# ⚠️  These cannot be changed without destroying and rebuilding the cluster
+# ============================================================================
 
-# REQUIRED: Docker Hub Credentials
-# Your Docker Hub account must have access to UneeQ repositories
-docker_username = "your-dockerhub-username"
-docker_password = "your-dockerhub-password"
+# VPC CIDR block - choose a range that won't conflict with existing networks
+# Common options:
+#   10.17.0.0/16    - Recommended default (65,534 IPs)
+#   10.50.0.0/16    - Alternative if 10.17.x conflicts
+#   192.168.0.0/16  - Private network standard
+vpc_cidr = "10.17.0.0/16"
 
-# OPTIONAL: Override default values
-# Uncomment and modify as needed
+# EKS service CIDR block - must not overlap with VPC CIDR
+# Automatically calculated based on VPC choice:
+#   If VPC is 10.17.0.0/16  → use 10.117.0.0/16
+#   If VPC is 10.50.0.0/16  → use 10.150.0.0/16  
+#   If VPC is 192.168.0.0/16 → use 10.117.0.0/16
+service_cidr = "10.117.0.0/16"
 
-# AWS Configuration
-aws_region = "us-east-2"  # Change to your desired region
+# ============================================================================
+# COST CONFIGURATION (CAN BE CHANGED LATER)
+# ✅ These settings can be modified after deployment without cluster rebuild
+# ============================================================================
 
-# Instance Types
-# renny_instance_type = "g5.2xlarge"  # Options: g5.xlarge, g5.2xlarge, g5.4xlarge
-# a2f_instance_type = "g5.2xlarge"    # Options: g5.xlarge, g5.2xlarge, g5.4xlarge
+# NAT Gateway high availability
+# true  = 3 NAT Gateways (~$135/month extra) - Recommended for production
+# false = 1 NAT Gateway (~$45/month) - Good for development/testing
+enable_nat_ha = true
 
-# Renny Node Scaling
-# renny_min_size = 10      # Minimum number of Renny nodes
-# renny_max_size = 20      # Maximum number of Renny nodes
-# renny_desired_size = 10  # Initial number of Renny nodes
+# ============================================================================
+# REQUIRED CREDENTIALS
+# ============================================================================
 
-# Audio2Face Node Scaling
-# a2f_min_size = 2         # Minimum number of A2F nodes
-# a2f_max_size = 5         # Maximum number of A2F nodes
-# a2f_desired_size = 2     # Initial number of A2F nodes
+# DHOP Configuration - obtain from UneeQ
+dhop_tenant_id = ""  # Your DHOP tenant ID
+dhop_api_key = ""    # Your DHOP API key (base64 encoded)
 
-# Cluster Configuration
+# Docker Hub Credentials - required for UneeQ container access
+docker_username = ""  # Your Docker Hub username with access to UneeQ repos
+docker_password = ""  # Your Docker Hub password
+
+# ============================================================================
+# OPTIONAL OVERRIDES
+# ============================================================================
+
+# AWS region for deployment
+# aws_region = "us-east-1"
+
+# GPU instance types for workloads
+# renny_instance_type = "g5.2xlarge"  # Renny nodes (8 vCPU, 32GB RAM, 1x NVIDIA A10G)
+# a2f_instance_type = "g5.2xlarge"    # Audio2Face nodes
+
+# Renny scaling configuration
+# renny_min_size = 10      # Minimum nodes (always running)
+# renny_max_size = 20      # Maximum nodes (autoscaler limit)
+# renny_desired_size = 10  # Initial desired nodes
+
+# Audio2Face scaling configuration
+# a2f_min_size = 2         # Minimum nodes
+# a2f_max_size = 5         # Maximum nodes  
+# a2f_desired_size = 2     # Initial desired nodes
+
+# Kubernetes version
+# kubernetes_version = "1.31"
+
+# Project naming
 # project_name = "renny"
 # environment = "production"
-# kubernetes_version = "1.31"
