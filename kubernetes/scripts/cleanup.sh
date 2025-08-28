@@ -30,8 +30,8 @@ if [ -n "$CLUSTER_NAME" ]; then
     kubectl delete namespace uneeq-renderer --grace-period=0 --force 2>/dev/null || true
     kubectl delete namespace gpu-operator --grace-period=0 --force 2>/dev/null || true
     
-    # Force delete node groups
-    for nodegroup in "${CLUSTER_NAME}-renny-gpu" "${CLUSTER_NAME}-a2f-gpu" "${CLUSTER_NAME}-control"; do
+    # Force delete node groups (updated naming)
+    for nodegroup in "${CLUSTER_NAME}-renny-gpu-v4" "${CLUSTER_NAME}-a2f-gpu-v4" "${CLUSTER_NAME}-control"; do
         aws eks delete-nodegroup \
             --cluster-name "$CLUSTER_NAME" \
             --nodegroup-name "$nodegroup" \

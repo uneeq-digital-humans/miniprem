@@ -1028,6 +1028,84 @@ configure_kubectl() {
     echo "Updating kubeconfig for cluster: $CLUSTER_NAME"
     aws eks update-kubeconfig --region $REGION --name $CLUSTER_NAME
     
+    # Create access entry for the current user to enable kubectl access
+    echo "🔑 Setting up cluster access for current user..."
+    CURRENT_USER_ARN=$(aws sts get-caller-identity --query 'Arn' --output text)
+    echo "Current user: $CURRENT_USER_ARN"
+    
+    # Determine the correct principal ARN based on authentication type
+    if [[ "$CURRENT_USER_ARN" == *":assumed-role/"* ]]; then
+        # For assumed roles, we need the base role ARN
+        if [[ "$CURRENT_USER_ARN" == *"AWSReservedSSO"* ]]; then
+            # Handle AWS SSO roles with special path structure
+            ROLE_NAME=$(echo "$CURRENT_USER_ARN" | sed 's/.*:assumed-role\/\([^/]*\).*/\1/')
+            ACCOUNT_ID=$(echo "$CURRENT_USER_ARN" | cut -d: -f5)
+            # Detect region from the role structure (some SSO roles include region)
+            if aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text 2>/dev/null | grep -q "aws-reserved"; then
+                # Get the actual SSO role path from IAM
+                ACTUAL_ROLE_ARN=$(aws iam get-role --role-name "$ROLE_NAME" --query 'Role.Arn' --output text 2>/dev/null)
+                if [ -n "$ACTUAL_ROLE_ARN" ]; then
+                    BASE_ROLE_ARN="$ACTUAL_ROLE_ARN"
+                else
+                    # Fallback to constructed path (works for most SSO setups)
+                    BASE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/aws-reserved/sso.amazonaws.com/ap-southeast-2/${ROLE_NAME}"
+                fi
+            else
+                BASE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/aws-reserved/sso.amazonaws.com/ap-southeast-2/${ROLE_NAME}"
+            fi
+            echo "Detected AWS SSO role"
+        else
+            # Handle regular assumed roles (EC2 instance roles, cross-account roles, etc.)
+            ROLE_NAME=$(echo "$CURRENT_USER_ARN" | sed 's/.*:assumed-role\/\([^/]*\).*/\1/')
+            ACCOUNT_ID=$(echo "$CURRENT_USER_ARN" | cut -d: -f5)
+            BASE_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${ROLE_NAME}"
+            echo "Detected regular assumed role"
+        fi
+        echo "Using base role ARN for access entry: $BASE_ROLE_ARN"
+        PRINCIPAL_ARN="$BASE_ROLE_ARN"
+    elif [[ "$CURRENT_USER_ARN" == *":user/"* ]]; then
+        # For regular IAM users (access key/secret key authentication)
+        echo "Detected IAM user authentication"
+        PRINCIPAL_ARN="$CURRENT_USER_ARN"
+    elif [[ "$CURRENT_USER_ARN" == *":root"* ]]; then
+        # For root user authentication (not recommended but some customers use it)
+        echo "Detected root user authentication"
+        PRINCIPAL_ARN="$CURRENT_USER_ARN"
+    else
+        # Fallback for other authentication types
+        echo "Detected unknown authentication type, using ARN directly"
+        PRINCIPAL_ARN="$CURRENT_USER_ARN"
+    fi
+    
+    echo "Principal ARN for access entry: $PRINCIPAL_ARN"
+    
+    # Check if access entry already exists
+    if aws eks describe-access-entry --cluster-name "$CLUSTER_NAME" --principal-arn "$PRINCIPAL_ARN" --region "$REGION" &>/dev/null; then
+        echo "  ✅ Access entry already exists"
+    else
+        echo "  Creating access entry for cluster admin access..."
+        aws eks create-access-entry \
+            --cluster-name "$CLUSTER_NAME" \
+            --principal-arn "$PRINCIPAL_ARN" \
+            --region "$REGION" \
+            --tags "CreatedBy=deploy-script,Purpose=cluster-admin" || {
+            echo -e "${YELLOW}⚠️  Could not create access entry, but kubectl should still work${NC}"
+        }
+        
+        # Associate cluster admin policy
+        echo "  Associating cluster admin policy..."
+        aws eks associate-access-policy \
+            --cluster-name "$CLUSTER_NAME" \
+            --principal-arn "$PRINCIPAL_ARN" \
+            --policy-arn "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy" \
+            --access-scope type=cluster \
+            --region "$REGION" || {
+            echo -e "${YELLOW}⚠️  Could not associate admin policy${NC}"
+        }
+        
+        echo "  ✅ Cluster admin access configured"
+    fi
+    
     # Fix kubectl authentication compatibility for older AWS CLI versions
     echo "Ensuring kubectl authentication compatibility..."
     if grep -q "client.authentication.k8s.io/v1alpha1" ~/.kube/config 2>/dev/null; then

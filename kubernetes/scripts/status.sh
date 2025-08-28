@@ -3,6 +3,35 @@
 
 set -e
 
+# Parse command line arguments
+AWS_PROFILE_ARG=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            AWS_PROFILE_ARG="$2"
+            shift 2
+            ;;
+        --help|-h)
+            echo "Usage: $0 [OPTIONS]"
+            echo "Options:"
+            echo "  --profile PROFILE_NAME    Use specific AWS profile"
+            echo "  --help, -h                Show this help message"
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
+# Set AWS profile if provided
+if [ -n "$AWS_PROFILE_ARG" ]; then
+    export AWS_PROFILE="$AWS_PROFILE_ARG"
+    echo "Using AWS profile: $AWS_PROFILE"
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -26,10 +55,27 @@ if [ ! -f "$PROJECT_DIR/terraform/terraform.tfstate" ]; then
     exit 1
 fi
 
-# Get cluster info
+# Get cluster info and configuration from terraform
 cd "$PROJECT_DIR/terraform"
 CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "")
 REGION=$(terraform output -raw region 2>/dev/null || echo "us-east-1")
+
+# Read actual configuration from terraform.tfvars for accurate cost calculations
+if [ -f "terraform.tfvars" ]; then
+    RENNY_DESIRED=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "10")
+    A2F_DESIRED=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "2")
+    RENNY_INSTANCE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
+    A2F_INSTANCE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
+    CONTROL_INSTANCE=$(awk '/^control_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "t3.large")
+else
+    echo -e "${YELLOW}⚠️  terraform.tfvars not found, using defaults${NC}"
+    RENNY_DESIRED="10"
+    A2F_DESIRED="2"
+    RENNY_INSTANCE="g5.2xlarge"
+    A2F_INSTANCE="g5.2xlarge"
+    CONTROL_INSTANCE="t3.large"
+fi
+
 cd "$PROJECT_DIR"
 
 if [ -z "$CLUSTER_NAME" ]; then
@@ -37,12 +83,19 @@ if [ -z "$CLUSTER_NAME" ]; then
     exit 1
 fi
 
-# Configure kubectl
+# Configure kubectl with better error handling
 echo "Connecting to cluster: $CLUSTER_NAME"
-aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME" 2>/dev/null || {
+if ! aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME" 2>/dev/null; then
     echo -e "${RED}❌ Could not connect to cluster${NC}"
+    echo "Please check:"
+    echo "  - AWS credentials are configured correctly"
+    echo "  - Region is correct: $REGION"
+    echo "  - Cluster exists and you have access: $CLUSTER_NAME"
+    if [ -n "$AWS_PROFILE" ]; then
+        echo "  - AWS profile is valid: $AWS_PROFILE"
+    fi
     exit 1
-}
+fi
 
 echo ""
 echo -e "${BLUE}📊 Cluster Overview${NC}"
@@ -66,9 +119,9 @@ CONTROL_NODES=$(kubectl get nodes -l uneeq.io/node-type=control --no-headers 2>/
 RENNY_NODES=$(kubectl get nodes -l uneeq.io/node-type=renny --no-headers 2>/dev/null | wc -l || echo "0")
 A2F_NODES=$(kubectl get nodes -l uneeq.io/node-type=a2f --no-headers 2>/dev/null | wc -l || echo "0")
 
-echo "  Control Nodes: $CONTROL_NODES (t3.large)"
-echo "  Renny GPU Nodes: $RENNY_NODES (g5.2xlarge)"
-echo "  A2F GPU Nodes: $A2F_NODES (g5.2xlarge)"
+echo "  Control Nodes: $CONTROL_NODES ($CONTROL_INSTANCE)"
+echo "  Renny GPU Nodes: $RENNY_NODES ($RENNY_INSTANCE)"
+echo "  A2F GPU Nodes: $A2F_NODES ($A2F_INSTANCE)"
 echo ""
 
 # Pod status
@@ -125,22 +178,48 @@ echo ""
 echo -e "${BLUE}📈 Resource Usage${NC}"
 echo "===================="
 
-# Try to get resource metrics
-if kubectl top nodes &>/dev/null; then
+# Try to get resource metrics with timeout
+if timeout 10s kubectl top nodes &>/dev/null; then
     echo "Top 5 nodes by CPU usage:"
     kubectl top nodes | head -6
 else
-    echo "Metrics not available (metrics-server may not be installed)"
+    echo "Metrics not available (metrics-server may not be installed or not ready)"
+    echo "To install: kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml"
 fi
 
 echo ""
 
-# Cost estimate
+# Cost estimate based on actual configuration
 echo -e "${BLUE}💰 Cost Estimate${NC}"
 echo "===================="
-HOURLY_COST=$(echo "scale=2; (2 * 0.17) + ($RENNY_NODES * 1.22) + ($A2F_NODES * 1.22) + 0.10" | bc 2>/dev/null || echo "15")
+
+# Instance pricing (USD/hour) - approximate us-east-1 pricing
+get_instance_cost() {
+    case $1 in
+        "t3.large") echo "0.08" ;;
+        "g5.2xlarge") echo "1.22" ;;
+        "g5.4xlarge") echo "2.03" ;;
+        "g5.8xlarge") echo "2.72" ;;
+        "g5.12xlarge") echo "4.32" ;;
+        *) echo "1.50" ;;  # default estimate
+    esac
+}
+
+CONTROL_COST=$(get_instance_cost "$CONTROL_INSTANCE")
+RENNY_COST=$(get_instance_cost "$RENNY_INSTANCE")
+A2F_COST=$(get_instance_cost "$A2F_INSTANCE")
+
+# Calculate actual costs based on running nodes and NAT gateway
+HOURLY_COST=$(echo "scale=2; ($CONTROL_NODES * $CONTROL_COST) + ($RENNY_NODES * $RENNY_COST) + ($A2F_NODES * $A2F_COST) + 0.045" | bc 2>/dev/null || echo "15")
 DAILY_COST=$(echo "scale=2; $HOURLY_COST * 24" | bc 2>/dev/null || echo "360")
 MONTHLY_COST=$(echo "scale=2; $DAILY_COST * 30" | bc 2>/dev/null || echo "10800")
+
+echo "Instance breakdown:"
+echo "  Control ($CONTROL_INSTANCE): $CONTROL_NODES × \$$CONTROL_COST/hr = \$$(echo "scale=2; $CONTROL_NODES * $CONTROL_COST" | bc)/hr"
+echo "  Renny ($RENNY_INSTANCE): $RENNY_NODES × \$$RENNY_COST/hr = \$$(echo "scale=2; $RENNY_NODES * $RENNY_COST" | bc)/hr"
+echo "  A2F ($A2F_INSTANCE): $A2F_NODES × \$$A2F_COST/hr = \$$(echo "scale=2; $A2F_NODES * $A2F_COST" | bc)/hr"
+echo "  NAT Gateway: \$0.045/hr"
+echo ""
 
 echo "Estimated costs (USD):"
 echo "  Hourly: ~\$$HOURLY_COST"
@@ -148,14 +227,18 @@ echo "  Daily: ~\$$DAILY_COST"
 echo "  Monthly: ~\$$MONTHLY_COST"
 echo ""
 
-# Recent events
+# Recent events with better formatting
 echo -e "${BLUE}📋 Recent Events${NC}"
 echo "===================="
-EVENTS=$(kubectl get events -n uneeq-renderer --sort-by='.lastTimestamp' 2>/dev/null | tail -5)
-if [ -n "$EVENTS" ]; then
-    echo "$EVENTS"
+if kubectl get events -n uneeq-renderer --sort-by='.lastTimestamp' 2>/dev/null | tail -5 > /tmp/events.tmp; then
+    if [ -s /tmp/events.tmp ]; then
+        cat /tmp/events.tmp
+    else
+        echo "No recent events in uneeq-renderer namespace"
+    fi
+    rm -f /tmp/events.tmp
 else
-    echo "No recent events"
+    echo "Could not retrieve events (namespace may not exist yet)"
 fi
 
 echo ""
@@ -163,6 +246,8 @@ echo "======================================"
 echo -e "${GREEN}Status check complete${NC}"
 echo ""
 echo "Commands:"
-echo "  Scale: ./scripts/scale.sh <count>"
+echo "  Scale Renny: ./scripts/scale.sh <count>"
+echo "  Scale A2F: ./scripts/scale.sh -c a2f <count>"
 echo "  Destroy: ./scripts/destroy.sh"
-echo "  Logs: kubectl logs -n uneeq-renderer -l app=renny --tail=50"
+echo "  Logs (Renny): kubectl logs -n uneeq-renderer -l app=renny --tail=50"
+echo "  Logs (A2F): kubectl logs -n uneeq-renderer -l app=a2f --tail=50"
