@@ -171,36 +171,36 @@ wait_for_cluster_nodes_ready() {
         local remaining_time=$((max_timeout - elapsed))
         local remaining_min=$((remaining_time / 60))
         
-        # Show status updates and progress
+        # Show detailed status updates on changes/intervals (debug mode)
         if [ "$current_status" != "$last_status" ] || [ $((elapsed % 30)) -eq 0 ]; then
-            
             if [ "$DEBUG_MODE" = true ]; then
                 debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
                 if [ "$not_ready" -gt "0" ]; then
                     debug_log "NotReady nodes:"
                     echo "$nodes_output" | grep " NotReady " | head -3
                 fi
-            else
-                # Progress bar for normal mode
-                local progress=0
-                if [ "$expected_nodes" -gt "0" ]; then
-                    progress=$((ready_nodes * 100 / expected_nodes))
-                    if [ $progress -gt 100 ]; then progress=100; fi
-                fi
-                
-                local progress_bar=""
-                local filled=$((progress / 5))  # 20-character bar
-                for ((i=1; i<=20; i++)); do
-                    if [ $i -le $filled ]; then
-                        progress_bar+="█"
-                    else
-                        progress_bar+="░"
-                    fi
-                done
-                echo -ne "\r🚀 Nodes joining cluster... [$progress_bar] $ready_nodes/$total_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+            fi
+            last_status="$current_status"
+        fi
+        
+        # Always show progress bar in normal mode (updates every 15 seconds)
+        if [ "$DEBUG_MODE" != true ]; then
+            local progress=0
+            if [ "$expected_nodes" -gt "0" ]; then
+                progress=$((ready_nodes * 100 / expected_nodes))
+                if [ $progress -gt 100 ]; then progress=100; fi
             fi
             
-            last_status="$current_status"
+            local progress_bar=""
+            local filled=$((progress / 5))  # 20-character bar
+            for ((i=1; i<=20; i++)); do
+                if [ $i -le $filled ]; then
+                    progress_bar+="█"
+                else
+                    progress_bar+="░"
+                fi
+            done
+            echo -ne "\r🚀 Nodes joining cluster... [$progress_bar] $ready_nodes/$total_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
         fi
         
         # Success condition - all nodes ready
@@ -272,9 +272,8 @@ wait_for_gpu_operator_ready() {
         local remaining_time=$((max_timeout - elapsed))
         local remaining_min=$((remaining_time / 60))
         
-        # Show status updates
+        # Show detailed status updates on changes/intervals (debug mode)
         if [ "$current_status" != "$last_status" ] || [ $((elapsed % 45)) -eq 0 ]; then
-            
             if [ "$DEBUG_MODE" = true ]; then
                 debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
                 
@@ -282,31 +281,32 @@ wait_for_gpu_operator_ready() {
                     debug_log "Issue detected - showing pod details:"
                     kubectl get pods -n gpu-operator --no-headers | grep -E "Failed|CrashLoopBackOff|ImagePullBackOff|Error" || debug_log "  No critical failures in current status"
                 fi
-            else
-                # Progress bar
-                local progress=0
-                if [ "$gpu_nodes" -gt "0" ]; then
-                    progress=$((driver_pods * 100 / gpu_nodes))
-                    if [ $progress -gt 100 ]; then progress=100; fi
-                fi
-                
-                local progress_bar=""
-                local filled=$((progress / 5))
-                for ((i=1; i<=20; i++)); do
-                    if [ $i -le $filled ]; then
-                        progress_bar+="█"
-                    else
-                        progress_bar+="░"
-                    fi
-                done
-                echo -ne "\r🎮 Installing GPU drivers... [$progress_bar] $driver_pods/$gpu_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
-                
-                if [ "$failed_pods" -gt "0" ] || [ "$crashloop_pods" -gt "0" ]; then
-                    echo -ne " ⚠️ $failed_pods failed"
-                fi
+            fi
+            last_status="$current_status"
+        fi
+        
+        # Always show progress bar in normal mode (updates every 15 seconds)
+        if [ "$DEBUG_MODE" != true ]; then
+            local progress=0
+            if [ "$gpu_nodes" -gt "0" ]; then
+                progress=$((driver_pods * 100 / gpu_nodes))
+                if [ $progress -gt 100 ]; then progress=100; fi
             fi
             
-            last_status="$current_status"
+            local progress_bar=""
+            local filled=$((progress / 5))
+            for ((i=1; i<=20; i++)); do
+                if [ $i -le $filled ]; then
+                    progress_bar+="█"
+                else
+                    progress_bar+="░"
+                fi
+            done
+            echo -ne "\r🎮 Installing GPU drivers... [$progress_bar] $driver_pods/$gpu_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+            
+            if [ "$failed_pods" -gt "0" ] || [ "$crashloop_pods" -gt "0" ]; then
+                echo -ne " ⚠️ $failed_pods failed"
+            fi
         fi
         
         # Success condition
@@ -375,9 +375,8 @@ wait_for_large_images() {
         local remaining_time=$((max_timeout - elapsed))
         local remaining_min=$((remaining_time / 60))
         
-        # Show status based on debug mode and changes
+        # Show detailed status updates on changes/intervals (debug mode)
         if [ "$current_status" != "$last_status" ] || [ $((elapsed % 45)) -eq 0 ]; then
-            
             if [ "$DEBUG_MODE" = true ]; then
                 debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
                 
@@ -386,30 +385,31 @@ wait_for_large_images() {
                     debug_log "⚠️  Issues detected - checking for disk pressure and image pull errors..."
                     kubectl get pods -n "$namespace" -l "app=$app_label" | grep -E "ErrImagePull|ImagePullBackOff|Evicted|ContainerStatusUnknown" || debug_log "No critical pod failures found"
                 fi
-            else
-                # Simple progress for normal mode
-                local progress_bar=""
-                if [ "$total_count" -gt "0" ]; then
-                    local filled=$((ready_count * 20 / total_count))
-                    for ((i=1; i<=20; i++)); do
-                        if [ $i -le $filled ]; then
-                            progress_bar+="█"
-                        else
-                            progress_bar+="░"
-                        fi
-                    done
-                    echo -ne "\r🖼️ Pulling $app_label images... [$progress_bar] $ready_count/$total_count ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
-                    
-                    # Show brief warning for failures in normal mode
-                    if [ "$failed_count" -gt "0" ]; then
-                        echo -ne " ⚠️ $failed_count issues"
-                    fi
-                else
-                    echo -ne "\r🖼️ Pulling $app_label images... Waiting for pods... (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
-                fi
             fi
-            
             last_status="$current_status"
+        fi
+        
+        # Always show progress bar in normal mode (updates every 15 seconds)
+        if [ "$DEBUG_MODE" != true ]; then
+            local progress_bar=""
+            if [ "$total_count" -gt "0" ]; then
+                local filled=$((ready_count * 20 / total_count))
+                for ((i=1; i<=20; i++)); do
+                    if [ $i -le $filled ]; then
+                        progress_bar+="█"
+                    else
+                        progress_bar+="░"
+                    fi
+                done
+                echo -ne "\r🖼️ Pulling $app_label images... [$progress_bar] $ready_count/$total_count ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+                
+                # Show brief warning for failures in normal mode
+                if [ "$failed_count" -gt "0" ]; then
+                    echo -ne " ⚠️ $failed_count issues"
+                fi
+            else
+                echo -ne "\r🖼️ Pulling $app_label images... Waiting for pods... (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+            fi
         fi
         
         # Success condition - all pods ready
@@ -423,6 +423,24 @@ wait_for_large_images() {
         
         sleep 15  # Check every 15 seconds for large images
     done
+}
+
+# Check if target cluster already exists
+check_existing_cluster() {
+    local cluster_name="${CLUSTER_NAME:-renny-production}"
+    
+    echo "🔍 Checking if cluster '$cluster_name' already exists..."
+    
+    if aws eks describe-cluster --name "$cluster_name" --region "${AWS_REGION:-us-east-2}" >/dev/null 2>&1; then
+        echo -e "${GREEN}✅ Found existing cluster: $cluster_name${NC}"
+        echo "Since the cluster already exists, skipping infrastructure setup..."
+        echo ""
+        return 0  # Cluster exists
+    else
+        echo -e "${YELLOW}⚡ Cluster '$cluster_name' not found - will create new infrastructure${NC}"
+        echo ""
+        return 1  # Cluster doesn't exist
+    fi
 }
 
 # AWS Profile detection and confirmation
@@ -1430,14 +1448,22 @@ main() {
     check_aws_profile
     check_prerequisites
     check_aws_credentials
-    prompt_network_configuration
-    validate_network_config
-    check_aws_limits
-    test_external_dependencies
-    create_tfvars
     
-    # Infrastructure deployment
-    deploy_infrastructure
+    # Check if cluster already exists - skip infrastructure if it does
+    if check_existing_cluster; then
+        echo -e "${CYAN}📋 Existing cluster detected - skipping to application deployment${NC}"
+        echo ""
+    else
+        echo -e "${CYAN}🏗️  Setting up new infrastructure${NC}"
+        prompt_network_configuration
+        validate_network_config
+        check_aws_limits
+        test_external_dependencies
+        create_tfvars
+        deploy_infrastructure
+    fi
+    
+    # Application deployment (always run)
     configure_kubectl
     install_gpu_operator
     setup_kubernetes_resources
