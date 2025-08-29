@@ -1415,6 +1415,39 @@ install_gpu_operator() {
     echo "⏳ Waiting for GPU operator pods to be ready..."
     kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s || true
     
+    # Apply DNS fix for Ubuntu systemd-resolved in chroot environments
+    echo "Applying DNS fix for NVIDIA driver installation in chroot environments..."
+    kubectl patch daemonset nvidia-driver-daemonset -n gpu-operator --type='merge' -p='
+{
+  "spec": {
+    "template": {
+      "spec": {
+        "containers": [
+          {
+            "name": "nvidia-driver-ctr",
+            "volumeMounts": [
+              {
+                "mountPath": "/etc/resolv.conf",
+                "name": "resolv-chroot",
+                "readOnly": true
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "hostPath": {
+              "path": "/etc/resolv-chroot.conf",
+              "type": "File"
+            },
+            "name": "resolv-chroot"
+          }
+        ]
+      }
+    }
+  }
+}'
+    
     # Wait for GPU drivers using adaptive waiting
     echo "Waiting for GPU drivers to be installed on all nodes..."
     wait_for_gpu_operator_ready 2400  # 40 minutes max for driver installation
@@ -1423,7 +1456,59 @@ install_gpu_operator() {
     echo "GPU node status:"
     kubectl get nodes -L nvidia.com/gpu,uneeq.io/node-type
     
+    # Verify and fix ASG desired capacities after rolling updates
+    echo "Verifying Auto Scaling Group configurations..."
+    verify_asg_desired_capacities "$cluster_name"
+    
     show_elapsed
+}
+
+# Verify and fix ASG desired capacities to match terraform configuration
+verify_asg_desired_capacities() {
+    local cluster_name="$1"
+    echo "🔍 Checking Auto Scaling Group desired capacities..."
+    
+    # Get expected desired capacities from terraform outputs
+    local expected_renny=$(terraform output -json node_groups 2>/dev/null | jq -r '.renny.desired_size // 2')
+    local expected_a2f=$(terraform output -json node_groups 2>/dev/null | jq -r '.a2f.desired_size // 2') 
+    local expected_control=$(terraform output -json node_groups 2>/dev/null | jq -r '.control.desired_size // 2')
+    
+    # Check and fix each ASG
+    check_and_fix_asg_capacity "$cluster_name" "renny-gpu" "$expected_renny"
+    check_and_fix_asg_capacity "$cluster_name" "a2f-gpu" "$expected_a2f"  
+    check_and_fix_asg_capacity "$cluster_name" "control" "$expected_control"
+    
+    echo "✅ ASG desired capacities verified"
+}
+
+# Check and fix a specific ASG's desired capacity
+check_and_fix_asg_capacity() {
+    local cluster_name="$1"
+    local node_type="$2"
+    local expected_capacity="$3"
+    
+    # Find ASG name pattern
+    local asg_name=$(aws autoscaling describe-auto-scaling-groups \
+        --query "AutoScalingGroups[?contains(AutoScalingGroupName, '${cluster_name}-${node_type}')].AutoScalingGroupName" \
+        --output text)
+    
+    if [ -n "$asg_name" ]; then
+        local current_desired=$(aws autoscaling describe-auto-scaling-groups \
+            --auto-scaling-group-names "$asg_name" \
+            --query 'AutoScalingGroups[0].DesiredCapacity' --output text)
+        
+        if [ "$current_desired" != "$expected_capacity" ]; then
+            echo "⚠️  Fixing ASG $node_type: desired=$current_desired → $expected_capacity"
+            aws autoscaling update-auto-scaling-group \
+                --auto-scaling-group-name "$asg_name" \
+                --desired-capacity "$expected_capacity" \
+                --min-size "$expected_capacity"
+        else
+            echo "✓ ASG $node_type: desired capacity correct ($expected_capacity)"
+        fi
+    else
+        echo "⚠️  ASG for $node_type not found"
+    fi
 }
 
 # Create namespace and secrets

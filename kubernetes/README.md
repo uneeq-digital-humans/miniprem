@@ -683,21 +683,29 @@ cd terraform && terraform apply
 If you would like to manually scale the EC2 instances down (i.e. shut down the cluster to save money, perhaps during off hours) - you can use the following ASG commands (make sure the `v4` is correct, at the time of writing this is the latest version - verify your version before executing the command).
 
 ```bash
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-* --desired-capacity 0
+# Get ASG names first
+aws autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[?contains(AutoScalingGroupName, 'renny-production')].AutoScalingGroupName" --output text
 
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-* --desired-capacity 0
+# Then scale down with actual names:
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-ID-GOES-HERE --desired-capacity 0 --min-size 0
 
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-* --desired-capacity 0
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-ID-GOES-HERE --desired-capacity 0 --min-size 0
+
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-ID-GOES-HERE --desired-capacity 0 --min-size 0
 ```
 
-Scale the instances back up when you want to serve requests (change the values as fits your use case):
+Scale the instances back up when you want to serve requests. First get the actual ASG names:
 
 ```bash
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-* --desired-capacity 2 --min-size 2
+# Get ASG names
+aws autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[?contains(AutoScalingGroupName, 'renny-production')].AutoScalingGroupName" --output text
 
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-* --desired-capacity 2 --min-size 2
+# Then scale up with actual names (example):
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-ID-GOES-HERE --desired-capacity 2 --min-size 2
 
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-* --desired-capacity 2 --min-size 2
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-ID-GOES-HERE --desired-capacity 2 --min-size 2
+
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-ID-GOES-HERE --desired-capacity 2 --min-size 2
 ```
 
 **Application Configuration:**
