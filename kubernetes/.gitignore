@@ -6,6 +6,7 @@ terraform/*.tfstate.*
 terraform/tfplan
 terraform/terraform.tfvars
 terraform/*.backup
+scripts/terraform.tfstate
 
 # Helm
 *.tgz
