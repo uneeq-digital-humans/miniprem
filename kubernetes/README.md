@@ -678,6 +678,28 @@ cd terraform && terraform apply
 ./scripts/scale.sh 12
 ```
 
+**Using Auto Scaling Group (ASG)**
+
+If you would like to manually scale the EC2 instances down (i.e. shut down the cluster to save money, perhaps during off hours) - you can use the following ASG commands (make sure the `v4` is correct, at the time of writing this is the latest version - verify your version before executing the command).
+
+```bash
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-* --desired-capacity 0
+
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-* --desired-capacity 0
+
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-* --desired-capacity 0
+```
+
+Scale the instances back up when you want to serve requests (change the values as fits your use case):
+
+```bash
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-* --desired-capacity 2 --min-size 2
+
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-* --desired-capacity 2 --min-size 2
+
+aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-* --desired-capacity 2 --min-size 2
+```
+
 **Application Configuration:**
 ```bash
 # Update Renny configuration
