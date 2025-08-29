@@ -324,8 +324,7 @@ fi
 echo ""
 echo "🧹 Step 7/7: Cleaning up local files..."
 cd "$PROJECT_DIR"
-rm -f values/renny-values-deployed.yaml
-rm -f values/a2f-values-deployed.yaml
+# Note: No longer using -deployed.yaml files
 rm -f terraform/tfplan
 rm -f terraform/.terraform.lock.hcl
 rm -rf terraform/.terraform

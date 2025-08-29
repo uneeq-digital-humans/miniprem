@@ -13,9 +13,7 @@ scripts/terraform.tfstate
 renny-chart.tgz
 charts/
 
-# Generated values
-values/renny-values-deployed.yaml
-values/a2f-values-deployed.yaml
+# Note: Now using single values files (no longer generating -deployed.yaml)
 
 # Kubernetes
 kubeconfig

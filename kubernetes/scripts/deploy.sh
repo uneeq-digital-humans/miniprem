@@ -1624,13 +1624,11 @@ install_renny() {
     cd "$PROJECT_DIR"
     
     # Update Renny values with DHOP credentials
-    cp "$PROJECT_DIR/values/renny-values.yaml" "$PROJECT_DIR/values/renny-values-deployed.yaml"
-    
-    # Use sed to update the values (works on both Mac and Linux)
+    # Use sed to update the values directly (works on both Mac and Linux)
     # Using | as delimiter to handle special characters in API key
-    sed -i.bak "s|tenantId: \"\"|tenantId: \"$DHOP_TENANT_ID\"|" "$PROJECT_DIR/values/renny-values-deployed.yaml"
-    sed -i.bak "s|apiKey: \"\"|apiKey: \"$DHOP_API_KEY\"|" "$PROJECT_DIR/values/renny-values-deployed.yaml"
-    rm -f "$PROJECT_DIR/values/renny-values-deployed.yaml.bak"
+    sed -i.bak "s|tenantId: \"\"|tenantId: \"$DHOP_TENANT_ID\"|" "$PROJECT_DIR/values/renny-values.yaml"
+    sed -i.bak "s|apiKey: \"\"|apiKey: \"$DHOP_API_KEY\"|" "$PROJECT_DIR/values/renny-values.yaml"
+    rm -f "$PROJECT_DIR/values/renny-values.yaml.bak"
     
     # Validate the chart doesn't contain macOS metadata files
     if tar -tzf "$PROJECT_DIR/renny-chart.tgz" | grep -E "\._|\.DS_Store" >/dev/null; then
@@ -1648,7 +1646,7 @@ install_renny() {
     echo "Installing Renny Helm chart with $RENNY_DESIRED_SIZE replicas..."
     helm upgrade --install renny "$PROJECT_DIR/renny-chart.tgz" \
         --namespace uneeq-renderer \
-        -f "$PROJECT_DIR/values/renny-values-deployed.yaml" \
+        -f "$PROJECT_DIR/values/renny-values.yaml" \
         --timeout 25m
     
     echo "✓ Helm chart installed, now monitoring image pull progress..."

@@ -196,7 +196,7 @@ Create `terraform/terraform.tfvars` with your credentials:
 ```hcl
 # Required credentials
 dhop_tenant_id  = "your-tenant-id"
-dhop_api_key    = "your-base64-encoded-api-key"
+dhop_api_key    = "your-api-key"  # Plain text API key
 docker_username = "your-dockerhub-username"
 docker_password = "your-dockerhub-password"
 
@@ -294,6 +294,36 @@ Internet → ALB/NLB → EKS Cluster
 - **WebRTC/UDP**: 22000-23000 (for PixelStreaming)
 - **TURN/STUN**: 3478 (TCP/UDP)
 - **HTTPS**: 443 (egress to *.uneeq.io)
+
+## 🗣️ Text-to-Speech Configuration
+
+Renny supports multiple TTS providers. All API keys should be provided as **plain text** (not base64 encoded) in `values/renny-values.yaml`:
+
+### Azure Speech Services
+```yaml
+tts:
+  azureRegion: "eastus"  # Your Azure region
+  azureSpeechKey: "your-azure-api-key"  # Plain text API key
+```
+
+### ElevenLabs
+```yaml
+tts:
+  elevenlabsApiKey: "sk_your-elevenlabs-api-key"  # Plain text API key starting with 'sk_'
+```
+
+### Google Cloud TTS
+```yaml
+tts:
+  gcpCredentials: "{\"type\": \"service_account\", ...}"  # JSON service account key as string
+```
+
+**Apply changes:**
+```bash
+helm upgrade renny ./renny-chart.tgz -n uneeq-renderer -f values/renny-values.yaml
+```
+
+**Note:** The Helm template automatically base64-encodes these values when creating Kubernetes secrets. You don't need to encode them manually.
 
 ## 🔧 Operations
 
@@ -631,6 +661,230 @@ kubectl logs <renny-pod> -n uneeq-renderer
 ### A2F Connection Issues
 ```bash
 kubectl exec -it <renny-pod> -n uneeq-renderer -- curl http://audio2face-gateway:52000/health
+```
+
+## 🔍 Kubernetes Debugging & Monitoring
+
+This section provides essential commands for monitoring and debugging your cluster - the Kubernetes equivalent of `docker ps` and `docker status`.
+
+### 📋 Quick Health Check Commands
+
+**Check Overall Cluster Status** (like `docker ps`):
+```bash
+# See all pods across namespaces
+kubectl get pods -A
+
+# Check pod status in main namespace
+kubectl get pods -n uneeq-renderer
+
+# View pods with node assignment and IPs
+kubectl get pods -o wide -n uneeq-renderer
+
+# Check services and endpoints
+kubectl get svc,endpoints -n uneeq-renderer
+```
+
+**Check Node Resources** (like `docker stats`):
+```bash
+# View all nodes and their status
+kubectl get nodes -o wide
+
+# Check node resource capacity and allocation
+kubectl describe nodes | grep -A5 -B5 "Capacity\|Allocatable"
+
+# Check GPU availability per node
+kubectl get nodes -L nvidia.com/gpu,uneeq.io/node-type
+```
+
+### 🚀 Pod Status & Image Pull Monitoring
+
+**Check if Pods are Pulling Images**:
+```bash
+# Quick pod status check
+kubectl get pods -n uneeq-renderer
+
+# Watch pod status in real-time
+kubectl get pods -n uneeq-renderer -w
+
+# Check recent events for image pull activity
+kubectl get events -n uneeq-renderer --sort-by='.lastTimestamp' | tail -10
+
+# Detailed pod information including image pull status
+kubectl describe pod <pod-name> -n uneeq-renderer
+```
+
+**Pod Status Meanings**:
+- `Pending`: Waiting for resources or scheduling
+- `ContainerCreating`: Currently pulling image or starting
+- `ImagePullBackOff`: Failed to pull image (auth/network issues)
+- `Running`: Successfully started
+- `CrashLoopBackOff`: Container keeps crashing
+
+**Check Image Pull Progress**:
+```bash
+# Look for these events in describe output:
+kubectl describe pod <pod-name> -n uneeq-renderer | grep -A5 -B5 "Pulling\|Pulled\|Failed"
+
+# Example output meanings:
+# "Pulling image" = Download in progress
+# "Successfully pulled image" = Download complete  
+# "Failed to pull image" = Auth or network issue
+```
+
+### 🎯 Resource Allocation & Capacity Planning
+
+**Current Resource Usage**:
+```bash
+# Check how many pods per node
+kubectl get pods -o wide -A | grep -E "renderer|a2f"
+
+# View resource requests vs allocatable
+kubectl describe nodes | grep -A10 "Allocated resources"
+
+# Check for resource constraints
+kubectl get events -A | grep -i "insufficient\|failed.*resource"
+```
+
+**Resource Capacity Analysis**:
+
+Based on **g5.2xlarge specifications**:
+- **CPU**: 8 cores (7.9 usable after system overhead)
+- **Memory**: 32GB (31GB usable after system overhead)  
+- **GPU**: 1x NVIDIA A10G (24GB VRAM)
+
+**Expected Pod Capacity per Node**:
+- **Renny pods**: 1 per g5.2xlarge (exclusive GPU access required)
+- **A2F pods**: 1 per g5.2xlarge (exclusive GPU access required)
+- **Control pods**: Multiple per t3.large (no GPU required)
+
+### 📊 Application Health Monitoring
+
+**Check Renny Application Logs**:
+```bash
+# View recent logs
+kubectl logs <renny-pod> -n uneeq-renderer --tail=50
+
+# Follow live logs
+kubectl logs <renny-pod> -n uneeq-renderer -f
+
+# Check for specific connection issues
+kubectl logs <renny-pod> -n uneeq-renderer | grep -E "signalling|uneeq|connection|error|warn"
+
+# Check A2F connectivity from Renny
+kubectl logs <renny-pod> -n uneeq-renderer | grep -i "a2f\|audio2face"
+```
+
+**Check A2F Application Logs**:
+```bash
+# A2F has multiple containers
+kubectl logs <a2f-pod> -n uneeq-renderer -c a2f-controller --tail=50
+kubectl logs <a2f-pod> -n uneeq-renderer -c a2x --tail=50
+
+# Check A2F service availability
+kubectl get svc a2f -n uneeq-renderer
+```
+
+**Key Log Messages to Look For**:
+
+✅ **Healthy Renny logs**:
+```
+"Connecting to DHOP at wss://api.enterprise.uneeq.io:443/signalling-service"
+"DHOP connected. About to send the auth request"  
+"Connected to SS wss://api.enterprise.uneeq.io"
+"Mounting Project plugin UneeqA2FClient"
+```
+
+⚠️ **Warning signs**:
+```
+"No TTS auth API key has been set" - TTS not configured (optional)
+"Failed to connect to" - Network connectivity issues
+"Authentication failed" - Invalid DHOP credentials
+"Can't increase MaxChannels" - Audio warnings (usually harmless)
+```
+
+### 🔧 Troubleshooting Common Issues
+
+**Pod Stuck in Pending**:
+```bash
+# Check why pod isn't scheduled
+kubectl describe pod <pod-name> -n uneeq-renderer | tail -10
+
+# Common causes:
+# - "Insufficient nvidia.com/gpu" = No GPU nodes available
+# - "Insufficient cpu/memory" = Resource limits exceeded  
+# - "node(s) didn't match Pod's node affinity" = Wrong node type
+```
+
+**Image Pull Failures**:
+```bash
+# Check Docker registry secret
+kubectl get secret docker-config -n uneeq-renderer
+
+# Recreate Docker credentials if needed
+kubectl delete secret docker-config -n uneeq-renderer
+# Then run deploy script to recreate
+```
+
+**GPU Issues**:
+```bash
+# Check GPU operator status
+kubectl get pods -n gpu-operator
+
+# Check GPU availability on nodes
+kubectl get nodes -L nvidia.com/gpu
+
+# Check GPU driver installation
+kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset --tail=50
+```
+
+**Network Connectivity**:
+```bash
+# Test A2F service from Renny pod
+kubectl exec <renny-pod> -n uneeq-renderer -- nslookup a2f.uneeq-renderer.svc.cluster.local
+
+# Check service endpoints
+kubectl get endpoints -n uneeq-renderer
+
+# Test external connectivity
+kubectl logs <renny-pod> -n uneeq-renderer | grep "wss://api.enterprise.uneeq.io"
+```
+
+### 📈 Performance Monitoring
+
+**Resource Usage Patterns**:
+```bash
+# Monitor node resource pressure
+kubectl describe nodes | grep -E "MemoryPressure|DiskPressure|PIDPressure"
+
+# Check pod resource consumption (if metrics-server installed)
+kubectl top pods -n uneeq-renderer
+
+# View resource requests vs actual usage
+kubectl describe pod <pod-name> -n uneeq-renderer | grep -A10 "Requests\|Limits"
+```
+
+**Expected Resource Usage**:
+- **Renny pods**: ~4 CPU cores, ~10GB RAM, 1 GPU when active
+- **A2F pods**: ~2 CPU cores, ~4GB RAM, 1 GPU  
+- **Control pods**: ~1 CPU core, ~2GB RAM, no GPU
+
+### 🚨 Alerting & Monitoring Setup
+
+**Key Metrics to Monitor**:
+- Pod restart counts: `kubectl get pods -n uneeq-renderer`
+- GPU utilization per node: Check GPU operator logs
+- Image pull success rate: Monitor events for failures
+- A2F service availability: Check service endpoints
+- DHOP connection health: Monitor Renny logs for connection messages
+
+**Setting Up Monitoring**:
+```bash
+# Install metrics-server for basic resource monitoring
+kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+
+# Once installed, you can use:
+kubectl top nodes
+kubectl top pods -n uneeq-renderer
 ```
 
 ## 📞 Support

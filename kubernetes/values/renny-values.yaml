@@ -25,9 +25,10 @@ renderer:
   
   tts:
     veritoneApiKey: ""       # Optional
-    azureSpeechKey: ""       # Base64 encoded
-    elevenlabsApiKey: ""     # Base64 encoded  
-    gcpCredentials: ""       # Base64 encoded GCP service account JSON
+    azureRegion: "eastus"    # Azure region where your Speech service is deployed
+    azureSpeechKey: "your-azure-speech-key-here"       # Plain text API key
+    elevenlabsApiKey: "your-elevenlabs-api-key-here"     # Plain text  
+    gcpCredentials: ""       # Plain text GCP service account JSON
   
   unrealEngine:
     config: ""  # Base64 encoded UneeQ's Unreal Engine SDK licence file
