@@ -106,9 +106,9 @@ wait_for_cluster_nodes_ready() {
             return 1
         fi
         
-        # Get node status with error handling
+        # Get node status with error handling and retry
         local nodes_output
-        if ! nodes_output=$(kubectl get nodes --no-headers 2>/dev/null); then
+        if ! nodes_output=$(retry_network_operation "kubectl get nodes" "kubectl get nodes --no-headers" 2>/dev/null); then
             debug_log "Waiting for kubectl connectivity..."
             sleep 15
             continue
@@ -376,13 +376,25 @@ wait_for_gpu_operator_ready() {
             fi
         fi
         
-        # Check for persistent issues
+        # Check for persistent issues and auto-recover
         if [ "$failed_pods" -gt "0" ] || [ "$crashloop_pods" -gt "0" ]; then
-            if [ $elapsed -gt 1200 ]; then  # After 20 minutes
-                echo -e "${YELLOW}⚠️  GPU operator has persistent issues after $((elapsed/60)) minutes${NC}"
-                echo "Consider using --debug flag for detailed troubleshooting"
-                if [ $elapsed -gt 2000 ]; then  # After 33 minutes
-                    echo -e "${RED}GPU operator installation appears to have failed${NC}"
+            if [ $elapsed -gt 900 ]; then  # After 15 minutes, try recovery
+                echo -e "${YELLOW}⚠️  GPU operator has persistent issues after $((elapsed/60)) minutes - attempting recovery${NC}"
+                
+                # Try to restart failed driver pods
+                echo "Restarting failed GPU operator pods..."
+                kubectl delete pods -n gpu-operator --field-selector=status.phase=Failed --force --grace-period=0 2>/dev/null || true
+                kubectl delete pods -n gpu-operator -l app=nvidia-driver-daemonset --field-selector=status.phase!=Running --force --grace-period=0 2>/dev/null || true
+                
+                # Give it 5 more minutes after recovery attempt
+                echo "Gave recovery attempt, continuing to monitor..."
+                sleep 30
+                
+                if [ $elapsed -gt 1800 ]; then  # After 30 minutes total, give up
+                    echo -e "${RED}❌ GPU operator installation failed after recovery attempts${NC}"
+                    echo "Showing problematic pods:"
+                    kubectl get pods -n gpu-operator -o wide
+                    kubectl describe pods -n gpu-operator -l app=nvidia-driver-daemonset | tail -20
                     return 1
                 fi
             fi
@@ -470,6 +482,20 @@ wait_for_large_images() {
             fi
         fi
         
+        # Auto-retry failed image pulls
+        if [ "$failed_count" -gt "0" ] && [ $elapsed -gt 900 ]; then  # After 15 minutes, retry
+            echo -e "${YELLOW}⚠️  Detected $failed_count failed image pulls - attempting retry${NC}"
+            
+            # Delete failed pods to trigger retry
+            kubectl get pods -n "$namespace" -l "app=$app_label" --no-headers | grep -E "ErrImagePull|ImagePullBackOff|Evicted" | awk '{print $1}' | while read pod; do
+                echo "  Retrying pod: $pod"
+                kubectl delete pod "$pod" -n "$namespace" --force --grace-period=0 2>/dev/null || true
+            done
+            
+            echo "  Pods deleted, Kubernetes will recreate them automatically"
+            sleep 30  # Give time for recreation
+        fi
+        
         # Success condition - all pods ready
         if [ "$total_count" -gt "0" ] && [ "$ready_count" -eq "$total_count" ]; then
             if [ "$DEBUG_MODE" != true ]; then
@@ -480,6 +506,86 @@ wait_for_large_images() {
         fi
         
         sleep 60  # Check every minute for large image pulls to reduce API load
+    done
+}
+
+# Reliable Helm operation wrapper with timeout and recovery
+reliable_helm_operation() {
+    local operation="$1"
+    local release_name="$2"
+    local namespace="$3"
+    shift 3
+    local helm_args="$@"
+    local max_attempts=3
+    local attempt=1
+    
+    while [ $attempt -le $max_attempts ]; do
+        echo "Helm $operation attempt $attempt/$max_attempts for $release_name..."
+        
+        # Check if release is in pending state and clean it up
+        local release_status=$(helm status "$release_name" -n "$namespace" -o json 2>/dev/null | jq -r '.info.status // "not-found"')
+        if [ "$release_status" = "pending-upgrade" ] || [ "$release_status" = "pending-install" ]; then
+            echo "  Found stuck release in $release_status state, rolling back..."
+            helm rollback "$release_name" -n "$namespace" 2>/dev/null || true
+            sleep 10
+        fi
+        
+        # Attempt the Helm operation with timeout
+        if timeout 1800 helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+            echo -e "${GREEN}✓ Helm $operation successful for $release_name${NC}"
+            return 0
+        else
+            local exit_code=$?
+            echo -e "${YELLOW}⚠️  Helm $operation failed for $release_name (attempt $attempt/$max_attempts, exit code: $exit_code)${NC}"
+            
+            if [ $attempt -eq $max_attempts ]; then
+                echo -e "${RED}❌ Helm $operation failed after $max_attempts attempts${NC}"
+                return 1
+            fi
+            
+            # Clean up stuck release before retry
+            echo "  Cleaning up for retry..."
+            helm rollback "$release_name" -n "$namespace" 2>/dev/null || true
+            kubectl delete pods -n "$namespace" -l "app.kubernetes.io/instance=$release_name" --force --grace-period=0 2>/dev/null || true
+            
+            ((attempt++))
+            echo "  Waiting 30 seconds before retry..."
+            sleep 30
+        fi
+    done
+}
+
+# Network operation retry wrapper for transient failures
+retry_network_operation() {
+    local description="$1"
+    shift
+    local command="$@"
+    local max_attempts=5
+    local attempt=1
+    local base_delay=5
+    
+    while [ $attempt -le $max_attempts ]; do
+        if [ $attempt -gt 1 ]; then
+            local delay=$((base_delay * attempt))  # Exponential backoff
+            echo "  Retrying $description (attempt $attempt/$max_attempts) in ${delay}s..."
+            sleep $delay
+        fi
+        
+        debug_log "Executing: $command"
+        if eval "$command" 2>&1; then
+            debug_log "✓ $description succeeded"
+            return 0
+        else
+            local exit_code=$?
+            if [ $attempt -eq $max_attempts ]; then
+                echo -e "${RED}❌ $description failed after $max_attempts attempts (exit code: $exit_code)${NC}"
+                return $exit_code
+            else
+                echo -e "${YELLOW}⚠️  $description failed (attempt $attempt/$max_attempts, exit code: $exit_code)${NC}"
+            fi
+        fi
+        
+        ((attempt++))
     done
 }
 
@@ -1390,17 +1496,17 @@ install_gpu_operator() {
     echo "  - Configure containerd with NVIDIA runtime"
     echo "  - Enable GPU device plugin and monitoring"
     
-    # Add NVIDIA Helm repository
-    helm repo add nvidia https://helm.ngc.nvidia.com/nvidia || true
-    helm repo update
+    # Add NVIDIA Helm repository with retry
+    retry_network_operation "Adding NVIDIA Helm repository" "helm repo add nvidia https://helm.ngc.nvidia.com/nvidia"
+    retry_network_operation "Updating Helm repositories" "helm repo update"
     
     # Create namespace
     kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
     
-    # Install GPU Operator with DNS fix for Ubuntu systemd-resolved
+    # Install GPU Operator with DNS fix using reliable wrapper
     echo "Installing GPU operator with DNS configuration fix..."
-    helm upgrade --install gpu-operator nvidia/gpu-operator \
-        --namespace gpu-operator \
+    reliable_helm_operation "upgrade --install" "gpu-operator" "gpu-operator" \
+        "nvidia/gpu-operator" \
         --set operator.defaultRuntime=containerd \
         --set driver.enabled=true \
         --set toolkit.enabled=true \
@@ -1409,8 +1515,7 @@ install_gpu_operator() {
         --set driver.env[0].name=ENABLE_AUTO_DRAIN \
         --set driver.env[0].value=false \
         --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION \
-        --set driver.env[1].value=true \
-        --wait --timeout 25m
+        --set driver.env[1].value=true
     
     echo "⏳ Waiting for GPU operator pods to be ready..."
     kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s || true
@@ -1566,17 +1671,16 @@ install_a2f() {
     DOCKER_PASSWORD=$(grep docker_password terraform.tfvars | cut -d'"' -f2)
     cd "$PROJECT_DIR"
     
-    # Login to Docker Hub with Helm
+    # Login to Docker Hub with Helm with retry
     echo "Logging into Docker Hub..."
-    echo "$DOCKER_PASSWORD" | helm registry login registry-1.docker.io -u "$DOCKER_USERNAME" --password-stdin
+    retry_network_operation "Docker Hub login" "echo '$DOCKER_PASSWORD' | helm registry login registry-1.docker.io -u '$DOCKER_USERNAME' --password-stdin"
     
-    # Install A2F without --wait to avoid holding connection during large image pull
+    # Install A2F using reliable wrapper
     echo "Installing Audio2Face Helm chart..."
-    helm upgrade --install a2f oci://registry-1.docker.io/facemeproduction/a2f \
+    reliable_helm_operation "upgrade --install" "a2f" "uneeq-renderer" \
+        "oci://registry-1.docker.io/facemeproduction/a2f" \
         --version 0.1-alpha \
-        --namespace uneeq-renderer \
-        -f "$PROJECT_DIR/values/a2f-values.yaml" \
-        --timeout 30m
+        -f "$PROJECT_DIR/values/a2f-values.yaml"
     
     echo "✓ Helm chart installed, now monitoring image pull progress..."
     
@@ -1642,12 +1746,11 @@ install_renny() {
         echo "✓ Chart cleaned"
     fi
     
-    # Install Renny without --wait to avoid holding connection during large image pull
+    # Install Renny using reliable wrapper
     echo "Installing Renny Helm chart with $RENNY_DESIRED_SIZE replicas..."
-    helm upgrade --install renny "$PROJECT_DIR/renny-chart.tgz" \
-        --namespace uneeq-renderer \
-        -f "$PROJECT_DIR/values/renny-values.yaml" \
-        --timeout 25m
+    reliable_helm_operation "upgrade --install" "renny" "uneeq-renderer" \
+        "$PROJECT_DIR/renny-chart.tgz" \
+        -f "$PROJECT_DIR/values/renny-values.yaml"
     
     echo "✓ Helm chart installed, now monitoring image pull progress..."
     
@@ -1690,20 +1793,19 @@ install_autoscaler() {
     REGION=$(terraform output -raw region)
     cd "$PROJECT_DIR"
     
-    # Add autoscaler repo
-    helm repo add autoscaler https://kubernetes.github.io/autoscaler || true
-    helm repo update
+    # Add autoscaler repo with retry
+    retry_network_operation "Adding autoscaler Helm repository" "helm repo add autoscaler https://kubernetes.github.io/autoscaler"
+    retry_network_operation "Updating Helm repositories" "helm repo update"
     
-    # Install cluster autoscaler
+    # Install cluster autoscaler using reliable wrapper
     echo "Installing cluster autoscaler for cluster: $CLUSTER_NAME"
-    helm upgrade --install cluster-autoscaler autoscaler/cluster-autoscaler \
-        --namespace kube-system \
+    reliable_helm_operation "upgrade --install" "cluster-autoscaler" "kube-system" \
+        "autoscaler/cluster-autoscaler" \
         --set autoDiscovery.clusterName=$CLUSTER_NAME \
         --set awsRegion=$REGION \
         --set rbac.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$AUTOSCALER_ROLE_ARN" \
         --set rbac.serviceAccount.create=true \
-        --set rbac.create=true \
-        --wait
+        --set rbac.create=true
     
     echo "Cluster autoscaler installed"
 }
