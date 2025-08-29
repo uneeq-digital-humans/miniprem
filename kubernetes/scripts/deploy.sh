@@ -114,9 +114,9 @@ wait_for_cluster_nodes_ready() {
             continue
         fi
         
-        local ready_nodes=$(echo "$nodes_output" | grep -c " Ready " || echo "0")
-        local total_nodes=$(echo "$nodes_output" | wc -l || echo "0")
-        local not_ready=$(echo "$nodes_output" | grep -c " NotReady " || echo "0")
+        local ready_nodes=$(echo "$nodes_output" | grep -c " Ready " | tr -d ' \n' || echo "0")
+        local total_nodes=$(echo "$nodes_output" | wc -l | tr -d ' \n' || echo "0")
+        local not_ready=$(echo "$nodes_output" | grep -c " NotReady " | tr -d ' \n' || echo "0")
         
         # Status summary
         local current_status="Ready: $ready_nodes/$total_nodes | NotReady: $not_ready"
@@ -221,6 +221,52 @@ wait_for_cluster_nodes_ready() {
     done
 }
 
+# Wait for node groups to become ACTIVE (used during terraform updates)
+wait_for_node_groups_active() {
+    local cluster_name="$1"
+    shift
+    local nodegroups=("$@")
+    local max_wait=1800  # 30 minutes max
+    local start_time=$(date +%s)
+    
+    echo "⏰ Maximum wait time: $((max_wait/60)) minutes"
+    
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+        
+        if [ $elapsed -ge $max_wait ]; then
+            echo -e "${RED}❌ Timeout waiting for node groups to become ACTIVE after $((max_wait/60)) minutes${NC}"
+            return 1
+        fi
+        
+        local all_active=true
+        local status_summary=""
+        
+        for ng in "${nodegroups[@]}"; do
+            local ng_status=$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$ng" --region us-east-2 --query 'nodegroup.status' --output text 2>/dev/null)
+            if [ "$ng_status" != "ACTIVE" ]; then
+                all_active=false
+            fi
+            status_summary="$status_summary $ng:$ng_status"
+        done
+        
+        if [ "$all_active" = true ]; then
+            echo -e "${GREEN}✅ All node groups are now ACTIVE${NC}"
+            return 0
+        fi
+        
+        local elapsed_min=$((elapsed / 60))
+        local elapsed_sec=$((elapsed % 60))
+        local remaining_min=$(((max_wait - elapsed) / 60))
+        
+        echo -e "${CYAN}⏳ Waiting for node groups to become ACTIVE... (${elapsed_min}m${elapsed_sec}s elapsed, ~${remaining_min}m remaining)${NC}"
+        echo -e "${BLUE}   Status:$status_summary${NC}"
+        
+        sleep 30  # Check every 30 seconds
+    done
+}
+
 # Adaptive waiting for GPU operator installation
 wait_for_gpu_operator_ready() {
     local max_timeout="${1:-2400}"  # Default 40 minutes
@@ -262,8 +308,8 @@ wait_for_gpu_operator_ready() {
             return 1
         fi
         
-        # Get GPU operator status
-        local driver_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        # Get GPU operator status (must be Running AND Ready, not CrashLoopBackOff)
+        local driver_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null | awk '$2=="Running" && $3=="true"' | wc -l | tr -d ' \n' || echo "0")
         local failed_pods=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
         local crashloop_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff\|ImagePullBackOff\|Error" | tr -d ' \n' || echo "0")
         local total_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
@@ -314,13 +360,20 @@ wait_for_gpu_operator_ready() {
             fi
         fi
         
-        # Success condition
+        # Success condition - verify both driver pods ready AND GPU capacity advertised
         if [ "$driver_pods" -ge "$gpu_nodes" ] && [ "$gpu_nodes" -gt "0" ]; then
-            if [ "$DEBUG_MODE" != true ]; then
-                echo ""  # Clear progress bar line
+            # Double-check that GPU resources are actually available
+            local gpu_capacity=$(kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."nvidia.com/gpu" == "true") | .status.capacity."nvidia.com/gpu" // "0"' | awk '{sum += $1} END {print sum+0}')
+            
+            if [ "$gpu_capacity" -gt "0" ]; then
+                if [ "$DEBUG_MODE" != true ]; then
+                    echo ""  # Clear progress bar line
+                fi
+                echo -e "${GREEN}✓ GPU drivers installed on all $gpu_nodes GPU nodes ($gpu_capacity total GPUs available)${NC}"
+                return 0
+            else
+                debug_log "Driver pods ready but no GPU capacity advertised yet - continuing to wait..."
             fi
-            echo -e "${GREEN}✓ GPU drivers installed on all $gpu_nodes GPU nodes${NC}"
-            return 0
         fi
         
         # Check for persistent issues
@@ -364,12 +417,12 @@ wait_for_large_images() {
         
         # Get pod status
         local pods_info=$(kubectl get pods -n "$namespace" -l "app=$app_label" --no-headers 2>/dev/null || echo "")
-        local ready_count=$(echo "$pods_info" | grep -c "Running" 2>/dev/null || echo "0")
-        local total_count=$(echo "$pods_info" | wc -l | tr -d ' ')
+        local ready_count=$(echo "$pods_info" | grep -c "Running" 2>/dev/null | tr -d ' \n' || echo "0")
+        local total_count=$(echo "$pods_info" | wc -l | tr -d ' \n' || echo "0")
         
         # Check for image pull issues
-        local pulling_count=$(echo "$pods_info" | grep -c "ContainerCreating\|Pending" 2>/dev/null || echo "0")
-        local failed_count=$(echo "$pods_info" | grep -c "ErrImagePull\|ImagePullBackOff\|Evicted\|ContainerStatusUnknown" 2>/dev/null || echo "0")
+        local pulling_count=$(echo "$pods_info" | grep -c "ContainerCreating\|Pending" 2>/dev/null | tr -d ' \n' || echo "0")
+        local failed_count=$(echo "$pods_info" | grep -c "ErrImagePull\|ImagePullBackOff\|Evicted\|ContainerStatusUnknown" 2>/dev/null | tr -d ' \n' || echo "0")
         
         # Status summary
         local current_status="Ready: $ready_count/$total_count | Pulling: $pulling_count | Failed: $failed_count"
@@ -380,8 +433,8 @@ wait_for_large_images() {
         local remaining_time=$((max_timeout - elapsed))
         local remaining_min=$((remaining_time / 60))
         
-        # Show detailed status updates on changes/intervals (debug mode)
-        if [ "$current_status" != "$last_status" ] || [ $((elapsed % 45)) -eq 0 ]; then
+        # Show detailed status updates on changes/intervals (debug mode) - every 2 minutes for large images
+        if [ "$current_status" != "$last_status" ] || [ $((elapsed % 120)) -eq 0 ]; then
             if [ "$DEBUG_MODE" = true ]; then
                 debug_log "⏳ ${elapsed_min}m${elapsed_sec}s - $current_status (${remaining_min}m remaining)"
                 
@@ -406,7 +459,7 @@ wait_for_large_images() {
                         progress_bar+="░"
                     fi
                 done
-                echo -ne "\r🖼️ Pulling $app_label images... [$progress_bar] $ready_count/$total_count ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+                echo -ne "\r🖼️ Pulling $app_label images... [$progress_bar] $ready_count/$total_count ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left, checked every 1min)"
                 
                 # Show brief warning for failures in normal mode
                 if [ "$failed_count" -gt "0" ]; then
@@ -426,7 +479,7 @@ wait_for_large_images() {
             return 0
         fi
         
-        sleep 15  # Check every 15 seconds for large images
+        sleep 60  # Check every minute for large image pulls to reduce API load
     done
 }
 
@@ -494,18 +547,43 @@ check_existing_cluster() {
             missing_nodegroups+=("$ng")
         else
             local ng_status=$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$ng" --region "$region" --query 'nodegroup.status' --output text 2>/dev/null)
-            if [ "$ng_status" != "ACTIVE" ]; then
+            if [ "$ng_status" != "ACTIVE" ] && [ "$ng_status" != "UPDATING" ]; then
                 echo -e "${YELLOW}⚠️  Node group $ng status: $ng_status${NC}"
                 missing_nodegroups+=("$ng")
+            elif [ "$ng_status" = "UPDATING" ]; then
+                echo -e "${CYAN}ℹ️  Node group $ng is updating (terraform apply in progress)${NC}"
+                echo -e "${YELLOW}⏳ Deployment will wait for node group updates to complete before proceeding${NC}"
+                missing_nodegroups+=("$ng")  # Treat UPDATING as requiring wait
             fi
         fi
     done
     
     if [ ${#missing_nodegroups[@]} -gt 0 ]; then
-        echo -e "${RED}❌ Missing or unhealthy node groups: ${missing_nodegroups[*]}${NC}"
-        echo "Infrastructure is incomplete - will run terraform to fix"
-        echo ""
-        return 1  # Infrastructure incomplete
+        # Check if any are UPDATING (can wait) vs truly missing/failed
+        local updating_groups=()
+        local missing_groups=()
+        
+        for ng in "${missing_nodegroups[@]}"; do
+            local ng_status=$(aws eks describe-nodegroup --cluster-name "$cluster_name" --nodegroup-name "$ng" --region "$region" --query 'nodegroup.status' --output text 2>/dev/null)
+            if [ "$ng_status" = "UPDATING" ]; then
+                updating_groups+=("$ng")
+            else
+                missing_groups+=("$ng")
+            fi
+        done
+        
+        if [ ${#updating_groups[@]} -gt 0 ] && [ ${#missing_groups[@]} -eq 0 ]; then
+            # All issues are just UPDATING groups - wait for them
+            echo -e "${YELLOW}⏳ Waiting for node group updates to complete: ${updating_groups[*]}${NC}"
+            wait_for_node_groups_active "$cluster_name" "${updating_groups[@]}"
+            return $?
+        else
+            # Some groups are truly missing/failed
+            echo -e "${RED}❌ Missing or unhealthy node groups: ${missing_nodegroups[*]}${NC}"
+            echo "Infrastructure is incomplete - will run terraform to fix"
+            echo ""
+            return 1  # Infrastructure incomplete
+        fi
     fi
     
     # Check if VPC and subnets exist (basic validation)
@@ -1274,7 +1352,38 @@ configure_kubectl() {
 
 # Install NVIDIA GPU Operator
 install_gpu_operator() {
-    echo "🎮 Installing NVIDIA GPU Operator..."
+    echo "🎮 Checking NVIDIA GPU Operator status..."
+    
+    # Check if GPU operator is already installed and working
+    if helm list -n gpu-operator | grep -q "gpu-operator.*deployed"; then
+        echo "✓ GPU operator already installed"
+        
+        # Check if drivers are ready on GPU nodes (must be Running AND Ready, not CrashLoopBackOff)
+        local gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu=true --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        local driver_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null | awk '$2=="Running" && $3=="true"' | wc -l | tr -d ' \n' || echo "0")
+        
+        if [ "$gpu_nodes" -gt "0" ] && [ "$driver_pods" -ge "$gpu_nodes" ]; then
+            # Double-check that GPU resources are actually available (not just labeled)
+            local gpu_capacity=$(kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."nvidia.com/gpu" == "true") | .status.capacity."nvidia.com/gpu" // "0"' | awk '{sum += $1} END {print sum+0}')
+            
+            if [ "$gpu_capacity" -gt "0" ]; then
+                echo "✓ GPU drivers already installed on all $gpu_nodes GPU nodes ($gpu_capacity total GPUs available)"
+                echo "GPU node status:"
+                kubectl get nodes -L nvidia.com/gpu,uneeq.io/node-type --no-headers | grep -E "true|NODE-TYPE" || echo "No GPU nodes found"
+                return 0
+            else
+                echo "⚠️  GPU driver pods ready but no GPU capacity advertised, drivers may still be initializing..."
+                wait_for_gpu_operator_ready 2400  # 40 minutes max
+                return 0
+            fi
+        else
+            echo "⚠️  GPU operator installed but drivers not ready ($driver_pods/$gpu_nodes), continuing with monitoring..."
+            wait_for_gpu_operator_ready 2400  # 40 minutes max
+            return 0
+        fi
+    fi
+    
+    echo "Installing NVIDIA GPU Operator..."
     echo -e "${BLUE}This will install GPU drivers automatically (10-25 minutes)${NC}"
     echo "GPU Operator will:"
     echo "  - Install NVIDIA driver 570+ on all GPU nodes"
@@ -1288,8 +1397,8 @@ install_gpu_operator() {
     # Create namespace
     kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
     
-    # Install GPU Operator with longer timeout for driver compilation
-    echo "Installing GPU operator..."
+    # Install GPU Operator with DNS fix for Ubuntu systemd-resolved
+    echo "Installing GPU operator with DNS configuration fix..."
     helm upgrade --install gpu-operator nvidia/gpu-operator \
         --namespace gpu-operator \
         --set operator.defaultRuntime=containerd \
@@ -1297,6 +1406,10 @@ install_gpu_operator() {
         --set toolkit.enabled=true \
         --set devicePlugin.enabled=true \
         --set dcgmExporter.enabled=true \
+        --set driver.env[0].name=ENABLE_AUTO_DRAIN \
+        --set driver.env[0].value=false \
+        --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION \
+        --set driver.env[1].value=true \
         --wait --timeout 25m
     
     echo "⏳ Waiting for GPU operator pods to be ready..."
@@ -1338,7 +1451,28 @@ setup_kubernetes_resources() {
 
 # Install Audio2Face
 install_a2f() {
-    echo "🎭 Installing Audio2Face..."
+    echo "🎭 Checking Audio2Face status..."
+    
+    # Check if A2F is already installed and running
+    if helm list -n uneeq-renderer | grep -q "a2f.*deployed"; then
+        echo "✓ Audio2Face already installed"
+        
+        # Check if pods are ready
+        local a2f_pods=$(kubectl get pods -n uneeq-renderer -l app=a2f --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        local total_a2f=$(kubectl get pods -n uneeq-renderer -l app=a2f --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        
+        if [ "$a2f_pods" -gt "0" ] && [ "$a2f_pods" -eq "$total_a2f" ]; then
+            echo "✓ Audio2Face pods already running ($a2f_pods/$total_a2f)"
+            kubectl get pods -n uneeq-renderer -l app=a2f
+            return 0
+        else
+            echo "⚠️  Audio2Face installed but pods not ready ($a2f_pods/$total_a2f), monitoring..."
+            wait_for_large_images "a2f" "uneeq-renderer" 1800
+            return 0
+        fi
+    fi
+    
+    echo "Installing Audio2Face..."
     echo -e "${BLUE}This will take approximately 10-20 minutes (35GB images)${NC}"
     
     # Get Docker credentials
@@ -1351,13 +1485,15 @@ install_a2f() {
     echo "Logging into Docker Hub..."
     echo "$DOCKER_PASSWORD" | helm registry login registry-1.docker.io -u "$DOCKER_USERNAME" --password-stdin
     
-    # Install A2F with extended timeout for large images
+    # Install A2F without --wait to avoid holding connection during large image pull
     echo "Installing Audio2Face Helm chart..."
     helm upgrade --install a2f oci://registry-1.docker.io/facemeproduction/a2f \
         --version 0.1-alpha \
         --namespace uneeq-renderer \
         -f "$PROJECT_DIR/values/a2f-values.yaml" \
-        --wait --timeout 30m
+        --timeout 30m
+    
+    echo "✓ Helm chart installed, now monitoring image pull progress..."
     
     # Wait for A2F pods to be ready with enhanced monitoring
     echo "Waiting for Audio2Face pods to be ready (this may take 10-20 minutes for 35GB images)..."
@@ -1373,7 +1509,27 @@ install_a2f() {
 
 # Install Renny
 install_renny() {
-    echo "🤖 Installing Renny..."
+    echo "🤖 Checking Renny status..."
+    
+    # Check if Renny is already installed and running
+    if helm list -n uneeq-renderer | grep -q "renny.*deployed"; then
+        echo "✓ Renny already installed"
+        
+        # Check if pods are ready
+        local renny_pods=$(kubectl get pods -n uneeq-renderer -l app=renny --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        local total_renny=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        
+        if [ "$renny_pods" -gt "0" ] && [ "$renny_pods" -eq "$total_renny" ]; then
+            echo "✓ Renny pods already running ($renny_pods/$total_renny)"
+            kubectl get pods -n uneeq-renderer -l app=renny
+            return 0
+        else
+            echo "⚠️  Renny installed but pods not ready ($renny_pods/$total_renny), monitoring..."
+            # Continue with monitoring using existing logic
+        fi
+    fi
+    
+    echo "Installing Renny..."
     echo -e "${BLUE}This will take approximately 10-15 minutes (large container images)${NC}"
     
     # Get DHOP credentials from terraform vars
@@ -1390,12 +1546,14 @@ install_renny() {
     sed -i.bak "s/apiKey: \"\"/apiKey: \"$DHOP_API_KEY\"/" "$PROJECT_DIR/values/renny-values-deployed.yaml"
     rm -f "$PROJECT_DIR/values/renny-values-deployed.yaml.bak"
     
-    # Install Renny with extended timeout
+    # Install Renny without --wait to avoid holding connection during large image pull
     echo "Installing Renny Helm chart with $RENNY_DESIRED_SIZE replicas..."
     helm upgrade --install renny "$PROJECT_DIR/renny-chart.tgz" \
         --namespace uneeq-renderer \
         -f "$PROJECT_DIR/values/renny-values-deployed.yaml" \
-        --wait --timeout 25m
+        --timeout 25m
+    
+    echo "✓ Helm chart installed, now monitoring image pull progress..."
     
     # Wait for Renny pods to be ready
     echo "Waiting for Renny pods to be ready..."

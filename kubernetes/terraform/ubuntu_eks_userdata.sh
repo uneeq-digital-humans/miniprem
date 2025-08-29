@@ -24,6 +24,30 @@ echo "Endpoint: $CLUSTER_ENDPOINT"
 echo "DNS IP: $CLUSTER_DNS_IP"
 echo "Node Labels: $NODE_LABELS"
 
+# Fix DNS for chroot environments (needed for NVIDIA GPU driver installation)
+echo "=== Configuring DNS for chroot environments ==="
+# Create a fallback resolv.conf that works in chroot without systemd-resolved
+mkdir -p /etc/systemd/resolved.conf.d
+cat > /etc/systemd/resolved.conf.d/fallback.conf << 'EOF'
+[Resolve]
+# Use public DNS as fallback when systemd-resolved is not available (e.g., in chroot)
+DNS=8.8.8.8 1.1.1.1
+FallbackDNS=8.8.8.8 1.1.1.1
+Domains=~.
+EOF
+
+# Create a resolv.conf that works in chroot environments
+cat > /etc/resolv-chroot.conf << 'EOF'
+# DNS configuration for chroot environments (e.g., NVIDIA driver installation)
+nameserver 8.8.8.8
+nameserver 1.1.1.1
+search us-east-2.compute.internal
+EOF
+
+# Restart systemd-resolved to pick up new config
+systemctl restart systemd-resolved
+echo "✅ DNS configuration completed for chroot environments"
+
 # Use official EKS bootstrap script (included in Ubuntu EKS AMIs)
 echo "=== Starting EKS bootstrap script ==="
 /etc/eks/bootstrap.sh \
