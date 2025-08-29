@@ -1627,9 +1627,22 @@ install_renny() {
     cp "$PROJECT_DIR/values/renny-values.yaml" "$PROJECT_DIR/values/renny-values-deployed.yaml"
     
     # Use sed to update the values (works on both Mac and Linux)
-    sed -i.bak "s/tenantId: \"\"/tenantId: \"$DHOP_TENANT_ID\"/" "$PROJECT_DIR/values/renny-values-deployed.yaml"
-    sed -i.bak "s/apiKey: \"\"/apiKey: \"$DHOP_API_KEY\"/" "$PROJECT_DIR/values/renny-values-deployed.yaml"
+    # Using | as delimiter to handle special characters in API key
+    sed -i.bak "s|tenantId: \"\"|tenantId: \"$DHOP_TENANT_ID\"|" "$PROJECT_DIR/values/renny-values-deployed.yaml"
+    sed -i.bak "s|apiKey: \"\"|apiKey: \"$DHOP_API_KEY\"|" "$PROJECT_DIR/values/renny-values-deployed.yaml"
     rm -f "$PROJECT_DIR/values/renny-values-deployed.yaml.bak"
+    
+    # Validate the chart doesn't contain macOS metadata files
+    if tar -tzf "$PROJECT_DIR/renny-chart.tgz" | grep -E "\._|\.DS_Store" >/dev/null; then
+        echo "⚠️  Chart contains macOS metadata files, cleaning..."
+        temp_dir=$(mktemp -d)
+        tar -xzf "$PROJECT_DIR/renny-chart.tgz" -C "$temp_dir"
+        find "$temp_dir" -name ".DS_Store" -delete
+        find "$temp_dir" -name "._*" -delete
+        tar -czf "$PROJECT_DIR/renny-chart.tgz" -C "$temp_dir" renny
+        rm -rf "$temp_dir"
+        echo "✓ Chart cleaned"
+    fi
     
     # Install Renny without --wait to avoid holding connection during large image pull
     echo "Installing Renny Helm chart with $RENNY_DESIRED_SIZE replicas..."

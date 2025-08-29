@@ -1,3 +1,6 @@
+# Default image - will be overridden by values file
+image: "facemeproduction/renny:latest"
+
 deployment:
   # value for uneeq.io/node-type label used as a nodeSelector
   nodeType: renderer
