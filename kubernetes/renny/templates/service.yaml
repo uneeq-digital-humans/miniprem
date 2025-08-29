@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "renny.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "renny.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.ports.health }}
+      targetPort: {{ .Values.service.ports.health }}
+      protocol: TCP
+      name: health
+    - port: {{ .Values.service.ports.webrtc }}
+      targetPort: {{ .Values.service.ports.webrtc }}
+      protocol: TCP
+      name: webrtc
+    - port: {{ .Values.service.ports.pixelstream }}
+      targetPort: {{ .Values.service.ports.pixelstream }}
+      protocol: TCP
+      name: pixelstream
+  selector:
+    app: renderer
