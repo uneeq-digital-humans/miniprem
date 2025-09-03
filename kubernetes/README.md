@@ -290,6 +290,8 @@ flowchart TB
                     NAT3[🔄 NAT Gateway AZ-3]
                 end
                 
+                IGW --> PublicSubnets
+                
                 subgraph PrivateSubnets["🔒 Private Subnets"]
                     subgraph EKS["⚓ EKS Cluster (renny-production)"]
                         CP[🎛️ Control Plane<br/>Managed by AWS]
@@ -315,6 +317,8 @@ flowchart TB
                         end
                     end
                 end
+                
+                PublicSubnets --> PrivateSubnets
             end
         end
     end
@@ -322,9 +326,6 @@ flowchart TB
     %% Connections
     User -.->|WebRTC via TURN| TURN
     TURN -.->|WebRTC Relay| IGW
-    IGW --> NAT1
-    IGW --> NAT2  
-    IGW --> NAT3
     NAT1 --> RN1
     NAT2 --> RN2
     NAT3 --> RN3
