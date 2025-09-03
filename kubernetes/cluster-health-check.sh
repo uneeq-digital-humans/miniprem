@@ -69,7 +69,37 @@ awk '{
 }'
 echo
 
-# 6. Quick Health Summary
+# 6. GPU Hardware Verification
+echo "🔧 GPU HARDWARE VERIFICATION:"
+echo "Expected: All GPU nodes should have nvidia.com/gpu=1"
+kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny" or . == "a2f") | "\(.metadata.name): \(.status.allocatable."nvidia.com/gpu" // "0") GPU(s)"' | while read line; do
+    echo "  $line"
+done
+
+# Test GPU functionality via existing application pods
+echo
+echo "🎮 GPU FUNCTIONALITY TEST:"
+renderer_pod=$(kubectl get pods -n uneeq-renderer -l app=renderer --no-headers -o custom-columns=":metadata.name" | head -1)
+a2f_pod=$(kubectl get pods -n uneeq-renderer -l app=a2f --no-headers -o custom-columns=":metadata.name" | head -1)
+
+if [ -n "$renderer_pod" ]; then
+    echo "Testing GPU on Renny node via $renderer_pod:"
+    gpu_info=$(kubectl exec $renderer_pod -n uneeq-renderer -- nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader,nounits 2>/dev/null || echo "GPU test failed")
+    echo "  $gpu_info"
+else
+    echo "  No Renny pods available for GPU testing"
+fi
+
+if [ -n "$a2f_pod" ]; then
+    echo "Testing GPU on A2F node via $a2f_pod:"
+    gpu_info=$(kubectl exec $a2f_pod -n uneeq-renderer -- nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader,nounits 2>/dev/null || echo "GPU test failed")
+    echo "  $gpu_info"
+else
+    echo "  No A2F pods available for GPU testing"
+fi
+echo
+
+# 7. Quick Health Summary
 echo "✅ HEALTH SUMMARY:"
 total_nodes=$(kubectl get nodes --no-headers | wc -l)
 ready_nodes=$(kubectl get nodes --no-headers | grep -c Ready)
