@@ -1,5 +1,26 @@
 # Renny EKS Deployment Solution
 
+## Table of Contents
+
+1. [Architecture Diagrams](#architecture-diagrams)
+2. [Folder Structure](#-folder-structure)
+3. [Quick Start](#-quick-start)
+   - [Prerequisites](#prerequisites)
+   - [Setup AWS Credentials](#step-0-setup-aws-credentials)
+   - [Configure Credentials](#step-1-configure-credentials)
+   - [Place Helm Chart](#step-2-place-helm-chart)
+   - [Deploy](#step-3-deploy)
+4. [Architecture](#-architecture)
+5. [Text-to-Speech Configuration](#-text-to-speech-configuration)
+6. [Operations](#-operations)
+7. [Troubleshooting & Debugging](#-troubleshooting--debugging)
+8. [Kubernetes Debugging & Monitoring](#-kubernetes-debugging--monitoring)
+9. [CloudWatch Logs](#-cloudwatch-logs---application-error-monitoring)
+10. [Security Considerations](#-security-considerations)
+11. [Cost Optimization](#-cost-optimization)
+12. [Support](#-support)
+13. [Updates and Maintenance](#-updates-and-maintenance)
+
 This folder contains a complete one-click deployment solution for Renny on AWS EKS with GPU support.
 
 ## 📁 Folder Structure
@@ -244,7 +265,188 @@ This will:
 
 **Key Improvement**: Ubuntu nodes join the cluster quickly (~3 minutes) without waiting for NVIDIA driver compilation, then GPU Operator installs drivers automatically in the background.
 
-## 📊 Architecture
+## 📊 Architecture Diagrams
+
+### Infrastructure Overview
+
+This diagram shows the complete AWS EKS infrastructure including networking, nodes, and external connectivity:
+
+```mermaid
+flowchart TB
+    %% External entities
+    User[👤 User]
+    TURN[🔄 UneeQ TURN Servers<br/>NAT Traversal]
+    DHOP[☁️ DHOP Services<br/>api.enterprise.uneeq.io]
+    
+    %% AWS Infrastructure
+    subgraph AWS["🏢 AWS Cloud"]
+        subgraph Region["🌍 AWS Region (us-east-2)"]
+            subgraph VPC["🌐 VPC (10.0.0.0/16)"]
+                IGW[🌐 Internet Gateway]
+                
+                subgraph PublicSubnets["🌍 Public Subnets"]
+                    NAT1[🔄 NAT Gateway AZ-1]
+                    NAT2[🔄 NAT Gateway AZ-2]
+                    NAT3[🔄 NAT Gateway AZ-3]
+                end
+                
+                subgraph PrivateSubnets["🔒 Private Subnets"]
+                    subgraph EKS["⚓ EKS Cluster (renny-production)"]
+                        CP[🎛️ Control Plane<br/>Managed by AWS]
+                        
+                        subgraph ControlNodes["🖥️ Control Node Group"]
+                            CN1[t3.large<br/>Control-1]
+                            CN2[t3.large<br/>Control-2]
+                        end
+                        
+                        subgraph RennyNodes["🎮 Renny GPU Node Group"]
+                            RN1[g5.4xlarge<br/>NVIDIA A10G<br/>Renny-1]
+                            RN2[g5.4xlarge<br/>NVIDIA A10G<br/>Renny-2]
+                            RN3[g5.4xlarge<br/>NVIDIA A10G<br/>Renny-N]
+                        end
+                        
+                        subgraph A2FNodes["🎭 A2F GPU Node Group"]
+                            AN1[g5.4xlarge<br/>NVIDIA A10G<br/>A2F-1]
+                            AN2[g5.4xlarge<br/>NVIDIA A10G<br/>A2F-2]
+                        end
+                        
+                        subgraph GPUOperator["⚡ GPU Operator"]
+                            GO[nvidia-gpu-operator<br/>Driver Management]
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    %% Connections
+    User -.->|WebRTC via TURN| TURN
+    TURN -.->|WebRTC Relay| IGW
+    IGW --> NAT1
+    IGW --> NAT2  
+    IGW --> NAT3
+    NAT1 --> RN1
+    NAT2 --> RN2
+    NAT3 --> RN3
+    NAT1 --> AN1
+    NAT2 --> AN2
+    
+    %% External connections
+    RN1 -.->|DHOP API| DHOP
+    RN2 -.->|DHOP API| DHOP
+    RN3 -.->|DHOP API| DHOP
+    
+    %% Internal cluster connections
+    CP -.-> CN1
+    CP -.-> CN2
+    CP -.-> RN1
+    CP -.-> RN2
+    CP -.-> RN3
+    CP -.-> AN1
+    CP -.-> AN2
+    GO -.-> RN1
+    GO -.-> RN2
+    GO -.-> RN3
+    GO -.-> AN1
+    GO -.-> AN2
+    
+    %% Styling
+    classDef aws fill:#FF9900,stroke:#333,color:#000
+    classDef k8s fill:#326CE5,stroke:#333,color:#fff
+    classDef gpu fill:#76B900,stroke:#333,color:#fff
+    classDef external fill:#E1E8ED,stroke:#333,color:#000
+    
+    class AWS,Region,VPC aws
+    class EKS,CP,ControlNodes,RennyNodes,A2FNodes,GPUOperator k8s
+    class RN1,RN2,RN3,AN1,AN2 gpu
+    class User,TURN,DHOP external
+```
+
+### Active Session Architecture
+
+This diagram shows the data flow during an active digital human session:
+
+```mermaid
+sequenceDiagram
+    participant User as 👤 User Browser
+    participant TURN as 🔄 UneeQ TURN
+    participant Renny as 🤖 Renny Pod
+    participant A2F as 🎭 A2F Pod
+    participant DHOP as ☁️ DHOP API
+    
+    Note over User,DHOP: Session Initialization
+    User->>DHOP: Request session
+    DHOP->>Renny: Allocate renderer
+    Renny->>DHOP: Register & authenticate
+    DHOP-->>User: Session created
+    
+    Note over User,A2F: WebRTC Connection Setup
+    User->>TURN: ICE candidates (NAT traversal)
+    TURN->>Renny: Relay ICE candidates
+    Renny->>TURN: ICE response
+    TURN->>User: WebRTC connection established
+    
+    Note over User,A2F: Active Session Flow
+    User->>TURN: "Hello, can you help me?"
+    TURN->>Renny: Audio data via WebRTC
+    Renny->>A2F: Generate facial animation
+    A2F-->>Renny: Animation data
+    Renny->>Renny: Render with Unreal Engine
+    Renny->>TURN: Video + Audio stream
+    TURN->>User: Digital human response
+    
+    Note over User,DHOP: Session Management
+    loop Every 30 seconds
+        Renny->>DHOP: Heartbeat & metrics
+        DHOP-->>Renny: Session status
+    end
+    
+    User->>TURN: End session
+    TURN->>Renny: Disconnect signal
+    Renny->>DHOP: Session ended
+    DHOP->>Renny: Deallocate renderer
+```
+
+### GPU Time-Slicing Configuration
+
+This diagram shows how GPU time-slicing allows multiple Renny pods per GPU:
+
+```mermaid
+flowchart LR
+    subgraph Node["g5.4xlarge Node"]
+        subgraph PhysicalGPU["🖥️ Physical NVIDIA A10G (24GB)"]
+            direction TB
+            GPU[Physical GPU]
+        end
+        
+        subgraph TimeSlicing["⚡ GPU Time-Slicing"]
+            vGPU1[Virtual GPU 1]
+            vGPU2[Virtual GPU 2]
+        end
+        
+        subgraph Pods["🤖 Renny Pods"]
+            Pod1[Renny Pod 1<br/>requests: 1 GPU<br/>~30% utilization]
+            Pod2[Renny Pod 2<br/>requests: 1 GPU<br/>~30% utilization]
+        end
+    end
+    
+    GPU --> vGPU1
+    GPU --> vGPU2
+    vGPU1 --> Pod1
+    vGPU2 --> Pod2
+    
+    Note["📊 Total GPU Utilization: ~60%<br/>🎯 Optimal resource sharing<br/>💰 50% cost reduction per workload"]
+    
+    classDef gpu fill:#76B900,stroke:#333,color:#fff
+    classDef pod fill:#326CE5,stroke:#333,color:#fff
+    classDef note fill:#FFF2CC,stroke:#D6B656,color:#000
+    
+    class GPU,vGPU1,vGPU2 gpu
+    class Pod1,Pod2 pod
+    class Note note
+```
+
+## 📊 Technical Architecture
 
 ### Cluster Configuration
 
