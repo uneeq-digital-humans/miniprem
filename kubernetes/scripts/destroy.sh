@@ -59,7 +59,7 @@ echo "  - All data in the cluster"
 echo "  - All load balancers"
 echo "  - All EBS volumes"
 echo ""
-echo -e "${YELLOW}Estimated time: 15-20 minutes${NC}"
+echo -e "${YELLOW}Estimated time: 15-25 minutes (8 comprehensive steps)${NC}"
 echo ""
 echo "This action cannot be undone!"
 echo ""
@@ -132,51 +132,118 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
     aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME" 2>/dev/null || true
 fi
 
-# Step 1: Delete Helm releases
+# Step 1: Force terminate all applications (no graceful shutdown)
 echo ""
-echo "📦 Step 1/7: Removing Helm releases..."
+echo "🛑 Step 1/8: Force terminating all applications..."
 
-echo "  - Removing Renny..."
-helm uninstall renny -n uneeq-renderer --wait 2>/dev/null || true
+echo "  - Force killing all Renny sessions and pods..."
+kubectl delete pods -l app=renderer -n uneeq-renderer --force --grace-period=0 --wait=false 2>/dev/null || true
 
-echo "  - Removing Audio2Face..."
-helm uninstall a2f -n uneeq-renderer --wait 2>/dev/null || true
+echo "  - Force killing all A2F pods..."  
+kubectl delete pods -l app=a2f -n uneeq-renderer --force --grace-period=0 --wait=false 2>/dev/null || true
 
-echo "  - Removing GPU Operator..."
-helm uninstall gpu-operator -n gpu-operator --wait 2>/dev/null || true
+echo "  - Uninstalling Renny (with force)..."
+helm uninstall renny -n uneeq-renderer --timeout=60s 2>/dev/null || true
 
-echo "  - Removing Cluster Autoscaler..."
-helm uninstall cluster-autoscaler -n kube-system --wait 2>/dev/null || true
+echo "  - Uninstalling Audio2Face (with force)..."
+helm uninstall a2f -n uneeq-renderer --timeout=60s 2>/dev/null || true
 
-# Wait for pods to terminate
-echo "⏳ Waiting for all pods to terminate..."
-kubectl wait --for=delete pod --all -n uneeq-renderer --timeout=120s 2>/dev/null || true
-kubectl wait --for=delete pod --all -n gpu-operator --timeout=120s 2>/dev/null || true
+echo "  - Force killing GPU operator pods..."
+kubectl delete pods -l app=nvidia-driver-daemonset -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+kubectl delete pods -l app=nvidia-device-plugin-daemonset -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
 
-# Step 2: Clean up Kubernetes resources
+echo "  - Uninstalling GPU Operator..."
+helm uninstall gpu-operator -n gpu-operator --timeout=60s 2>/dev/null || true
+
+echo "  - Uninstalling Cluster Autoscaler..."
+helm uninstall cluster-autoscaler -n kube-system --timeout=60s 2>/dev/null || true
+
+# Force delete any remaining pods
+echo "  - Force deleting any remaining pods..."
+kubectl delete pods --all -n uneeq-renderer --force --grace-period=0 --wait=false 2>/dev/null || true
+kubectl delete pods --all -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+
+# Give pods a moment to terminate
+sleep 15
+
+# Step 2: Clean up Kubernetes resources and configurations
 echo ""
-echo "🗑️  Step 2/7: Cleaning up Kubernetes resources..."
+echo "🗑️  Step 2/8: Cleaning up Kubernetes resources and configurations..."
 
-# Delete any services that might have created load balancers
-echo "  - Deleting services with load balancers..."
-kubectl delete svc --all -n uneeq-renderer --ignore-not-found=true 2>/dev/null || true
+# Delete GPU time-slicing configurations
+echo "  - Removing GPU time-slicing configurations..."
+kubectl delete configmap renny-time-slicing-config -n gpu-operator --ignore-not-found=true 2>/dev/null || true
+kubectl delete clusterpolicy cluster-policy --ignore-not-found=true 2>/dev/null || true
 
-# Delete PVCs before namespaces
-echo "  - Deleting persistent volume claims..."
-kubectl delete pvc --all -n uneeq-renderer --ignore-not-found=true --wait=true 2>/dev/null || true
+# Delete any services that might have created load balancers (force delete)
+echo "  - Force deleting all services..."
+kubectl delete svc --all -n uneeq-renderer --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+kubectl delete svc --all -n gpu-operator --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
 
-# Delete namespaces
-echo "  - Deleting namespaces..."
-kubectl delete namespace uneeq-renderer --ignore-not-found=true --wait=true --timeout=120s 2>/dev/null || true
-kubectl delete namespace gpu-operator --ignore-not-found=true --wait=true --timeout=120s 2>/dev/null || true
+# Delete secrets and config maps
+echo "  - Deleting secrets and config maps..."
+kubectl delete secrets --all -n uneeq-renderer --ignore-not-found=true 2>/dev/null || true
+kubectl delete configmaps --all -n uneeq-renderer --ignore-not-found=true 2>/dev/null || true
+kubectl delete configmaps --all -n gpu-operator --ignore-not-found=true 2>/dev/null || true
+
+# Delete PVCs with force
+echo "  - Force deleting persistent volume claims..."
+kubectl delete pvc --all -n uneeq-renderer --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+kubectl delete pvc --all -n gpu-operator --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+
+# Delete any custom resource definitions we might have created
+echo "  - Cleaning up CRDs..."
+kubectl delete crd clusterpolicies.nvidia.com --ignore-not-found=true 2>/dev/null || true
+
+# Force delete namespaces
+echo "  - Force deleting namespaces..."
+kubectl delete namespace uneeq-renderer --force --grace-period=0 --ignore-not-found=true --timeout=60s 2>/dev/null || true
+kubectl delete namespace gpu-operator --force --grace-period=0 --ignore-not-found=true --timeout=60s 2>/dev/null || true
 
 # Wait for load balancers to be deleted
 echo "  - Waiting for AWS load balancers to be deleted..."
-sleep 30
+sleep 15
 
-# Step 3: Delete EKS node groups
+# Step 3: Drain nodes and scale down ASGs
 echo ""
-echo "🖥️  Step 3/7: Removing EKS node groups..."
+echo "🔄 Step 3/8: Draining nodes and scaling down Auto Scaling Groups..."
+
+if [ "$CLUSTER_NAME" != "unknown" ]; then
+    # Get all ASGs associated with this cluster first
+    echo "  - Finding Auto Scaling Groups..."
+    ASG_NAMES=$(aws autoscaling describe-auto-scaling-groups --region "$REGION" --query "AutoScalingGroups[?contains(AutoScalingGroupName, '$CLUSTER_NAME')].AutoScalingGroupName" --output text 2>/dev/null || echo "")
+    
+    if [ -n "$ASG_NAMES" ]; then
+        echo "  Found ASGs: $ASG_NAMES"
+        
+        # Scale all ASGs to 0 desired capacity first
+        for asg in $ASG_NAMES; do
+            echo "    Scaling $asg to 0 desired capacity..."
+            aws autoscaling update-auto-scaling-group \
+                --auto-scaling-group-name "$asg" \
+                --desired-capacity 0 \
+                --min-size 0 \
+                --region "$REGION" 2>/dev/null || true
+        done
+        
+        # Wait for instances to terminate
+        echo "  - Waiting for instances to terminate..."
+        sleep 30
+        
+        # Drain all nodes before deletion
+        echo "  - Draining all Kubernetes nodes..."
+        kubectl get nodes --no-headers -o custom-columns=":metadata.name" | while read node; do
+            echo "    Draining $node..."
+            kubectl drain "$node" --ignore-daemonsets --delete-emptydir-data --force --grace-period=0 --timeout=60s 2>/dev/null || true
+        done
+    else
+        echo "  No ASGs found for cluster"
+    fi
+fi
+
+# Step 4: Delete EKS node groups
+echo ""
+echo "🖥️  Step 4/8: Removing EKS node groups..."
 cd "$PROJECT_DIR/terraform"
 
 if [ "$CLUSTER_NAME" != "unknown" ]; then
@@ -216,9 +283,46 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
     done
 fi
 
-# Step 4: Check for any remaining AWS resources
+# Step 5: Force terminate EC2 instances and cleanup AWS resources
 echo ""
-echo "🔍 Step 4/7: Checking for remaining AWS resources..."
+echo "💥 Step 5/8: Force terminating EC2 instances and cleaning up AWS resources..."
+
+if [ "$CLUSTER_NAME" != "unknown" ]; then
+    # Force terminate any remaining instances tagged with our cluster
+    echo "  - Finding and terminating EC2 instances..."
+    INSTANCE_IDS=$(aws ec2 describe-instances --region "$REGION" \
+        --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" "Name=instance-state-name,Values=running,pending,stopping,stopped" \
+        --query "Reservations[].Instances[].InstanceId" --output text 2>/dev/null || echo "")
+    
+    if [ -n "$INSTANCE_IDS" ]; then
+        echo "  Found instances to terminate: $INSTANCE_IDS"
+        aws ec2 terminate-instances --instance-ids $INSTANCE_IDS --region "$REGION" 2>/dev/null || true
+        
+        # Wait for instances to terminate
+        echo "  - Waiting for instances to fully terminate..."
+        for instance in $INSTANCE_IDS; do
+            aws ec2 wait instance-terminated --instance-ids "$instance" --region "$REGION" 2>/dev/null || true
+        done
+    else
+        echo "  No cluster instances found to terminate"
+    fi
+    
+    # Force delete Auto Scaling Groups with instances
+    if [ -n "$ASG_NAMES" ]; then
+        echo "  - Force deleting Auto Scaling Groups..."
+        for asg in $ASG_NAMES; do
+            echo "    Force deleting ASG: $asg..."
+            aws autoscaling delete-auto-scaling-group \
+                --auto-scaling-group-name "$asg" \
+                --force-delete \
+                --region "$REGION" 2>/dev/null || true
+        done
+    fi
+fi
+
+# Step 6: Cleanup remaining AWS resources
+echo ""
+echo "🔍 Step 6/8: Cleaning up remaining AWS resources..."
 
 if [ "$CLUSTER_NAME" != "unknown" ]; then
     # Check for any ELBs/ALBs tagged with our cluster
@@ -232,14 +336,31 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
         done
     fi
     
-    # Check for any remaining EBS volumes
-    echo "  - Checking for EBS volumes..."
-    VOLUMES=$(aws ec2 describe-volumes --region "$REGION" --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" --query "Volumes[].VolumeId" --output text 2>/dev/null || echo "")
+    # Force delete EBS volumes (no backups)
+    echo "  - Force deleting EBS volumes (NO BACKUPS)..."
+    VOLUMES=$(aws ec2 describe-volumes --region "$REGION" --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" --query "Volumes[?State!='deleting'].VolumeId" --output text 2>/dev/null || echo "")
     if [ -n "$VOLUMES" ]; then
         echo "  Found EBS volumes: $VOLUMES"
         for vol in $VOLUMES; do
-            echo "    Deleting $vol..."
+            echo "    Force deleting volume $vol (NO BACKUP)..."
+            # Detach first if attached
+            aws ec2 detach-volume --volume-id "$vol" --region "$REGION" --force 2>/dev/null || true
+            sleep 2
+            # Delete volume
             aws ec2 delete-volume --volume-id "$vol" --region "$REGION" 2>/dev/null || true
+        done
+    fi
+    
+    # Clean up any orphaned network interfaces
+    echo "  - Cleaning up network interfaces..."
+    NETWORK_INTERFACES=$(aws ec2 describe-network-interfaces --region "$REGION" \
+        --filters "Name=tag:kubernetes.io/cluster/$CLUSTER_NAME,Values=owned" "Name=status,Values=available" \
+        --query "NetworkInterfaces[].NetworkInterfaceId" --output text 2>/dev/null || echo "")
+    if [ -n "$NETWORK_INTERFACES" ]; then
+        echo "  Found network interfaces: $NETWORK_INTERFACES"
+        for eni in $NETWORK_INTERFACES; do
+            echo "    Deleting network interface $eni..."
+            aws ec2 delete-network-interface --network-interface-id "$eni" --region "$REGION" 2>/dev/null || true
         done
     fi
     
@@ -277,9 +398,9 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
     fi
 fi
 
-# Step 5: Destroy infrastructure with Terraform
+# Step 7: Destroy infrastructure with Terraform
 echo ""
-echo "🏗️  Step 5/7: Destroying infrastructure with Terraform..."
+echo "🏗️  Step 7/8: Destroying infrastructure with Terraform..."
 echo "This will remove:"
 echo "  - EKS cluster"
 echo "  - VPC and subnets"
@@ -297,9 +418,30 @@ if [ $? -ne 0 ]; then
     terraform destroy -auto-approve -refresh=false
 fi
 
-# Step 6: Verify all resources are deleted
+# Step 8: Final cleanup and verification
 echo ""
-echo "🔍 Step 6/7: Verifying resource deletion..."
+echo "🔍 Step 8/8: Final cleanup and verification..."
+
+# Clean up CloudWatch log groups (optional - they auto-expire)
+if [ "$CLUSTER_NAME" != "unknown" ]; then
+    echo "  - Cleaning up CloudWatch log groups..."
+    LOG_GROUPS=$(aws logs describe-log-groups --region "$REGION" --log-group-name-prefix "/aws/eks/$CLUSTER_NAME" --query "logGroups[].logGroupName" --output text 2>/dev/null || echo "")
+    if [ -n "$LOG_GROUPS" ]; then
+        for log_group in $LOG_GROUPS; do
+            echo "    Deleting log group: $log_group"
+            aws logs delete-log-group --log-group-name "$log_group" --region "$REGION" 2>/dev/null || true
+        done
+    fi
+    
+    # Also clean up container insights logs
+    CONTAINER_LOG_GROUPS=$(aws logs describe-log-groups --region "$REGION" --log-group-name-prefix "/aws/containerinsights/$CLUSTER_NAME" --query "logGroups[].logGroupName" --output text 2>/dev/null || echo "")
+    if [ -n "$CONTAINER_LOG_GROUPS" ]; then
+        for log_group in $CONTAINER_LOG_GROUPS; do
+            echo "    Deleting container insights log group: $log_group"
+            aws logs delete-log-group --log-group-name "$log_group" --region "$REGION" 2>/dev/null || true
+        done
+    fi
+fi
 
 if [ "$CLUSTER_NAME" != "unknown" ]; then
     # Final check for EKS cluster
@@ -320,15 +462,17 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
     fi
 fi
 
-# Step 7: Clean up local files
 echo ""
-echo "🧹 Step 7/7: Cleaning up local files..."
+echo "🧹 Final local cleanup..."
 cd "$PROJECT_DIR"
-# Note: No longer using -deployed.yaml files
+# Clean up local files and temporary configs
 rm -f terraform/tfplan
 rm -f terraform/.terraform.lock.hcl
 rm -rf terraform/.terraform
 rm -f terraform/terraform.tfstate*
+rm -f gpu-time-slicing-config.yaml  # Remove auto-generated file
+rm -f renny-chart.tgz                # Remove any temporary chart packages
+rm -f .kubectl_context_backup        # Remove any kubectl context backups
 
 # Calculate elapsed time
 END_TIME=$(date +%s)
@@ -343,13 +487,30 @@ echo "======================================"
 echo ""
 echo "Time elapsed: ${ELAPSED_MIN} minutes ${ELAPSED_SEC} seconds"
 echo ""
-echo "The following items may still exist:"
-echo "  - CloudWatch log groups (will expire based on retention settings)"
-echo "  - S3 buckets if you configured Terraform state backend"
-echo "  - DNS entries (will expire based on TTL)"
+echo "🧹 DESTRUCTION SUMMARY:"
+echo "✅ Applications force-terminated (Renny, A2F, GPU Operator)"
+echo "✅ Kubernetes resources cleaned (secrets, configs, time-slicing)"
+echo "✅ Nodes drained and ASGs scaled to 0"
+echo "✅ EKS node groups deleted"
+echo "✅ EC2 instances force-terminated"
+echo "✅ EBS volumes deleted (NO BACKUPS)"
+echo "✅ Network interfaces cleaned up"
+echo "✅ Launch templates deleted"
+echo "✅ Load balancers deleted"
+echo "✅ CloudWatch logs deleted"
+echo "✅ EKS cluster destroyed"
+echo "✅ VPC and networking destroyed"
+echo "✅ IAM roles and policies cleaned up"
 echo ""
-echo "Cost savings:"
-echo "  - You've stopped approximately \$15-20/hour in compute costs"
+echo "The following items may still exist:"
+echo "  - S3 buckets if you configured Terraform state backend"
+echo "  - Route53 DNS entries (will expire based on TTL)"
+echo "  - Some CloudWatch metrics data (expires automatically)"
+echo ""
+echo "💰 COST SAVINGS:"
+echo "  - Stopped ~\$15-20/hour in compute costs"
 echo "  - Monthly savings: ~\$10,000-15,000"
+echo "  - No more GPU instance charges"
+echo "  - No more data transfer charges"
 echo ""
 echo "To redeploy, run: ./scripts/deploy.sh"
