@@ -887,6 +887,116 @@ kubectl top nodes
 kubectl top pods -n uneeq-renderer
 ```
 
+### ☁️ CloudWatch Logs - Application Error Monitoring
+
+All Renny and A2F application logs are automatically sent to **AWS CloudWatch Logs** for centralized monitoring and troubleshooting.
+
+#### 📍 Log Group Locations
+```bash
+# EKS cluster logs (general Kubernetes events)
+/aws/eks/[cluster-name]/cluster
+
+# Container application logs (Renny, A2F pods)
+/aws/containerinsights/[cluster-name]/application
+```
+
+#### 🔍 CloudWatch Insights Query Examples
+
+**Find Recent Errors from Any Renny Pod:**
+```sql
+fields @timestamp, service, renderer_id, client_session_id, message
+| filter service = "renderer"
+| filter log_level = "error"
+| sort @timestamp desc
+| limit 50
+```
+
+**Search for Specific Error Messages:**
+```sql
+fields @timestamp, renderer_id, message, category
+| filter service = "renderer"
+| filter message like /DNS resolution failed|Failed to send audio|A2F/
+| sort @timestamp desc
+| limit 20
+```
+
+**Monitor Speak Request Failures:**
+```sql
+fields @timestamp, client_session_id, message, category
+| filter service = "renderer"
+| filter category = "LogWebRTCMessageHandler"
+| filter log_level = "error"
+| sort @timestamp desc
+```
+
+**Find Connection Issues with A2F Service:**
+```sql
+fields @timestamp, message, client_session_id
+| filter service = "renderer"
+| filter message like /A2F.*failed|audio.*failed|DNS.*failed/
+| sort @timestamp desc
+| limit 25
+```
+
+**Monitor All WARNING and ERROR Logs:**
+```sql
+fields @timestamp, service, log_level, message, renderer_id
+| filter log_level in ["error", "warn"]
+| sort @timestamp desc
+| limit 100
+```
+
+**Track Specific Client Session Issues:**
+```sql
+fields @timestamp, message, category, log_level
+| filter client_session_id = "your-session-id-here"
+| filter log_level in ["error", "warn"]
+| sort @timestamp desc
+```
+
+#### 🎯 Using CloudWatch Console
+
+1. **Navigate to CloudWatch** → **Logs** → **Insights**
+2. **Select Log Groups**: Choose your EKS cluster application log group
+3. **Paste Query**: Copy one of the queries above
+4. **Set Time Range**: Choose "Last 1 hour" or "Last 4 hours" for recent issues
+5. **Run Query**: Click "Run query" to see results
+
+#### 📊 Key Log Categories to Monitor
+
+- **`LogWebRTCMessageHandler`**: WebRTC data channel errors (speak requests)
+- **`LogUneeqA2FStreamer`**: A2F connectivity and audio streaming issues  
+- **`LogPixelStreaming`**: Video streaming and connection problems
+- **`LogUneeqTTSClient`**: Text-to-Speech service issues
+- **`LogBlueprintUserMessages`**: Unreal Engine application logic errors
+
+#### 🚨 Common Error Patterns to Watch For
+
+```sql
+# DNS resolution failures (A2F connectivity)
+filter message like /DNS resolution failed/
+
+# Audio streaming problems  
+filter message like /Failed to send audio/
+
+# WebRTC connection issues
+filter message like /OnIceConnectionChange.*Failed/
+
+# TTS service problems
+filter message like /TTS.*failed|azure.*failed/
+
+# Session initialization errors
+filter message like /Failed to.*session|session.*failed/
+```
+
+#### 💡 Pro Tips
+
+- **Filter by Time**: Always set appropriate time ranges to avoid scanning massive logs
+- **Use `renderer_id`**: Track issues across specific Renny instances
+- **Combine Filters**: Use `and` to narrow down results (e.g., `log_level = "error" and message like /A2F/`)
+- **Export Results**: Use "Export results" to save troubleshooting data
+- **Set Up Alarms**: Create CloudWatch alarms for critical error patterns
+
 ## 📞 Support
 
 For issues specific to:

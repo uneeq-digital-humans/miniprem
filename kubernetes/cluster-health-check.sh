@@ -71,10 +71,38 @@ echo
 
 # 6. GPU Hardware Verification
 echo "🔧 GPU HARDWARE VERIFICATION:"
-echo "Expected: All GPU nodes should have nvidia.com/gpu=1"
+echo "Expected: Renny nodes should have 2 GPUs (time-sliced), A2F nodes should have 2 GPUs"
 kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny" or . == "a2f") | "\(.metadata.name): \(.status.allocatable."nvidia.com/gpu" // "0") GPU(s)"' | while read line; do
     echo "  $line"
 done
+
+# 6b. Time-Slicing Configuration Verification
+echo
+echo "⚡ TIME-SLICING CONFIGURATION:"
+if kubectl get configmap renny-time-slicing-config -n gpu-operator >/dev/null 2>&1; then
+    echo "✓ GPU time-slicing ConfigMap exists"
+    
+    # Check if ClusterPolicy is using the time-slicing config
+    config_name=$(kubectl get clusterpolicy cluster-policy -o jsonpath='{.spec.devicePlugin.config.name}' 2>/dev/null || echo "")
+    if [ "$config_name" = "renny-time-slicing-config" ]; then
+        echo "✓ ClusterPolicy configured for time-slicing"
+        
+        # Verify actual vs expected GPU capacity
+        renny_total_gpus=$(kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" == "renny") | .status.allocatable."nvidia.com/gpu" // "0"' | awk '{sum += $1} END {print sum+0}')
+        renny_nodes=$(kubectl get nodes -l uneeq.io/node-type=renny --no-headers | wc -l)
+        expected_gpus=$((renny_nodes * 2))
+        
+        if [ "$renny_total_gpus" -eq "$expected_gpus" ]; then
+            echo "✓ Time-slicing working: $renny_nodes Renny nodes × 2 = $renny_total_gpus virtual GPUs"
+        else
+            echo "⚠️  Time-slicing issue: Expected $expected_gpus GPUs, got $renny_total_gpus"
+        fi
+    else
+        echo "⚠️  ClusterPolicy not configured for time-slicing (config: ${config_name:-none})"
+    fi
+else
+    echo "⚠️  GPU time-slicing ConfigMap not found"
+fi
 
 # Test GPU functionality via existing application pods
 echo

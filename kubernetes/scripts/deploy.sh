@@ -1560,6 +1560,95 @@ install_gpu_operator() {
     # Verify GPU nodes
     echo "GPU node status:"
     kubectl get nodes -L nvidia.com/gpu,uneeq.io/node-type
+}
+
+# Configure GPU time-slicing for production efficiency
+configure_gpu_time_slicing() {
+    echo "🔧 Configuring GPU time-slicing for production efficiency..."
+    
+    # Check if time-slicing config already exists
+    if kubectl get configmap renny-time-slicing-config -n gpu-operator >/dev/null 2>&1; then
+        echo "✓ GPU time-slicing configuration already exists"
+    else
+        echo "Creating GPU time-slicing configuration..."
+        kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: renny-time-slicing-config
+  namespace: gpu-operator
+data:
+  renny: |-
+    version: v1
+    flags:
+      migStrategy: none
+    sharing:
+      timeSlicing:
+        resources:
+        - name: nvidia.com/gpu
+          replicas: 2
+EOF
+        echo "✓ GPU time-slicing ConfigMap created"
+    fi
+    
+    # Update ClusterPolicy to use time-slicing for renny nodes
+    echo "Applying time-slicing configuration to ClusterPolicy..."
+    kubectl patch clusterpolicy cluster-policy --type='merge' -p='{"spec":{"devicePlugin":{"config":{"name":"renny-time-slicing-config","default":"renny"}}}}'
+    
+    # Wait for device plugin pods to restart and apply the configuration
+    echo "⏳ Waiting for GPU device plugin pods to restart with time-slicing..."
+    kubectl wait --for=condition=ready pod -l app=nvidia-device-plugin-daemonset -n gpu-operator --timeout=180s || {
+        echo "⚠️  Device plugin pods not ready yet, continuing - they will restart automatically"
+    }
+    
+    # Verify time-slicing is working by checking GPU capacity
+    echo "⏳ Verifying GPU time-slicing configuration..."
+    local retries=0
+    local max_retries=12  # 2 minutes total
+    while [ $retries -lt $max_retries ]; do
+        local renny_gpu_capacity=$(kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" == "renny") | .status.allocatable."nvidia.com/gpu" // "0"' | awk '{sum += $1} END {print sum+0}')
+        
+        if [ "$renny_gpu_capacity" -gt "$RENNY_DESIRED_SIZE" ]; then
+            echo "✅ GPU time-slicing successfully configured!"
+            echo "   Renny nodes now advertise $renny_gpu_capacity virtual GPUs (${RENNY_DESIRED_SIZE} physical GPUs × 2)"
+            break
+        else
+            echo "⏳ Waiting for time-slicing to take effect... ($((retries + 1))/$max_retries)"
+            sleep 10
+            ((retries++))
+        fi
+    done
+    
+    if [ $retries -eq $max_retries ]; then
+        echo "⚠️  Time-slicing verification timeout - configuration applied but may need more time"
+        echo "   This is normal and pods should work correctly once device plugins fully restart"
+    fi
+    
+    echo "📊 Current GPU capacity per node:"
+    kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny" or . == "a2f") | "\(.metadata.name) (\(.metadata.labels."uneeq.io/node-type")): \(.status.allocatable."nvidia.com/gpu" // "0") GPUs"'
+    
+    # Also create the standalone config file for manual use
+    if [ ! -f "$PROJECT_DIR/gpu-time-slicing-config.yaml" ]; then
+        echo "📄 Creating standalone GPU time-slicing config file..."
+        cat > "$PROJECT_DIR/gpu-time-slicing-config.yaml" <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: renny-time-slicing-config
+  namespace: gpu-operator
+data:
+  renny: |-
+    version: v1
+    flags:
+      migStrategy: none
+    sharing:
+      timeSlicing:
+        resources:
+        - name: nvidia.com/gpu
+          replicas: 2
+EOF
+        echo "✓ GPU time-slicing config file created at: $PROJECT_DIR/gpu-time-slicing-config.yaml"
+    fi
     
     # Verify and fix ASG desired capacities after rolling updates
     echo "Verifying Auto Scaling Group configurations..."
@@ -1908,6 +1997,7 @@ main() {
     # Application deployment (always run)
     configure_kubectl
     install_gpu_operator
+    configure_gpu_time_slicing
     setup_kubernetes_resources
     install_a2f
     install_renny

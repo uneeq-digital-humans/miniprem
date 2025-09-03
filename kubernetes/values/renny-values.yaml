@@ -3,11 +3,11 @@ image: "facemeproduction/renny:0.632-47d09"
 
 deployment:
   nodeType: renny
-  replicas: 2  # Start small - one per Renny node
+  replicas: 4  # Production setting - 2 per Renny node
 
 renderer:
   a2f:
-    url: http://audio2face-gateway.uneeq-renderer.svc.cluster.local:52000
+    url: http://a2f.uneeq-renderer.svc.cluster.local:52000
     audioDelayMs: 240        # A2F_AUDIO_DELAY_TIME_MS from docker
     audioSampleRate: 16000   # A2F_AUDIO_SAMPLE_RATE from docker
   
@@ -59,14 +59,12 @@ logLevel: "4"
 resources:
   limits:
     nvidia.com/gpu: 1
-    memory: "32Gi"
-    cpu: "8"
-    gpu: 1
+    memory: "7Gi"
+    cpu: "3600m"
   requests:
     nvidia.com/gpu: 1
-    memory: "16Gi"
-    cpu: "3"
-    gpu: 1
+    memory: "7Gi"
+    cpu: "3600m"
 
 nodeSelector:
   uneeq.io/node-type: renny
