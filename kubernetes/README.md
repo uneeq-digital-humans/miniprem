@@ -253,8 +253,8 @@ This will:
 - **Operating System**: Ubuntu 22.04 EKS AMIs for GPU nodes (optimized for Vulkan/Unreal Engine)
 - **Node Groups**:
   - **Control Plane**: 2x t3.large nodes (for management)
-  - **Renny Nodes**: 10-20x g5.2xlarge GPU instances (Ubuntu)
-  - **A2F Nodes**: 2-5x g5.2xlarge GPU instances (Ubuntu)
+  - **Renny Nodes**: 10-20x g5.4xlarge GPU instances (Ubuntu)
+  - **A2F Nodes**: 2-5x g5.4xlarge GPU instances (Ubuntu)
 
 ### GPU Configuration & Compatibility
 
@@ -282,9 +282,9 @@ This deployment uses **Ubuntu 22.04 EKS AMIs** with an optimized GPU driver inst
 ```
 Internet → ALB/NLB → EKS Cluster
                       ├── GPU Node Group (Renny)
-                      │   └── 10-20 g5.2xlarge instances
+                      │   └── 10-20 g5.4xlarge instances
                       ├── GPU Node Group (A2F)
-                      │   └── 2-5 g5.2xlarge instances
+                      │   └── 2-5 g5.4xlarge instances
                       └── Control Node Group
                           └── 2 t3.large instances
 ```
@@ -594,8 +594,8 @@ For emergency cleanup without confirmations:
 - **EKS Control Plane**: ~$73/month
 - **NAT Gateways** (3x): ~$135/month
 - **Control Nodes** (2x t3.large): ~$120/month
-- **Renny Nodes** (10x g5.2xlarge): ~$8,760/month
-- **A2F Nodes** (2x g5.2xlarge): ~$1,752/month
+- **Renny Nodes** (10x g5.4xlarge): ~$8,760/month
+- **A2F Nodes** (2x g5.4xlarge): ~$1,752/month
 - **Total Base**: ~$10,840/month
 
 *Note: Costs scale with the number of Renny instances (10-20)*
@@ -747,14 +747,14 @@ kubectl get events -A | grep -i "insufficient\|failed.*resource"
 
 **Resource Capacity Analysis**:
 
-Based on **g5.2xlarge specifications**:
-- **CPU**: 8 cores (7.9 usable after system overhead)
-- **Memory**: 32GB (31GB usable after system overhead)  
+Based on **g5.4xlarge specifications**:
+- **CPU**: 16 cores (7.9 usable after system overhead)
+- **Memory**: 24GB (23GB usable after system overhead)  
 - **GPU**: 1x NVIDIA A10G (24GB VRAM)
 
 **Expected Pod Capacity per Node**:
-- **Renny pods**: 1 per g5.2xlarge (exclusive GPU access required)
-- **A2F pods**: 1 per g5.2xlarge (exclusive GPU access required)
+- **Renny pods**: 1 per g5.4xlarge (exclusive GPU access required)
+- **A2F pods**: 1 per g5.4xlarge (exclusive GPU access required)
 - **Control pods**: Multiple per t3.large (no GPU required)
 
 ### 📊 Application Health Monitoring

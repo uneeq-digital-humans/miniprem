@@ -45,13 +45,13 @@ variable "kubernetes_version" {
 variable "renny_instance_type" {
   description = "Instance type for Renny GPU nodes"
   type        = string
-  default     = "g5.2xlarge"
+  default     = "g5.4xlarge"
 }
 
 variable "a2f_instance_type" {
   description = "Instance type for Audio2Face GPU nodes"
   type        = string
-  default     = "g5.2xlarge"
+  default     = "g5.4xlarge"
 }
 
 variable "renny_min_size" {

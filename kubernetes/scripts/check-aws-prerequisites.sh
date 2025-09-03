@@ -177,7 +177,7 @@ else
     ((CHECKS_FAILED++))
 fi
 
-# Check EC2 instance quotas for g5.2xlarge
+# Check EC2 instance quotas for g5.4xlarge
 echo -n "Checking G5 instance quota... "
 G5_LIMIT=$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-DB2E81BA --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "64")
 REQUIRED_G5=12  # 10 for Renny + 2 for A2F
@@ -256,8 +256,8 @@ echo "========================="
 echo "Deployment will create:"
 echo "  - 1 EKS cluster"
 echo "  - 1 VPC with 3 NAT gateways"
-echo "  - 10 g5.2xlarge instances (Renny)"
-echo "  - 2 g5.2xlarge instances (Audio2Face)"
+echo "  - 10 g5.4xlarge instances (Renny)"
+echo "  - 2 g5.4xlarge instances (Audio2Face)"
 echo "  - 2 t3.large instances (Control plane)"
 echo ""
 echo -e "${YELLOW}Estimated costs:${NC}"

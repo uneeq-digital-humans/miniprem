@@ -8,8 +8,7 @@ deployment:
 
 renderer:
   a2f:
-    url: ""
-    # The 'url' parameter is required
+    url: "" # The 'url' parameter is required
   cp:
     flowiseApiKey: ""  # the 'flowiseApiKey' is optional, can be set at Persona level
     flowiseUrl: "" # the 'flowiseUrl' is required

@@ -345,7 +345,7 @@ Create a permission boundary to limit maximum permissions:
    - Default is 5 VPCs per region
 
 4. **"Instance limit exceeded"**
-   - Check EC2 limits for g5.2xlarge instances
+   - Check EC2 limits for g5.4xlarge instances
    - Request limit increase if needed
 
 ### Checking Required Service Quotas

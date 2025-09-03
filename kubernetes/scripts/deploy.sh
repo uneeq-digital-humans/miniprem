@@ -603,8 +603,8 @@ load_config() {
     RENNY_DESIRED_SIZE=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
     A2F_DESIRED_SIZE=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
     
-    RENNY_INSTANCE_TYPE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.2xlarge")
-    A2F_INSTANCE_TYPE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.2xlarge")
+    RENNY_INSTANCE_TYPE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.4xlarge")
+    A2F_INSTANCE_TYPE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.4xlarge")
     
     # Calculate cluster name and total nodes
     CLUSTER_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
@@ -885,7 +885,7 @@ check_aws_limits() {
         fi
     fi
     
-    # Check instance type availability for g5.2xlarge
+    # Check instance type availability for g5.4xlarge
     echo "Checking GPU instance availability..."
     local instance_types=("g5.2xlarge" "g5.xlarge" "g5.4xlarge")
     local available_types=()
@@ -1270,8 +1270,8 @@ docker_password = ""  # Your Docker Hub password
 
 # Optional: Override default values
 # aws_region = "us-east-1"
-# renny_instance_type = "g5.2xlarge"
-# a2f_instance_type = "g5.2xlarge"
+# renny_instance_type = "g5.4xlarge"
+# a2f_instance_type = "g5.4xlarge"
 # renny_min_size = 10
 # renny_max_size = 20
 # renny_desired_size = 10

@@ -7,7 +7,7 @@ deployment:
 
 a2x:
   # Max concurrent rendering streams per instance
-  # Each g5.2xlarge can handle approximately 12-15 streams
+  # Each g5.4xlarge can handle approximately 12-15 streams
   streamNumber: 12
   
 resources:

@@ -64,15 +64,15 @@ REGION=$(terraform output -raw region 2>/dev/null || echo "us-east-1")
 if [ -f "terraform.tfvars" ]; then
     RENNY_DESIRED=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "10")
     A2F_DESIRED=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "2")
-    RENNY_INSTANCE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
-    A2F_INSTANCE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.2xlarge")
+    RENNY_INSTANCE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.4xlarge")
+    A2F_INSTANCE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.4xlarge")
     CONTROL_INSTANCE=$(awk '/^control_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "t3.large")
 else
     echo -e "${YELLOW}⚠️  terraform.tfvars not found, using defaults${NC}"
     RENNY_DESIRED="10"
     A2F_DESIRED="2"
-    RENNY_INSTANCE="g5.2xlarge"
-    A2F_INSTANCE="g5.2xlarge"
+    RENNY_INSTANCE="g5.4xlarge"
+    A2F_INSTANCE="g5.4xlarge"
     CONTROL_INSTANCE="t3.large"
 fi
 
