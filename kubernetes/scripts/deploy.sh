@@ -794,7 +794,7 @@ check_aws_profile() {
     region=$(aws configure get region 2>/dev/null || echo "Not set")
     
     # Try to get current profile name
-    if [ -n "$AWS_PROFILE" ]; then
+    if [ -n "${AWS_PROFILE:-}" ]; then
         current_profile="$AWS_PROFILE"
     else
         current_profile="default"
@@ -1101,7 +1101,7 @@ validate_network_config() {
     echo "🌐 Validating network configuration..."
     local vpc_cidr="$CONFIGURED_VPC_CIDR"
     local service_cidr="$CONFIGURED_SERVICE_CIDR"
-    local region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    local region="$AWS_REGION"
     
     # Basic CIDR format validation
     if ! [[ "$vpc_cidr" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$ ]]; then
@@ -1127,22 +1127,54 @@ validate_network_config() {
     
     # Check for conflicts with existing VPCs in region
     echo "Checking for conflicts with existing VPCs..."
-    local existing_cidrs
-    existing_cidrs=$(aws ec2 describe-vpcs --region "$region" --query 'Vpcs[].CidrBlock' --output text 2>/dev/null || echo "")
     
-    if [ -n "$existing_cidrs" ]; then
+    # Get existing VPCs with more detailed information
+    local existing_vpcs_json
+    existing_vpcs_json=$(aws ec2 describe-vpcs --region "$region" --query 'Vpcs[].{CidrBlock:CidrBlock,VpcId:VpcId,Tags:Tags[?Key==`Name`].Value|[0]}' --output json 2>/dev/null || echo '[]')
+    
+    if [ "$existing_vpcs_json" != "[]" ] && [ -n "$existing_vpcs_json" ]; then
         local conflict_found=false
-        while IFS= read -r existing_cidr; do
+        local current_deployment_vpc=""
+        
+        # Check if we already have a VPC for this deployment
+        local expected_vpc_name="${CLUSTER_NAME}-vpc"
+        local base_vpc_name="$PROJECT_NAME-$ENVIRONMENT-vpc"  # Legacy format
+        
+        # Parse VPC information
+        while IFS='|' read -r existing_cidr existing_vpc_id existing_vpc_name; do
+            if [ -z "$existing_cidr" ]; then continue; fi
+            
+            # Check for exact CIDR match
             if [ "$existing_cidr" = "$vpc_cidr" ]; then
-                echo -e "${RED}❌ VPC CIDR $vpc_cidr already exists in region $region${NC}"
-                echo "Choose a different VPC CIDR range to avoid conflicts"
-                exit 1
+                # Check if this VPC belongs to our current deployment (either new format or legacy)
+                if [ "$existing_vpc_name" = "$expected_vpc_name" ] || \
+                   [ "$existing_vpc_name" = "$base_vpc_name" ] || \
+                   [[ "$existing_vpc_name" == *"$CLUSTER_NAME"* ]] || \
+                   [[ "$existing_vpc_name" == "$PROJECT_NAME-$ENVIRONMENT"* ]]; then
+                    echo -e "${GREEN}✅ Found existing VPC for this deployment: $existing_vpc_name ($existing_cidr)${NC}"
+                    echo "VPC ID: $existing_vpc_id"
+                    echo "Will reuse existing VPC infrastructure"
+                    current_deployment_vpc="$existing_vpc_id"
+                    # No conflict - this is our own VPC
+                    continue
+                else
+                    echo -e "${RED}❌ VPC CIDR $vpc_cidr already exists in region $region${NC}"
+                    echo "Existing VPC: $existing_vpc_name ($existing_vpc_id)"
+                    echo "This VPC belongs to a different project or deployment"
+                    echo "Choose a different VPC CIDR range to avoid conflicts"
+                    exit 1
+                fi
             fi
             
-            # Basic overlap check (simplified)
+            # Basic overlap check using first two octets (simplified)
+            local vpc_prefix=$(echo "$vpc_cidr" | cut -d'.' -f1-2)
             local existing_prefix=$(echo "$existing_cidr" | cut -d'.' -f1-2)
-            if [ "$existing_prefix" = "$vpc_prefix" ]; then
+            
+            if [ "$existing_prefix" = "$vpc_prefix" ] && [ "$existing_cidr" != "$vpc_cidr" ]; then
                 echo -e "${YELLOW}⚠️  Warning: VPC CIDR $vpc_cidr may overlap with existing VPC $existing_cidr${NC}"
+                if [ -n "$existing_vpc_name" ]; then
+                    echo "Existing VPC: $existing_vpc_name ($existing_vpc_id)"
+                fi
                 echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
                 read -r response
                 if [[ ! "$response" =~ ^[Yy]$ ]]; then
@@ -1150,7 +1182,10 @@ validate_network_config() {
                     exit 1
                 fi
             fi
-        done <<< "$existing_cidrs"
+        done < <(
+            echo "$existing_vpcs_json" | jq -r '.[] | "\(.CidrBlock)|\(.VpcId)|\(.Tags // "")"' 2>/dev/null || \
+            aws ec2 describe-vpcs --region "$region" --query 'Vpcs[].CidrBlock' --output text | while read -r cidr; do echo "$cidr||Unknown"; done
+        )
     fi
     
     # Check for reserved/problematic ranges
