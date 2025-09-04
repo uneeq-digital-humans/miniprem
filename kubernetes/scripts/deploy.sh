@@ -112,7 +112,20 @@ wait_for_cluster_nodes_ready() {
     # Use dynamically loaded configuration
     local expected_nodes=$TOTAL_EXPECTED_NODES
     
+    echo "🔍 Checking cluster node readiness..."
     echo "Expected nodes: $CONTROL_NODES control + $RENNY_DESIRED_SIZE renny + $A2F_DESIRED_SIZE a2f = $expected_nodes total"
+    
+    # Quick check if nodes are already ready
+    local existing_ready_nodes=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " | tr -d ' \n' || echo "0")
+    local existing_total_nodes=$(kubectl get nodes --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+    
+    if [ "$existing_ready_nodes" -eq "$expected_nodes" ] && [ "$existing_total_nodes" -eq "$expected_nodes" ]; then
+        echo "✅ All nodes already ready ($existing_ready_nodes/$expected_nodes)"
+        kubectl get nodes -L uneeq.io/node-type,nvidia.com/gpu
+        return 0
+    elif [ "$existing_ready_nodes" -gt "0" ]; then
+        echo "⚠️  Some nodes ready ($existing_ready_nodes/$expected_nodes), waiting for remaining nodes..."
+    fi
     
     echo "⏰ Maximum wait time: $((max_timeout/60)) minutes"
     
@@ -687,6 +700,24 @@ check_existing_cluster() {
         echo "Infrastructure appears incomplete - will run full deployment"
         echo ""
         return 1  # Cluster exists but not healthy
+    fi
+    
+    # Check EKS addons
+    echo "Validating EKS addons..."
+    local addon_issues=0
+    for addon in "coredns" "kube-proxy" "vpc-cni" "aws-ebs-csi-driver"; do
+        local addon_status=$(aws eks describe-addon --cluster-name "$cluster_name" --addon-name "$addon" --region "$region" --query 'addon.status' --output text 2>/dev/null || echo "NOT_FOUND")
+        if [ "$addon_status" = "ACTIVE" ]; then
+            echo "  ✅ $addon: $addon_status"
+        else
+            echo "  ❌ $addon: $addon_status"
+            addon_issues=$((addon_issues + 1))
+        fi
+    done
+    
+    if [ "$addon_issues" -gt "0" ]; then
+        echo -e "${YELLOW}⚠️  $addon_issues EKS addons not ready - will run deployment to fix${NC}"
+        return 1
     fi
     
     # Check if required node groups exist
@@ -1490,13 +1521,48 @@ EOF
 
 # Deploy infrastructure
 deploy_infrastructure() {
-    echo "🏗️  Deploying infrastructure with Terraform..."
-    echo -e "${BLUE}This will take approximately 15-20 minutes${NC}"
+    echo "🏗️  Checking infrastructure state..."
     cd "$PROJECT_DIR/terraform"
     
     # Initialize Terraform
     echo "Initializing Terraform..."
     terraform init
+    
+    # Check if infrastructure already exists and is healthy
+    echo "🔍 Checking existing infrastructure..."
+    
+    # Check if cluster exists and is active
+    local cluster_status=""
+    if [ -n "$CLUSTER_NAME" ]; then
+        cluster_status=$(aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" --query 'cluster.status' --output text 2>/dev/null || echo "NOT_FOUND")
+    fi
+    
+    # Check terraform state
+    local terraform_resources=""
+    if [ -f ".terraform/terraform.tfstate" ] || terraform state list >/dev/null 2>&1; then
+        terraform_resources=$(terraform state list 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+    else
+        terraform_resources="0"
+    fi
+    
+    if [ "$cluster_status" = "ACTIVE" ] && [ "$terraform_resources" -gt "10" ]; then
+        echo -e "${GREEN}✅ Infrastructure already deployed and healthy${NC}"
+        echo "  Cluster: $CLUSTER_NAME ($cluster_status)"
+        echo "  Terraform resources: $terraform_resources managed resources"
+        echo "  Skipping infrastructure deployment"
+        return 0
+    elif [ "$cluster_status" = "ACTIVE" ] && [ "$terraform_resources" -le "10" ]; then
+        echo -e "${YELLOW}⚠️  Cluster exists but Terraform state incomplete${NC}"
+        echo "  This may be from a previous deployment. Importing existing resources..."
+        # Plan will show what needs to be created/imported
+    elif [ "$terraform_resources" -gt "0" ] && [ "$cluster_status" != "ACTIVE" ]; then
+        echo -e "${YELLOW}⚠️  Partial Terraform state detected${NC}"
+        echo "  Terraform resources: $terraform_resources"
+        echo "  Cluster status: $cluster_status"
+        echo "  Will resume deployment from current state"
+    fi
+    
+    echo -e "${BLUE}Proceeding with infrastructure deployment (may take 15-20 minutes)${NC}"
     
     # Plan the deployment
     echo "Planning infrastructure deployment..."
@@ -1711,9 +1777,9 @@ install_gpu_operator() {
         --set dcgmExporter.enabled=true \
         --set nodeStatusExporter.enabled=false \
         --set driver.env[0].name=ENABLE_AUTO_DRAIN \
-        --set driver.env[0].value="false" \
+        --set-string driver.env[0].value="false" \
         --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION \
-        --set driver.env[1].value="true"
+        --set-string driver.env[1].value="true"
     
     echo "⏳ Waiting for GPU operator pods to be ready..."
     kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s || true
@@ -2072,7 +2138,25 @@ install_renny() {
 
 # Install cluster autoscaler
 install_autoscaler() {
-    echo "⚖️  Installing Cluster Autoscaler..."
+    echo "⚖️  Checking Cluster Autoscaler status..."
+    
+    # Check if autoscaler is already installed and running
+    if helm list -n kube-system | grep -q "cluster-autoscaler.*deployed"; then
+        echo "✅ Cluster Autoscaler already installed"
+        
+        # Check if pods are ready
+        local autoscaler_pods=$(kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' ' || echo "0")
+        
+        if [ "$autoscaler_pods" -gt "0" ]; then
+            echo "✅ Cluster Autoscaler pods already running ($autoscaler_pods pods)"
+            kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-cluster-autoscaler
+            return 0
+        else
+            echo "⚠️  Cluster Autoscaler installed but pods not ready, will reinstall"
+        fi
+    fi
+    
+    echo "Installing Cluster Autoscaler..."
     
     cd "$PROJECT_DIR/terraform"
     CLUSTER_NAME=$(terraform output -raw cluster_name)
@@ -2094,7 +2178,7 @@ install_autoscaler() {
         --set rbac.serviceAccount.create=true \
         --set rbac.create=true
     
-    echo "Cluster autoscaler installed"
+    echo "✅ Cluster autoscaler installed"
 }
 
 # Display final status
