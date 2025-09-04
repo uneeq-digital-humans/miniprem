@@ -854,6 +854,98 @@ check_aws_profile() {
     fi
 }
 
+# Check SSO credential expiration from cached credentials
+check_sso_credential_expiration() {
+    debug_log "Checking SSO credential expiration..."
+    
+    # Find SSO cache directory
+    local sso_cache_dir="$HOME/.aws/sso/cache"
+    if [ ! -d "$sso_cache_dir" ]; then
+        echo -e "${YELLOW}📁 No SSO cache found - credentials should be valid if login was recent${NC}"
+        return
+    fi
+    
+    # Find the most recent credential file
+    local latest_cred_file
+    latest_cred_file=$(find "$sso_cache_dir" -name "*.json" -type f -exec stat -c '%Y %n' {} \; 2>/dev/null | sort -nr | head -1 | cut -d' ' -f2-)
+    
+    if [ -z "$latest_cred_file" ]; then
+        echo -e "${YELLOW}📁 No SSO credential cache found${NC}"
+        echo "Your credentials should work if you recently ran 'aws sso login'"
+        return
+    fi
+    
+    # Parse expiration from credential file
+    local expiration_iso
+    if command -v jq >/dev/null 2>&1; then
+        expiration_iso=$(jq -r '.expiresAt // .expiration // empty' "$latest_cred_file" 2>/dev/null)
+    else
+        # Fallback without jq
+        expiration_iso=$(grep -o '"expiresAt"[[:space:]]*:[[:space:]]*"[^"]*"\|"expiration"[[:space:]]*:[[:space:]]*"[^"]*"' "$latest_cred_file" | cut -d'"' -f4 | head -1)
+    fi
+    
+    if [ -z "$expiration_iso" ]; then
+        echo -e "${GREEN}🔑 SSO credentials appear active${NC}"
+        echo "Note: Unable to determine exact expiration, but credentials are cached and should work"
+        return
+    fi
+    
+    # Convert ISO timestamp to epoch (works on both macOS and Linux)
+    local expiration_epoch
+    if date -j >/dev/null 2>&1; then
+        # macOS date command
+        expiration_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%SZ" "${expiration_iso%.*}Z" "+%s" 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%S" "${expiration_iso%.*}" "+%s" 2>/dev/null || echo "0")
+    else
+        # Linux date command
+        expiration_epoch=$(date -d "$expiration_iso" "+%s" 2>/dev/null || echo "0")
+    fi
+    
+    if [ "$expiration_epoch" -eq 0 ]; then
+        echo -e "${GREEN}🔑 SSO credentials appear active${NC}"
+        echo "Note: Unable to parse expiration time, but credentials are cached"
+        return
+    fi
+    
+    local current_epoch=$(date +%s)
+    local time_remaining=$((expiration_epoch - current_epoch))
+    
+    if [ $time_remaining -lt 0 ]; then
+        echo -e "${RED}❌ SSO credentials have expired${NC}"
+        echo "Please refresh your SSO login:"
+        echo "  aws sso login --profile ${AWS_PROFILE:-default}"
+        echo ""
+        echo -e "${YELLOW}Continue with potentially expired credentials? (y/N)${NC}"
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo "Aborting deployment. Please refresh your credentials first."
+            exit 1
+        fi
+    elif [ $time_remaining -lt 3600 ]; then
+        # Less than 1 hour remaining
+        local minutes_remaining=$((time_remaining / 60))
+        echo -e "${YELLOW}⏰ SSO credentials expire in ${minutes_remaining} minutes${NC}"
+        echo "Deployment takes 60-90 minutes. Consider refreshing:"
+        echo "  aws sso login --profile ${AWS_PROFILE:-default}"
+        echo ""
+        echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
+        read -r response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo "Aborting deployment. Please refresh your credentials first."
+            exit 1
+        fi
+    elif [ $time_remaining -lt 7200 ]; then
+        # Less than 2 hours remaining - just inform
+        local hours_remaining=$((time_remaining / 3600))
+        local minutes_remaining=$(((time_remaining % 3600) / 60))
+        echo -e "${GREEN}🔑 SSO credentials valid for ${hours_remaining}h ${minutes_remaining}m${NC}"
+        echo "Should be sufficient for deployment (~60-90 minutes)"
+    else
+        # Plenty of time remaining
+        local hours_remaining=$((time_remaining / 3600))
+        echo -e "${GREEN}🔑 SSO credentials valid for ${hours_remaining}+ hours${NC}"
+    fi
+}
+
 # Check AWS credential expiration and validity
 check_aws_credentials() {
     debug_log "Checking AWS credential expiration..."
@@ -870,15 +962,30 @@ check_aws_credentials() {
     if [[ "$identity_arn" == *"assumed-role"* ]]; then
         debug_log "Detected assumed role credentials: $identity_arn"
         
-        # Try to get session token info if available
+        # Check credential validity based on type
+        if [[ "$identity_arn" == *"AWSReservedSSO"* ]]; then
+            # SSO credentials - check cache files for expiration
+            check_sso_credential_expiration
+        else
+            # Regular assumed role - try session token test
+            local session_info
+            if session_info=$(aws sts get-session-token --duration-seconds 900 2>/dev/null); then
+                debug_log "Credentials appear to be valid for session operations"
+                echo -e "${GREEN}✅ Credential validity confirmed${NC}"
+            else
+                echo -e "${YELLOW}⚠️  Warning: Unable to verify credential duration for assumed role${NC}"
+                echo "Consider refreshing your credentials if the deployment fails"
+            fi
+        fi
+    else
+        # Regular IAM user credentials - test with session token
         local session_info
         if session_info=$(aws sts get-session-token --duration-seconds 900 2>/dev/null); then
             debug_log "Credentials appear to be valid for session operations"
+            echo -e "${GREEN}✅ Credential validity confirmed${NC}"
         else
-            echo -e "${YELLOW}⚠️  Warning: Unable to test credential duration. Deployment may fail if credentials expire during the ~60-90 minute deployment process.${NC}"
-            echo "Consider refreshing your credentials before proceeding:"
-            echo "  AWS SSO: aws sso login --profile $AWS_PROFILE"
-            echo ""
+            echo -e "${YELLOW}⚠️  Warning: Credentials may be expired or invalid${NC}"
+            echo "Consider refreshing your AWS credentials"
             echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
             read -r response
             if [[ ! "$response" =~ ^[Yy]$ ]]; then
