@@ -534,17 +534,17 @@ reliable_helm_operation() {
         local helm_success=false
         if command -v gtimeout >/dev/null 2>&1; then
             # macOS with coreutils installed
-            if gtimeout 1800 helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+            if gtimeout 1800 helm $operation "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
                 helm_success=true
             fi
         elif command -v timeout >/dev/null 2>&1; then
             # Linux with timeout command
-            if timeout 1800 helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+            if timeout 1800 helm $operation "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
                 helm_success=true
             fi
         else
             # Fallback: use helm's built-in timeout only (25 minutes)
-            if helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+            if helm $operation "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
                 helm_success=true
             fi
         fi
