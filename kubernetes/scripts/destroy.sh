@@ -60,12 +60,12 @@ if [ -n "$AWS_PROFILE_ARG" ]; then
     echo "Using AWS profile: $AWS_PROFILE"
 fi
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Colors for output (only define if not already set by deployment-functions.sh)
+if [ -z "${RED:-}" ]; then RED='\033[0;31m'; fi
+if [ -z "${GREEN:-}" ]; then GREEN='\033[0;32m'; fi
+if [ -z "${YELLOW:-}" ]; then YELLOW='\033[1;33m'; fi
+if [ -z "${BLUE:-}" ]; then BLUE='\033[0;34m'; fi
+if [ -z "${NC:-}" ]; then NC='\033[0m'; fi
 
 # Note: SCRIPT_DIR and PROJECT_DIR already defined in deployment-functions.sh
 
