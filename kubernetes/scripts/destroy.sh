@@ -463,26 +463,22 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
 fi
 
 echo ""
-echo "🧹 Final local cleanup..."
+echo "🧹 AWS infrastructure destroyed - local project files preserved"
 cd "$PROJECT_DIR"
-# Clean up ONLY temporary files - preserve all committed configurations
-echo "  - Removing temporary Terraform files..."
-rm -f terraform/tfplan                # Temporary plan file
-rm -rf terraform/.terraform           # Temporary cache directory
 
-# PRESERVE these important files:
-# - terraform/.terraform.lock.hcl      # Dependency lock file (should be committed)
-# - terraform/terraform.tfstate*       # State files (critical for infrastructure tracking)
-# - terraform/*.tf                     # All Terraform configuration files  
-# - terraform/terraform.tfvars*        # Variable files (user configuration)
-# - gpu-time-slicing-config.yaml       # GPU configuration (committed config)
-# - all *.yaml, *.yml files            # Kubernetes manifests and values
-# - all *.sh files                     # Scripts
-# - all *.md files                     # Documentation
-
-echo "  - Removing temporary chart packages..."
-rm -f renny-chart.tgz                 # User places this manually, safe to remove
-rm -f .kubectl_context_backup         # Temporary backup file
+# NOTE: We do NOT delete any local files - this allows immediate redeployment
+# The destroy script only removes AWS infrastructure, not local project files
+# 
+# Local files preserved for redeployment:
+# - terraform/*.tf (all Terraform configuration)
+# - terraform/.terraform.lock.hcl (dependency locks)
+# - terraform/terraform.tfvars (user configuration)
+# - renny-chart.tgz (Helm chart for deployment)
+# - gpu-time-slicing-config.yaml (GPU configuration)
+# - All Kubernetes manifests and scripts
+# 
+# If you need to clean up Terraform cache manually:
+# rm -rf terraform/.terraform && rm -f terraform/tfplan
 
 # Calculate elapsed time
 END_TIME=$(date +%s)
@@ -497,7 +493,7 @@ echo "======================================"
 echo ""
 echo "Time elapsed: ${ELAPSED_MIN} minutes ${ELAPSED_SEC} seconds"
 echo ""
-echo "🧹 DESTRUCTION SUMMARY:"
+echo "🧹 AWS DESTRUCTION SUMMARY:"
 echo "✅ Applications force-terminated (Renny, A2F, GPU Operator)"
 echo "✅ Kubernetes resources cleaned (secrets, configs, time-slicing)"
 echo "✅ Nodes drained and ASGs scaled to 0"
@@ -512,7 +508,15 @@ echo "✅ EKS cluster destroyed"
 echo "✅ VPC and networking destroyed"
 echo "✅ IAM roles and policies cleaned up"
 echo ""
-echo "The following items may still exist:"
+echo "📁 LOCAL PROJECT FILES PRESERVED:"
+echo "✅ All Terraform configuration files (.tf, .tfvars)"
+echo "✅ Kubernetes manifests and Helm values"
+echo "✅ Scripts and documentation"
+echo "✅ Renny Helm chart (renny-chart.tgz)"
+echo "✅ GPU time-slicing configuration"
+echo "✅ Ready for immediate redeployment!"
+echo ""
+echo "The following AWS items may still exist:"
 echo "  - S3 buckets if you configured Terraform state backend"
 echo "  - Route53 DNS entries (will expire based on TTL)"
 echo "  - Some CloudWatch metrics data (expires automatically)"

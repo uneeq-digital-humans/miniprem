@@ -26,6 +26,11 @@ kubeconfig
 *.p12
 secrets/
 credentials/
+# Personal values files with sensitive data
+values/my-*.yaml
+values/my-*.yml
+values/*-personal.yaml
+values/*-personal.yml
 
 # IDE
 .idea/
