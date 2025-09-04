@@ -1537,7 +1537,11 @@ deploy_infrastructure() {
     echo "  - CUDA 12.4+ for latest AI workloads"
     echo "  - 150GB storage for large container images"
     echo ""
-    terraform apply tfplan
+    # Reduce verbose output during long-running resource creation (EKS clusters, node groups, addons)
+    echo -e "${CYAN}🏗️  Applying Terraform plan... (This may take 10-15 minutes for EKS cluster creation)${NC}"
+    echo -e "${CYAN}💡 Terraform will show progress updates every 30 seconds during long operations${NC}"
+    echo ""
+    TF_CLI_ARGS_apply="-compact-warnings" terraform apply tfplan
     rm -f tfplan
     
     echo -e "${GREEN}✓ Infrastructure deployed successfully${NC}"
