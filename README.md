@@ -451,6 +451,48 @@ If no output, no NVIDIA modules are loaded and you may need to reinstall the NVI
 
 
 
+## NVIDIA Driver Management (Kubernetes/EKS Deployments)
+
+### Driver Version Selection
+
+When deploying with Kubernetes/EKS, the deployment script automatically handles NVIDIA GPU Operator installation. During deployment, you'll be prompted to choose between:
+
+1. **Driver 570+** (recommended for production) - Verified and tested configuration
+2. **Driver 575+** (for Unreal Engine 5.6+ compatibility) - Newer driver with enhanced graphics capabilities
+
+### Upgrading NVIDIA Drivers in Kubernetes
+
+If you initially chose driver 570 and want to upgrade to 575+ later:
+
+```bash
+# 1. Update the GPU Operator with newer driver version
+helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator \
+  --reuse-values --set driver.version='>=575.48.31' \
+  --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES \
+  --set-string driver.env[4].value='compute,utility,graphics'
+
+# 2. Wait for driver rollout (may take 15-30 minutes)
+kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -w
+
+# 3. Verify new driver version
+kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi
+```
+
+### Checking GPU Status in Kubernetes
+
+```bash
+# Check GPU node capacity
+kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."nvidia.com/gpu" == "true") | "\(.metadata.name): \(.status.capacity."nvidia.com/gpu" // "0") GPUs"'
+
+# Check GPU operator pods
+kubectl get pods -n gpu-operator
+
+# View driver installation logs
+kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset -f
+```
+
+**Note**: Driver upgrades in Kubernetes environments are handled by the GPU Operator and may require node reboots depending on the driver version change.
+
 ## Additional Documentation
 
 For more detailed information, refer to the following guides:

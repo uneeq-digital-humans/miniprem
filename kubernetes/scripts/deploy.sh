@@ -1753,8 +1753,43 @@ install_gpu_operator() {
     
     echo "Installing NVIDIA GPU Operator..."
     echo -e "${BLUE}This will install GPU drivers automatically (10-25 minutes)${NC}"
+    echo ""
+    
+    # Driver version selection with prominent warning
+    echo -e "${YELLOW}🎮 NVIDIA Driver Version Selection 🎮${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}📋 We recommend NVIDIA Driver 575+ for Unreal Engine 5.6+ compatibility${NC}"
+    echo -e "${YELLOW}⚠️  However, we have only verified driver 570 in production${NC}"
+    echo ""
+    echo "Driver options:"
+    echo -e "${GREEN}1)${NC} Use verified driver 570 (recommended for production)"
+    echo -e "${CYAN}2)${NC} Use driver 575+ (for Unreal Engine 5.6+ compatibility)"
+    echo ""
+    
+    # Default to verified driver
+    NVIDIA_DRIVER_VERSION="570"
+    if [ "${SCRIPT_NON_INTERACTIVE:-}" = "true" ]; then
+        echo -e "${BLUE}🤖 Non-interactive mode: Using verified driver 570${NC}"
+    else
+        echo -n "Select driver version (1 or 2) [default: 1]: "
+        read -t 30 driver_choice || driver_choice="1"
+        
+        case "${driver_choice:-1}" in
+            2|575|575+)
+                NVIDIA_DRIVER_VERSION="575"
+                echo -e "${CYAN}✓ Selected driver 575+ for Unreal Engine 5.6+ compatibility${NC}"
+                echo -e "${YELLOW}⚠️  Note: This is a newer driver version - monitor installation carefully${NC}"
+                ;;
+            *)
+                echo -e "${GREEN}✓ Using verified driver 570 (production-tested)${NC}"
+                ;;
+        esac
+    fi
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo ""
+    
     echo "GPU Operator will:"
-    echo "  - Install NVIDIA driver 570+ on all GPU nodes"
+    echo "  - Install NVIDIA driver ${NVIDIA_DRIVER_VERSION}+ on all GPU nodes"
     echo "  - Configure containerd with NVIDIA runtime"
     echo "  - Enable GPU device plugin and monitoring"
     
@@ -1765,57 +1800,51 @@ install_gpu_operator() {
     # Create namespace
     kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
     
-    # Install GPU Operator with DNS fix using reliable wrapper
-    echo "Installing GPU operator with DNS configuration fix..."
-    reliable_helm_operation "upgrade --install" "gpu-operator" "gpu-operator" \
-        "nvidia/gpu-operator" \
-        --version v23.9.2 \
-        --set operator.defaultRuntime=containerd \
-        --set driver.enabled=true \
-        --set toolkit.enabled=true \
-        --set devicePlugin.enabled=true \
-        --set dcgmExporter.enabled=true \
-        --set nodeStatusExporter.enabled=false \
-        --set driver.env[0].name=ENABLE_AUTO_DRAIN \
-        --set-string driver.env[0].value="false" \
-        --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION \
+    # Install GPU Operator with improved compatibility settings and selected driver version
+    echo "Installing GPU operator with driver ${NVIDIA_DRIVER_VERSION}+ and Ubuntu 22.04 compatibility fixes..."
+    
+    # Base Helm values
+    local helm_values=(
+        "nvidia/gpu-operator"
+        --version v24.6.0
+        --set operator.defaultRuntime=containerd
+        --set driver.enabled=true
+        --set toolkit.enabled=true
+        --set devicePlugin.enabled=true
+        --set dcgmExporter.enabled=true
+        --set nodeStatusExporter.enabled=false
+        --set driver.env[0].name=ENABLE_AUTO_DRAIN
+        --set-string driver.env[0].value="false"
+        --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION
         --set-string driver.env[1].value="true"
+        --set driver.env[2].name=CC
+        --set-string driver.env[2].value="/usr/bin/gcc-12"
+        --set driver.env[3].name=CXX
+        --set-string driver.env[3].value="/usr/bin/g++-12"
+    )
+    
+    # Add driver version constraint
+    if [ "$NVIDIA_DRIVER_VERSION" = "575" ]; then
+        helm_values+=(
+            --set driver.version=">=575.48.31"
+            --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES
+            --set-string driver.env[4].value="compute,utility,graphics"
+        )
+        echo -e "${CYAN}📦 Configuring for driver 575+ with Unreal Engine graphics capabilities${NC}"
+    else
+        helm_values+=(
+            --set driver.version=">=570.47.06"
+        )
+        echo -e "${GREEN}📦 Configuring for verified driver 570+${NC}"
+    fi
+    
+    reliable_helm_operation "upgrade --install" "gpu-operator" "gpu-operator" "${helm_values[@]}"
     
     echo "⏳ Waiting for GPU operator pods to be ready..."
     kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s || true
     
-    # Apply DNS fix for Ubuntu systemd-resolved in chroot environments
-    echo "Applying DNS fix for NVIDIA driver installation in chroot environments..."
-    kubectl patch daemonset nvidia-driver-daemonset -n gpu-operator --type='merge' -p='
-{
-  "spec": {
-    "template": {
-      "spec": {
-        "containers": [
-          {
-            "name": "nvidia-driver-ctr",
-            "volumeMounts": [
-              {
-                "mountPath": "/etc/resolv.conf",
-                "name": "resolv-chroot",
-                "readOnly": true
-              }
-            ]
-          }
-        ],
-        "volumes": [
-          {
-            "hostPath": {
-              "path": "/etc/resolv-chroot.conf",
-              "type": "File"
-            },
-            "name": "resolv-chroot"
-          }
-        ]
-      }
-    }
-  }
-}'
+    # Note: DNS patch removed - newer GPU Operator versions handle DNS resolution better
+    echo "GPU Operator v24.6.0+ includes improved DNS resolution handling"
     
     # Wait for GPU drivers using adaptive waiting
     echo "Waiting for GPU drivers to be installed on all nodes..."
@@ -1824,6 +1853,33 @@ install_gpu_operator() {
     # Verify GPU nodes
     echo "GPU node status:"
     kubectl get nodes -L nvidia.com/gpu,uneeq.io/node-type
+    
+    # Show driver upgrade information
+    echo ""
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}📚 NVIDIA Driver Information & Upgrade Commands${NC}"
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo -e "Current installation: ${YELLOW}Driver ${NVIDIA_DRIVER_VERSION}+${NC}"
+    echo ""
+    if [ "$NVIDIA_DRIVER_VERSION" = "570" ]; then
+        echo -e "${BLUE}🎮 To upgrade to driver 575+ later (for Unreal Engine 5.6+):${NC}"
+        echo "   1. Update the GPU Operator with newer driver version:"
+        echo "      helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator \\"
+        echo "        --reuse-values --set driver.version='>=575.48.31' \\"
+        echo "        --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES \\"
+        echo "        --set-string driver.env[4].value='compute,utility,graphics'"
+        echo ""
+        echo "   2. Wait for driver rollout (may take 15-30 minutes):"
+        echo "      kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -w"
+        echo ""
+        echo "   3. Verify new driver version:"
+        echo "      kubectl exec -n gpu-operator \$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi"
+    else
+        echo -e "${CYAN}✓ Using driver 575+ - ready for Unreal Engine 5.6+${NC}"
+        echo -e "${BLUE}💡 To check driver status:${NC}"
+        echo "   kubectl exec -n gpu-operator \$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi"
+    fi
+    echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
 }
 
 # Configure GPU time-slicing for production efficiency
