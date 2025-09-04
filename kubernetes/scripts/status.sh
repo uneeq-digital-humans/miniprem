@@ -36,16 +36,7 @@ if [ -n "$AWS_PROFILE_ARG" ]; then
     echo "Using AWS profile: $AWS_PROFILE"
 fi
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
-
-# Script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+# Note: Colors, SCRIPT_DIR, and PROJECT_DIR already defined in deployment-functions.sh
 
 echo "======================================"
 echo "   Renny EKS Deployment Status       "

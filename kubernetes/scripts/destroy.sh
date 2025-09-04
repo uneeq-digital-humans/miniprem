@@ -67,8 +67,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Note: SCRIPT_DIR already defined in deployment-functions.sh
-PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+# Note: SCRIPT_DIR and PROJECT_DIR already defined in deployment-functions.sh
 
 # Timing
 START_TIME=$(date +%s)

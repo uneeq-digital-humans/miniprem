@@ -8,11 +8,7 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "$SCRIPT_DIR/deployment-functions.sh"
 
-# Colors for output (already defined in deployment-functions.sh)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
-PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+# Note: Colors, SCRIPT_DIR, PROJECT_DIR already defined in deployment-functions.sh
 
 echo -e "${RED}⚠️  EMERGENCY CLEANUP - NO CONFIRMATIONS${NC}"
 echo "Starting immediate teardown..."

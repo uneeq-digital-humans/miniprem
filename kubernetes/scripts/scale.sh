@@ -1,17 +1,9 @@
 #!/bin/bash
 set -e
 
-# Source deployment functions
+# Source deployment functions (includes color definitions)
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 source "$SCRIPT_DIR/deployment-functions.sh"
-
-# Colors for output (already defined in deployment-functions.sh, but keeping for compatibility)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
 
 # Parse command line arguments
 AWS_PROFILE_ARG=""
@@ -49,9 +41,7 @@ if [ -n "$AWS_PROFILE_ARG" ]; then
     export AWS_PROFILE="$AWS_PROFILE_ARG"
 fi
 
-# Script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+# Note: SCRIPT_DIR and PROJECT_DIR already defined by sourcing deployment-functions.sh
 
 # Show help
 if [ "$SHOW_HELP" = true ] || [ -z "${DESIRED_COUNT:-}" ]; then
