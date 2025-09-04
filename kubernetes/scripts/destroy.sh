@@ -465,14 +465,24 @@ fi
 echo ""
 echo "🧹 Final local cleanup..."
 cd "$PROJECT_DIR"
-# Clean up local files and temporary configs
-rm -f terraform/tfplan
-rm -f terraform/.terraform.lock.hcl
-rm -rf terraform/.terraform
-rm -f terraform/terraform.tfstate*
-# gpu-time-slicing-config.yaml is a committed config file, not auto-generated
-rm -f renny-chart.tgz                # Remove any temporary chart packages
-rm -f .kubectl_context_backup        # Remove any kubectl context backups
+# Clean up ONLY temporary files - preserve all committed configurations
+echo "  - Removing temporary Terraform files..."
+rm -f terraform/tfplan                # Temporary plan file
+rm -rf terraform/.terraform           # Temporary cache directory
+
+# PRESERVE these important files:
+# - terraform/.terraform.lock.hcl      # Dependency lock file (should be committed)
+# - terraform/terraform.tfstate*       # State files (critical for infrastructure tracking)
+# - terraform/*.tf                     # All Terraform configuration files  
+# - terraform/terraform.tfvars*        # Variable files (user configuration)
+# - gpu-time-slicing-config.yaml       # GPU configuration (committed config)
+# - all *.yaml, *.yml files            # Kubernetes manifests and values
+# - all *.sh files                     # Scripts
+# - all *.md files                     # Documentation
+
+echo "  - Removing temporary chart packages..."
+rm -f renny-chart.tgz                 # User places this manually, safe to remove
+rm -f .kubectl_context_backup         # Temporary backup file
 
 # Calculate elapsed time
 END_TIME=$(date +%s)
