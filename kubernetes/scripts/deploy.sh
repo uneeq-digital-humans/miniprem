@@ -530,8 +530,26 @@ reliable_helm_operation() {
             sleep 10
         fi
         
-        # Attempt the Helm operation with timeout
-        if timeout 1800 helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+        # Attempt the Helm operation with timeout (using gtimeout on macOS if available, otherwise plain helm)
+        local helm_success=false
+        if command -v gtimeout >/dev/null 2>&1; then
+            # macOS with coreutils installed
+            if gtimeout 1800 helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+                helm_success=true
+            fi
+        elif command -v timeout >/dev/null 2>&1; then
+            # Linux with timeout command
+            if timeout 1800 helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+                helm_success=true
+            fi
+        else
+            # Fallback: use helm's built-in timeout only (25 minutes)
+            if helm "$operation" "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+                helm_success=true
+            fi
+        fi
+        
+        if [ "$helm_success" = "true" ]; then
             echo -e "${GREEN}✓ Helm $operation successful for $release_name${NC}"
             return 0
         else
@@ -1325,7 +1343,10 @@ deploy_infrastructure() {
     echo ""
     echo "Applying infrastructure changes..."
     echo "Creating:"
-    echo "  - VPC with 3 availability zones"
+    # Display dynamic availability zone count based on NAT configuration
+    local az_count=$([ "$CONFIGURED_NAT_HA" = "true" ] && echo "3" || echo "1")
+    local az_description=$([ "$CONFIGURED_NAT_HA" = "true" ] && echo " (High Availability)" || echo " (Cost Optimized)")
+    echo "  - VPC with $az_count availability zone$([ "$az_count" = "1" ] || echo "s")$az_description"
     echo "  - EKS cluster v1.31"
     
     # Use dynamically loaded configuration

@@ -124,12 +124,18 @@ scoop install terraform
 - Linux: `sudo snap install helm --classic`
 - Windows: `choco install kubernetes-helm`
 
+*CoreUtils (macOS only - required for deployment timeouts):*
+- macOS: `brew install coreutils`
+
 **Verify Installations:**
 ```bash
 terraform version  # Should show v1.6.6 or higher
 aws --version      # AWS CLI version
 kubectl version    # Kubernetes CLI
 helm version       # Helm package manager
+
+# macOS only - verify coreutils timeout command
+gtimeout --version  # Should show GNU coreutils timeout
 ```
 
 
