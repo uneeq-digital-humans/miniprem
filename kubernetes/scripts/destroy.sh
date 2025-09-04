@@ -470,7 +470,7 @@ rm -f terraform/tfplan
 rm -f terraform/.terraform.lock.hcl
 rm -rf terraform/.terraform
 rm -f terraform/terraform.tfstate*
-rm -f gpu-time-slicing-config.yaml  # Remove auto-generated file
+# gpu-time-slicing-config.yaml is a committed config file, not auto-generated
 rm -f renny-chart.tgz                # Remove any temporary chart packages
 rm -f .kubectl_context_backup        # Remove any kubectl context backups
 
