@@ -4,22 +4,23 @@
 
 set -e
 
-# Colors for output
+# Source deployment functions
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source "$SCRIPT_DIR/deployment-functions.sh"
+
+# Colors for output (already defined in deployment-functions.sh)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m' # No Color
-
-# Script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 echo -e "${RED}⚠️  EMERGENCY CLEANUP - NO CONFIRMATIONS${NC}"
 echo "Starting immediate teardown..."
 
-# Get cluster info
+# Load deployment configuration
 cd "$PROJECT_DIR/terraform"
-CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "")
-REGION=$(terraform output -raw region 2>/dev/null || echo "us-east-1")
+init_deployment_config "false" ""
+REGION="$AWS_REGION"
 cd "$PROJECT_DIR"
 
 if [ -n "$CLUSTER_NAME" ]; then

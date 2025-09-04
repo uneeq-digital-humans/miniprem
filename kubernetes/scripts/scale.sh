@@ -1,7 +1,11 @@
 #!/bin/bash
 set -e
 
-# Colors for output
+# Source deployment functions
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source "$SCRIPT_DIR/deployment-functions.sh"
+
+# Colors for output (already defined in deployment-functions.sh, but keeping for compatibility)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -98,10 +102,16 @@ if [ $DESIRED_COUNT -lt $MIN_COUNT ] || [ $DESIRED_COUNT -gt $MAX_COUNT ]; then
     exit 1
 fi
 
-# Get cluster name from Terraform
+# Load deployment configuration
 cd "$PROJECT_DIR/terraform"
-if ! CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null); then
-    echo -e "${RED}❌ Could not get cluster name from Terraform${NC}"
+if ! init_deployment_config "false" ""; then
+    echo -e "${RED}❌ Could not load deployment configuration${NC}"
+    echo "Please ensure the infrastructure has been deployed and .deployment_id exists"
+    exit 1
+fi
+
+if [ -z "$CLUSTER_NAME" ]; then
+    echo -e "${RED}❌ Could not determine cluster name${NC}"
     echo "Please ensure the infrastructure has been deployed"
     exit 1
 fi

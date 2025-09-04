@@ -1,7 +1,11 @@
 #!/bin/bash
 set -e
 
-# Colors for output
+# Source deployment functions
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source "$SCRIPT_DIR/deployment-functions.sh"
+
+# Colors for output (already defined in deployment-functions.sh, but keeping for compatibility)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -13,6 +17,8 @@ NC='\033[0m' # No Color
 AWS_PROFILE_ARG=""
 SKIP_PROFILE_CHECK=false
 DEBUG_MODE=false
+FORCE_NEW_DEPLOYMENT=false
+PROVIDED_DEPLOYMENT_ID=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -28,13 +34,39 @@ while [[ $# -gt 0 ]]; do
             DEBUG_MODE=true
             shift
             ;;
+        --deployment-id)
+            PROVIDED_DEPLOYMENT_ID="$2"
+            shift 2
+            ;;
+        --new)
+            FORCE_NEW_DEPLOYMENT=true
+            shift
+            ;;
+        --list-deployments)
+            echo "🚀 Loading configuration..."
+            cd terraform
+            load_terraform_config
+            list_all_deployments
+            exit 0
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --profile PROFILE_NAME    Use specific AWS profile"
-            echo "  --skip-profile-check      Skip AWS profile confirmation"
-            echo "  --debug                   Enable verbose debug output"
-            echo "  --help, -h                Show this help message"
+            echo "  --profile PROFILE_NAME       Use specific AWS profile"
+            echo "  --skip-profile-check          Skip AWS profile confirmation"
+            echo "  --debug                       Enable verbose debug output"
+            echo "  --deployment-id ID            Use specific deployment ID"
+            echo "  --new                         Force create new deployment with fresh ID"
+            echo "  --list-deployments            List all existing deployments and exit"
+            echo "  --help, -h                    Show this help message"
+            echo ""
+            echo "Deployment ID Management:"
+            echo "  By default, deploy.sh will detect existing deployments and prompt you"
+            echo "  to either update an existing deployment or create a new one."
+            echo ""
+            echo "  Use --new to always create a fresh deployment with a new ID"
+            echo "  Use --deployment-id to specify a custom deployment ID"
+            echo "  Use --list-deployments to see all existing deployments"
             exit 0
             ;;
         *)
@@ -607,12 +639,18 @@ retry_network_operation() {
     done
 }
 
-# Load configuration from terraform.tfvars dynamically
+# Load configuration with deployment ID management
 load_config() {
-    # Read values from terraform.tfvars with fallbacks
-    PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
-    ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
-    AWS_REGION=$(awk '/^aws_region[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "us-east-2")
+    local current_dir="$(pwd)"
+    
+    # Change to terraform directory for deployment configuration
+    cd "$PROJECT_DIR/terraform"
+    
+    # Initialize deployment configuration (handles deployment ID, infrastructure detection, etc.)
+    init_deployment_config "$FORCE_NEW_DEPLOYMENT" "$PROVIDED_DEPLOYMENT_ID"
+    
+    # Load additional configuration from terraform.tfvars
+    # Note: PROJECT_NAME, ENVIRONMENT, AWS_REGION, CLUSTER_NAME are already set by init_deployment_config
     
     # Control nodes (fixed from node-groups.tf)
     CONTROL_NODES=2
@@ -624,13 +662,14 @@ load_config() {
     RENNY_INSTANCE_TYPE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.4xlarge")
     A2F_INSTANCE_TYPE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.4xlarge")
     
-    # Calculate cluster name and total nodes
-    CLUSTER_NAME="${PROJECT_NAME}-${ENVIRONMENT}"
+    # Calculate total nodes
     TOTAL_EXPECTED_NODES=$((CONTROL_NODES + RENNY_DESIRED_SIZE + A2F_DESIRED_SIZE))
     GPU_NODES=$((RENNY_DESIRED_SIZE + A2F_DESIRED_SIZE))
     
-    # Export for use in other functions
-    export PROJECT_NAME ENVIRONMENT AWS_REGION CLUSTER_NAME
+    # Return to original directory
+    cd "$current_dir"
+    
+    # Export for use in other functions (deployment variables already exported by init_deployment_config)
     export CONTROL_NODES RENNY_DESIRED_SIZE A2F_DESIRED_SIZE TOTAL_EXPECTED_NODES GPU_NODES
     export RENNY_INSTANCE_TYPE A2F_INSTANCE_TYPE
 }

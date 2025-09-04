@@ -35,6 +35,17 @@ variable "environment" {
   default     = "production"
 }
 
+variable "deployment_id" {
+  description = "Unique deployment identifier (git hash or timestamp)"
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[a-z0-9-]+$", var.deployment_id)) || var.deployment_id == ""
+    error_message = "Deployment ID must contain only lowercase letters, numbers, and hyphens."
+  }
+}
+
 variable "kubernetes_version" {
   description = "Kubernetes version"
   type        = string

@@ -55,10 +55,13 @@ provider "helm" {
 }
 
 locals {
-  cluster_name = "${var.project_name}-${var.environment}"
+  # Generate cluster name with deployment ID for resource isolation
+  cluster_name = var.deployment_id != "" ? "${var.project_name}-${var.environment}-${var.deployment_id}" : "${var.project_name}-${var.environment}"
+  
   common_tags = {
-    Project     = var.project_name
-    Environment = var.environment
-    ManagedBy   = "Terraform"
+    Project      = var.project_name
+    Environment  = var.environment
+    DeploymentId = var.deployment_id
+    ManagedBy    = "Terraform"
   }
 }

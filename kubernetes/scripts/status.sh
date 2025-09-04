@@ -3,6 +3,10 @@
 
 set -e
 
+# Source deployment functions
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source "$SCRIPT_DIR/deployment-functions.sh"
+
 # Parse command line arguments
 AWS_PROFILE_ARG=""
 while [[ $# -gt 0 ]]; do
@@ -55,10 +59,10 @@ if [ ! -f "$PROJECT_DIR/terraform/terraform.tfstate" ]; then
     exit 1
 fi
 
-# Get cluster info and configuration from terraform
+# Load deployment configuration
 cd "$PROJECT_DIR/terraform"
-CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "")
-REGION=$(terraform output -raw region 2>/dev/null || echo "us-east-1")
+init_deployment_config "false" ""
+REGION="$AWS_REGION"
 
 # Read actual configuration from terraform.tfvars for accurate cost calculations
 if [ -f "terraform.tfvars" ]; then

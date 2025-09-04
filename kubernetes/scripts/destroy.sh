@@ -1,19 +1,49 @@
 #!/bin/bash
 set -e
 
+# Source deployment functions
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+source "$SCRIPT_DIR/deployment-functions.sh"
+
 # Parse command line arguments
 AWS_PROFILE_ARG=""
+TARGET_DEPLOYMENT_ID=""
+DESTROY_ALL=false
+LIST_ONLY=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --profile)
             AWS_PROFILE_ARG="$2"
             shift 2
             ;;
+        --deployment-id)
+            TARGET_DEPLOYMENT_ID="$2"
+            shift 2
+            ;;
+        --all)
+            DESTROY_ALL=true
+            shift
+            ;;
+        --list)
+            LIST_ONLY=true
+            shift
+            ;;
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --profile PROFILE_NAME    Use specific AWS profile"
-            echo "  --help, -h                Show this help message"
+            echo "  --profile PROFILE_NAME       Use specific AWS profile"
+            echo "  --deployment-id ID           Destroy specific deployment ID"
+            echo "  --all                        Destroy ALL deployments (use with caution!)"
+            echo "  --list                       List all deployments and exit"
+            echo "  --help, -h                   Show this help message"
+            echo ""
+            echo "Deployment Management:"
+            echo "  By default, destroy.sh will detect and destroy the current deployment"
+            echo "  (based on .deployment_id file or terraform.tfvars)."
+            echo ""
+            echo "  Use --deployment-id to target a specific deployment"
+            echo "  Use --all to destroy ALL deployments for this project/environment"
+            echo "  Use --list to see all deployments without destroying anything"
             exit 0
             ;;
         *)
@@ -37,8 +67,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+# Note: SCRIPT_DIR already defined in deployment-functions.sh
 PROJECT_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
 
 # Timing
@@ -48,6 +77,50 @@ echo "======================================"
 echo "   Renny EKS Cluster Destruction     "
 echo "======================================"
 echo ""
+
+# Load deployment configuration
+cd "$PROJECT_DIR/terraform"
+if [ "$LIST_ONLY" = "true" ]; then
+    echo "📋 Listing all deployments..."
+    load_terraform_config
+    list_all_deployments
+    exit 0
+fi
+
+if [ "$DESTROY_ALL" = "true" ]; then
+    echo -e "${RED}⚠️  WARNING: --all flag specified - this will destroy ALL deployments!${NC}"
+    load_terraform_config
+    if ! confirm_action "Are you sure you want to destroy ALL deployments?" "n"; then
+        echo "Cancelled."
+        exit 0
+    fi
+fi
+
+# Load deployment configuration based on mode
+if [ -n "$TARGET_DEPLOYMENT_ID" ]; then
+    # Target specific deployment ID
+    echo "🎯 Targeting deployment ID: $TARGET_DEPLOYMENT_ID"
+    load_terraform_config
+    DEPLOYMENT_ID="$TARGET_DEPLOYMENT_ID"
+    if [ -n "$DEPLOYMENT_ID" ]; then
+        CLUSTER_NAME="$PROJECT_NAME-$ENVIRONMENT-$DEPLOYMENT_ID"
+    else
+        CLUSTER_NAME="$PROJECT_NAME-$ENVIRONMENT"
+    fi
+    # Update terraform.tfvars to target this deployment
+    save_deployment_id "$DEPLOYMENT_ID"
+    export PROJECT_NAME ENVIRONMENT DEPLOYMENT_ID CLUSTER_NAME AWS_REGION
+elif [ "$DESTROY_ALL" = "true" ]; then
+    # Will handle multiple deployments in destroy logic
+    load_terraform_config
+    DEPLOYMENT_ID=""
+    CLUSTER_NAME="" # Will be set per deployment in loop
+else
+    # Use current deployment (from .deployment_id file or terraform.tfvars)
+    init_deployment_config "false" ""
+fi
+
+cd "$PROJECT_DIR"
 echo -e "${RED}⚠️  WARNING: This will destroy all resources!${NC}"
 echo "This includes:"
 echo "  - EKS cluster and all nodes (Ubuntu GPU + control nodes)"
@@ -120,17 +193,90 @@ wait_for_deletion() {
     return 1
 }
 
-# Get cluster info first
-cd "$PROJECT_DIR/terraform"
-CLUSTER_NAME=$(terraform output -raw cluster_name 2>/dev/null || echo "unknown")
-REGION=$(terraform output -raw region 2>/dev/null || echo "us-east-1")
-cd "$PROJECT_DIR"
+# Use cluster info from deployment configuration
+# Note: CLUSTER_NAME and AWS_REGION are already set by deployment config above
+REGION="$AWS_REGION"  # For backward compatibility with rest of script
+
+if [ -z "$CLUSTER_NAME" ]; then
+    echo -e "${RED}Error: No cluster name determined. Check deployment configuration.${NC}"
+    exit 1
+fi
+
+# Handle --all flag by destroying each deployment individually
+if [ "$DESTROY_ALL" = "true" ]; then
+    echo -e "${RED}⚠️  DESTROY ALL MODE ACTIVATED${NC}"
+    echo "🔍 Finding all deployments for $PROJECT_NAME-$ENVIRONMENT..."
+    
+    # Get all clusters for this project/environment
+    base_name="$PROJECT_NAME-$ENVIRONMENT"
+    all_clusters=$(aws eks list-clusters --region "$AWS_REGION" --query "clusters[?contains(@, '$base_name')]" --output text 2>/dev/null || echo "")
+    
+    if [ -z "$all_clusters" ]; then
+        echo -e "${YELLOW}No deployments found to destroy${NC}"
+        exit 0
+    fi
+    
+    echo "Found deployments to destroy:"
+    for cluster in $all_clusters; do
+        echo "  - $cluster"
+    done
+    echo ""
+    
+    if ! confirm_action "Proceed to destroy ALL these deployments?" "n"; then
+        echo "Cancelled."
+        exit 0
+    fi
+    
+    echo "💥 Starting mass destruction..."
+    
+    # Destroy each cluster individually
+    for cluster in $all_clusters; do
+        echo -e "${CYAN}========================================${NC}"
+        echo -e "${CYAN}Destroying: $cluster${NC}"
+        echo -e "${CYAN}========================================${NC}"
+        
+        # Extract deployment ID if present
+        cluster_deployment_id=""
+        if [[ "$cluster" =~ ^${base_name}-(.+)$ ]]; then
+            cluster_deployment_id="${BASH_REMATCH[1]}"
+        fi
+        
+        # Update configuration for this cluster
+        CLUSTER_NAME="$cluster"
+        DEPLOYMENT_ID="$cluster_deployment_id"
+        
+        # Save deployment ID to terraform for this iteration
+        if [ -n "$cluster_deployment_id" ]; then
+            save_deployment_id "$cluster_deployment_id"
+        else
+            # Legacy cluster - clear deployment ID
+            save_deployment_id ""
+        fi
+        
+        # Run destroy process for this cluster
+        destroy_single_deployment
+        
+        echo -e "${GREEN}✅ Completed destruction of: $cluster${NC}"
+        echo ""
+    done
+    
+    # Final cleanup
+    cleanup_deployment_id
+    
+    echo -e "${GREEN}========================================${NC}"
+    echo -e "${GREEN}🎆 ALL DEPLOYMENTS DESTROYED${NC}"
+    echo -e "${GREEN}========================================${NC}"
+    exit 0
+fi
 
 # Configure kubectl if possible
-if [ "$CLUSTER_NAME" != "unknown" ]; then
+if [ "$CLUSTER_NAME" != "unknown" ] && [ -n "$CLUSTER_NAME" ]; then
     echo "Configuring kubectl for cluster: $CLUSTER_NAME"
     aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME" 2>/dev/null || true
 fi
+
+# Function to destroy a single deployment (extracted from main logic)
+destroy_single_deployment() {
 
 # Step 1: Force terminate all applications (no graceful shutdown)
 echo ""
@@ -486,6 +632,12 @@ ELAPSED=$((END_TIME - START_TIME))
 ELAPSED_MIN=$((ELAPSED / 60))
 ELAPSED_SEC=$((ELAPSED % 60))
 
+# Clean up deployment ID after successful destruction
+if [ -n "$DEPLOYMENT_ID" ] && [ "$DESTROY_ALL" != "true" ]; then
+    echo "🧹 Cleaning up deployment ID configuration..."
+    cleanup_deployment_id
+fi
+
 echo ""
 echo "======================================"
 echo -e "${GREEN}✅ All resources destroyed successfully${NC}"
@@ -528,3 +680,10 @@ echo "  - No more GPU instance charges"
 echo "  - No more data transfer charges"
 echo ""
 echo "To redeploy, run: ./scripts/deploy.sh"
+
+} # End of destroy_single_deployment function
+
+# Execute single deployment destroy if not in --all mode
+if [ "$DESTROY_ALL" != "true" ]; then
+    destroy_single_deployment
+fi

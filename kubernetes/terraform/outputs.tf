@@ -8,6 +8,26 @@ output "cluster_name" {
   value       = module.eks.cluster_name
 }
 
+output "deployment_id" {
+  description = "Deployment ID for resource isolation"
+  value       = var.deployment_id
+}
+
+output "base_cluster_name" {
+  description = "Base cluster name without deployment ID"
+  value       = "${var.project_name}-${var.environment}"
+}
+
+output "project_name" {
+  description = "Project name"
+  value       = var.project_name
+}
+
+output "environment" {
+  description = "Environment name"
+  value       = var.environment
+}
+
 output "cluster_security_group_id" {
   description = "Security group ID attached to the EKS cluster"
   value       = module.eks.cluster_security_group_id
