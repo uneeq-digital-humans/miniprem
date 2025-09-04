@@ -1528,15 +1528,17 @@ install_gpu_operator() {
     echo "Installing GPU operator with DNS configuration fix..."
     reliable_helm_operation "upgrade --install" "gpu-operator" "gpu-operator" \
         "nvidia/gpu-operator" \
+        --version v23.9.2 \
         --set operator.defaultRuntime=containerd \
         --set driver.enabled=true \
         --set toolkit.enabled=true \
         --set devicePlugin.enabled=true \
         --set dcgmExporter.enabled=true \
+        --set nodeStatusExporter.enabled=false \
         --set driver.env[0].name=ENABLE_AUTO_DRAIN \
-        --set driver.env[0].value=false \
+        --set driver.env[0].value="false" \
         --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION \
-        --set driver.env[1].value=true
+        --set driver.env[1].value="true"
     
     echo "⏳ Waiting for GPU operator pods to be ready..."
     kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s || true
