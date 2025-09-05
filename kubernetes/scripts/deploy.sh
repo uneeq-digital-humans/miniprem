@@ -36,7 +36,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --list-deployments)
             echo "🚀 Loading configuration..."
-            cd terraform
+            cd "$TERRAFORM_DIR"
             load_terraform_config
             list_all_deployments
             exit 0
@@ -101,6 +101,37 @@ show_elapsed() {
     local elapsed_min=$((elapsed / 60))
     local elapsed_sec=$((elapsed % 60))
     echo "Elapsed time: ${elapsed_min}m ${elapsed_sec}s"
+}
+
+# Flexible user input validation helper
+# Usage: 
+#   read_yes_no "Continue with deployment?" "y"  # Returns 0 for yes, 1 for no
+#   read_yes_no "Deploy now?" "n"                # Default to no if user presses enter
+read_yes_no() {
+    local prompt="$1"
+    local default="${2:-n}"  # Default to 'n' if not specified
+    local response
+    
+    # Show prompt with default indication
+    if [[ "$default" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}${prompt} (Y/n) response: ${NC}"
+    else
+        echo -e "${YELLOW}${prompt} (y/N) response: ${NC}"
+    fi
+    
+    read -r response
+    
+    # If empty response, use default
+    if [ -z "$response" ]; then
+        response="$default"
+    fi
+    
+    # Check for yes variations
+    if [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        return 0  # Yes
+    else
+        return 1  # No
+    fi
 }
 
 # Adaptive waiting for cluster nodes to be ready
@@ -565,21 +596,24 @@ reliable_helm_operation() {
             sleep 10
         fi
         
+        # Debug: Show exact command being executed
+        echo "DEBUG: helm $operation \"$release_name\" $helm_args --namespace \"$namespace\" --timeout 25m"
+        
         # Attempt the Helm operation with timeout (using gtimeout on macOS if available, otherwise plain helm)
         local helm_success=false
         if command -v gtimeout >/dev/null 2>&1; then
             # macOS with coreutils installed
-            if gtimeout 1800 helm $operation "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+            if gtimeout 1800 bash -c "helm $operation \"$release_name\" $helm_args --namespace \"$namespace\" --timeout 25m" 2>&1; then
                 helm_success=true
             fi
         elif command -v timeout >/dev/null 2>&1; then
             # Linux with timeout command
-            if timeout 1800 helm $operation "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+            if timeout 1800 bash -c "helm $operation \"$release_name\" $helm_args --namespace \"$namespace\" --timeout 25m" 2>&1; then
                 helm_success=true
             fi
         else
             # Fallback: use helm's built-in timeout only (25 minutes)
-            if helm $operation "$release_name" $helm_args --namespace "$namespace" --timeout 25m 2>&1; then
+            if bash -c "helm $operation \"$release_name\" $helm_args --namespace \"$namespace\" --timeout 25m" 2>&1; then
                 helm_success=true
             fi
         fi
@@ -647,7 +681,7 @@ load_config() {
     local current_dir="$(pwd)"
     
     # Change to terraform directory for deployment configuration
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     
     # Initialize deployment configuration (handles deployment ID, infrastructure detection, etc.)
     init_deployment_config "$FORCE_NEW_DEPLOYMENT" "$PROVIDED_DEPLOYMENT_ID"
@@ -822,7 +856,8 @@ check_aws_profile() {
     # Get identity information
     identity_arn=$(aws sts get-caller-identity --query 'Arn' --output text 2>/dev/null || echo "Unknown")
     account_id=$(aws sts get-caller-identity --query 'Account' --output text 2>/dev/null || echo "Unknown")
-    region=$(aws configure get region 2>/dev/null || echo "Not set")
+    # Get region from terraform.tfvars (single source of truth)
+    region=$(awk '/^aws_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null || echo "Not configured in terraform.tfvars")
     
     # Try to get current profile name
     if [ -n "${AWS_PROFILE:-}" ]; then
@@ -854,10 +889,7 @@ check_aws_profile() {
     fi
     
     # Confirm with user
-    echo -e "${YELLOW}Is this the correct AWS profile/account for your EKS deployment? (y/N)${NC}"
-    read -r response
-    
-    if [[ "$response" =~ ^[Yy]$ ]]; then
+    if read_yes_no "Is this the correct AWS profile/account for your EKS deployment?" "n"; then
         echo -e "${GREEN}✅ Proceeding with current AWS configuration${NC}"
         echo ""
     else
@@ -945,9 +977,7 @@ check_sso_credential_expiration() {
         echo "Please refresh your SSO login:"
         echo "  aws sso login --profile ${AWS_PROFILE:-default}"
         echo ""
-        echo -e "${YELLOW}Continue with potentially expired credentials? (y/N)${NC}"
-        read -r response
-        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        if ! read_yes_no "Continue with potentially expired credentials?" "n"; then
             echo "Aborting deployment. Please refresh your credentials first."
             exit 1
         fi
@@ -958,9 +988,7 @@ check_sso_credential_expiration() {
         echo "Deployment takes 60-90 minutes. Consider refreshing:"
         echo "  aws sso login --profile ${AWS_PROFILE:-default}"
         echo ""
-        echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
-        read -r response
-        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        if ! read_yes_no "Continue anyway?" "n"; then
             echo "Aborting deployment. Please refresh your credentials first."
             exit 1
         fi
@@ -1017,9 +1045,7 @@ check_aws_credentials() {
         else
             echo -e "${YELLOW}⚠️  Warning: Credentials may be expired or invalid${NC}"
             echo "Consider refreshing your AWS credentials"
-            echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
-            read -r response
-            if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            if ! read_yes_no "Continue anyway?" "n"; then
                 echo "Deployment cancelled. Please refresh credentials and retry."
                 exit 1
             fi
@@ -1033,7 +1059,13 @@ check_aws_credentials() {
 # Check AWS service limits and resource availability
 check_aws_limits() {
     echo "🔍 Checking AWS service limits and availability..."
-    local region=$(aws configure get region 2>/dev/null || echo "us-east-1")
+    # Get region from terraform.tfvars (single source of truth)
+    local region
+    if ! region=$(awk '/^aws_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null) || [ -z "$region" ]; then
+        echo -e "${RED}Error: aws_region not set in terraform.tfvars${NC}" >&2
+        echo "Please add: aws_region = \"us-east-2\"  (or your preferred region)" >&2
+        return 1
+    fi
     
     # Check VPC limit using existing script
     echo "Checking VPC availability..."
@@ -1045,9 +1077,7 @@ check_aws_limits() {
             echo -e "${YELLOW}⚠️  VPC usage warning detected${NC}"
             echo "Run './scripts/check-vpc-usage.sh' for details"
             echo ""
-            echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
-            read -r response
-            if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            if ! read_yes_no "Continue anyway?" "n"; then
                 echo "Please free up VPC capacity and retry"
                 exit 1
             fi
@@ -1062,9 +1092,7 @@ check_aws_limits() {
         echo "  2. Insufficient permissions to check VPCs"
         echo "  3. Network connectivity issues"
         echo ""
-        echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
-        read -r response
-        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        if ! read_yes_no "Continue anyway?" "n"; then
             echo "Please resolve VPC issues and retry"
             exit 1
         fi
@@ -1094,7 +1122,7 @@ check_aws_limits() {
         echo "Consider:"
         echo "  1. Changing to a different region with GPU availability"
         echo "  2. Requesting quota increase for GPU instances"
-        echo "  3. Using different instance types (modify terraform/variables.tf)"
+        echo "  3. Using different instance types (modify kubernetes/terraform/variables.tf)"
         exit 1
     fi
     
@@ -1206,9 +1234,7 @@ validate_network_config() {
                 if [ -n "$existing_vpc_name" ]; then
                     echo "Existing VPC: $existing_vpc_name ($existing_vpc_id)"
                 fi
-                echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
-                read -r response
-                if [[ ! "$response" =~ ^[Yy]$ ]]; then
+                if ! read_yes_no "Continue anyway?" "n"; then
                     echo "Please choose a different VPC CIDR range"
                     exit 1
                 fi
@@ -1264,14 +1290,14 @@ test_external_dependencies() {
     
     # Test Helm chart file
     echo "Validating Helm chart..."
-    if [ ! -f "$PROJECT_DIR/renny-chart.tgz" ]; then
-        echo -e "${RED}❌ renny-chart.tgz not found in $PROJECT_DIR${NC}"
+    if [ ! -f "$KUBERNETES_DIR/renny-chart.tgz" ]; then
+        echo -e "${RED}❌ renny-chart.tgz not found in $KUBERNETES_DIR${NC}"
         echo "Please place the Renny Helm chart tar file in the kubernetes/ directory"
         exit 1
     fi
     
     # Basic validation that it's a valid tar file
-    if ! tar -tzf "$PROJECT_DIR/renny-chart.tgz" > /dev/null 2>&1; then
+    if ! tar -tzf "$KUBERNETES_DIR/renny-chart.tgz" > /dev/null 2>&1; then
         echo -e "${RED}❌ renny-chart.tgz appears to be corrupted${NC}"
         echo "Please obtain a fresh copy of the Renny Helm chart"
         exit 1
@@ -1305,9 +1331,7 @@ check_prerequisites() {
         echo "Older versions may cause kubectl authentication issues"
         echo "Update with: https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html"
         echo ""
-        echo -e "${YELLOW}Continue anyway? (y/N)${NC}"
-        read -r response
-        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+        if ! read_yes_no "Continue anyway?" "n"; then
             exit 1
         fi
     fi
@@ -1449,12 +1473,7 @@ prompt_network_configuration() {
     echo "Service Network Range:  $service_cidr (PERMANENT)"
     echo "NAT Gateway Setup:      $([ "$enable_nat_ha" = "true" ] && echo "High Availability" || echo "Cost Optimized") (changeable)"
     echo ""
-    echo -e "${YELLOW}Is this configuration correct? (yes/no):${NC}"
-    
-    local confirm
-    read -r confirm
-    
-    if [[ "$confirm" != "yes" ]]; then
+    if ! read_yes_no "Is this configuration correct?" "n"; then
         echo "Configuration cancelled. Please restart deployment to reconfigure."
         exit 1
     fi
@@ -1470,9 +1489,9 @@ prompt_network_configuration() {
 
 # Create terraform.tfvars if it doesn't exist
 create_tfvars() {
-    if [ ! -f "$PROJECT_DIR/terraform/terraform.tfvars" ]; then
+    if [ ! -f "$TERRAFORM_DIR/terraform.tfvars" ]; then
         echo "📝 Creating terraform.tfvars with your configuration..."
-        cat > "$PROJECT_DIR/terraform/terraform.tfvars" <<EOF
+        cat > "$TERRAFORM_DIR/terraform.tfvars" <<EOF
 # Network Configuration (configured during deployment)
 vpc_cidr = "$CONFIGURED_VPC_CIDR"
 service_cidr = "$CONFIGURED_SERVICE_CIDR"
@@ -1489,14 +1508,14 @@ docker_username = ""  # Your Docker Hub username with access to UneeQ repos
 docker_password = ""  # Your Docker Hub password
 
 # Optional: Override default values
-# aws_region = "us-east-1"
+# aws_region = "us-east-2"
 # renny_instance_type = "g5.4xlarge"
 # a2f_instance_type = "g5.4xlarge"
 # renny_min_size = 10
 # renny_max_size = 20
 # renny_desired_size = 10
 EOF
-        echo -e "${YELLOW}⚠️  Please edit terraform/terraform.tfvars with your credentials${NC}"
+        echo -e "${YELLOW}⚠️  Please edit kubernetes/terraform/terraform.tfvars with your credentials${NC}"
         echo "Required values:"
         echo "  - dhop_tenant_id: Your DHOP tenant ID"
         echo "  - dhop_api_key: Your DHOP API key (base64 encoded)"
@@ -1506,15 +1525,15 @@ EOF
     fi
     
     # Validate that required values are filled
-    if grep -q 'dhop_tenant_id = ""' "$PROJECT_DIR/terraform/terraform.tfvars" || grep -q 'dhop_api_key = ""' "$PROJECT_DIR/terraform/terraform.tfvars"; then
+    if grep -q 'dhop_tenant_id = ""' "$TERRAFORM_DIR/terraform.tfvars" || grep -q 'dhop_api_key = ""' "$TERRAFORM_DIR/terraform.tfvars"; then
         echo -e "${RED}❌ terraform.tfvars contains empty DHOP values${NC}"
-        echo "Please fill in all required values in terraform/terraform.tfvars"
+        echo "Please fill in all required values in kubernetes/terraform/terraform.tfvars"
         exit 1
     fi
     
-    if grep -q 'docker_username = ""' "$PROJECT_DIR/terraform/terraform.tfvars" || grep -q 'docker_password = ""' "$PROJECT_DIR/terraform/terraform.tfvars"; then
+    if grep -q 'docker_username = ""' "$TERRAFORM_DIR/terraform.tfvars" || grep -q 'docker_password = ""' "$TERRAFORM_DIR/terraform.tfvars"; then
         echo -e "${RED}❌ terraform.tfvars contains empty Docker credentials${NC}"
-        echo "Please fill in all required values in terraform/terraform.tfvars"
+        echo "Please fill in all required values in kubernetes/terraform/terraform.tfvars"
         exit 1
     fi
 }
@@ -1522,7 +1541,7 @@ EOF
 # Deploy infrastructure
 deploy_infrastructure() {
     echo "🏗️  Checking infrastructure state..."
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     
     # Initialize Terraform
     echo "Initializing Terraform..."
@@ -1612,17 +1631,14 @@ deploy_infrastructure() {
     
     echo -e "${GREEN}✓ Infrastructure deployed successfully${NC}"
     show_elapsed
-    
-    cd "$PROJECT_DIR"
 }
 
 # Configure kubectl
 configure_kubectl() {
     echo "🔧 Configuring kubectl..."
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     CLUSTER_NAME=$(terraform output -raw cluster_name)
     REGION=$(terraform output -raw region)
-    cd "$PROJECT_DIR"
     
     echo "Updating kubeconfig for cluster: $CLUSTER_NAME"
     aws eks update-kubeconfig --region $REGION --name $CLUSTER_NAME
@@ -1734,26 +1750,26 @@ validate_nvidia_driver_version() {
         "570.36.04"
     )
     
-    echo "🔍 Validating NVIDIA driver version..."
+    echo "🔍 Validating NVIDIA driver version..." >&2
     
     if [ "$requested_version" = "575" ]; then
         # Try each 575.x version until we find one that works
         for version in "${known_versions_575[@]}"; do
-            echo "  Checking if driver $version is available..."
+            echo "  Checking if driver $version is available..." >&2
             if check_nvidia_image_exists "$version"; then
-                echo -e "${GREEN}✓ Driver $version is available${NC}"
+                echo -e "${GREEN}✓ Driver $version is available${NC}" >&2
                 echo "$version"
                 return 0
             else
-                echo -e "${YELLOW}⚠️  Driver $version not found${NC}"
+                echo -e "${YELLOW}⚠️  Driver $version not found${NC}" >&2
             fi
         done
         
         # Fallback to 570 if no 575 versions work
-        echo -e "${YELLOW}⚠️  No 575.x drivers available, falling back to 570.x${NC}"
+        echo -e "${YELLOW}⚠️  No 575.x drivers available, falling back to 570.x${NC}" >&2
         for version in "${known_versions_570[@]}"; do
             if check_nvidia_image_exists "$version"; then
-                echo -e "${GREEN}✓ Fallback driver $version is available${NC}"
+                echo -e "${GREEN}✓ Fallback driver $version is available${NC}" >&2
                 echo "$version"
                 return 0
             fi
@@ -1761,18 +1777,18 @@ validate_nvidia_driver_version() {
     else
         # Try each 570.x version
         for version in "${known_versions_570[@]}"; do
-            echo "  Checking if driver $version is available..."
+            echo "  Checking if driver $version is available..." >&2
             if check_nvidia_image_exists "$version"; then
-                echo -e "${GREEN}✓ Driver $version is available${NC}"
+                echo -e "${GREEN}✓ Driver $version is available${NC}" >&2
                 echo "$version"
                 return 0
             else
-                echo -e "${YELLOW}⚠️  Driver $version not found${NC}"
+                echo -e "${YELLOW}⚠️  Driver $version not found${NC}" >&2
             fi
         done
     fi
     
-    echo -e "${RED}❌ No working driver versions found${NC}"
+    echo -e "${RED}❌ No working driver versions found${NC}" >&2
     return 1
 }
 
@@ -1784,9 +1800,14 @@ diagnose_gpu_operator_issues() {
     local gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu=true --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
     
     # Check for common pod issues
-    local invalid_image_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "InvalidImageName" || echo "0")
-    local image_pull_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "ImagePullBackOff\|ErrImagePull" || echo "0")
-    local crash_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff" || echo "0")
+    local invalid_image_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "InvalidImageName" 2>/dev/null || echo "0")
+    invalid_image_pods=$(echo "$invalid_image_pods" | tr -d '\n\r ' || echo "0")
+    
+    local image_pull_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "ImagePullBackOff\|ErrImagePull" 2>/dev/null || echo "0")
+    image_pull_pods=$(echo "$image_pull_pods" | tr -d '\n\r ' || echo "0")
+    
+    local crash_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff" 2>/dev/null || echo "0")
+    crash_pods=$(echo "$crash_pods" | tr -d '\n\r ' || echo "0")
     local failed_pods=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
     
     echo "📊 Issue Analysis:"
@@ -1872,6 +1893,7 @@ install_gpu_operator_with_retry() {
     local requested_version="$2"
     local max_retries=3
     local retry_count=0
+    local image_error_found=false
     
     echo "Installing GPU operator with driver ${exact_version} and Ubuntu 22.04 compatibility fixes..."
     
@@ -1879,37 +1901,61 @@ install_gpu_operator_with_retry() {
         retry_count=$((retry_count + 1))
         echo "🚀 Installation attempt $retry_count/$max_retries..."
         
-        # Base Helm values
-        local helm_values=(
-            "nvidia/gpu-operator"
-            --version v24.6.0
-            --set operator.defaultRuntime=containerd
-            --set driver.enabled=true
-            --set toolkit.enabled=true
-            --set devicePlugin.enabled=true
-            --set dcgmExporter.enabled=true
-            --set nodeStatusExporter.enabled=false
-            --set driver.env[0].name=ENABLE_AUTO_DRAIN
-            --set-string driver.env[0].value="false"
-            --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION
-            --set-string driver.env[1].value="true"
-            --set driver.env[2].name=CC
-            --set-string driver.env[2].value="/usr/bin/gcc-12"
-            --set driver.env[3].name=CXX
-            --set-string driver.env[3].value="/usr/bin/g++-12"
-            --set driver.version="$exact_version"
-        )
+        # Create temporary values file to handle comma-separated values properly
+        local temp_values_file="/tmp/gpu-operator-values-$$.yaml"
         
+        # Base configuration
+        cat > "$temp_values_file" << EOF
+operator:
+  defaultRuntime: containerd
+
+driver:
+  enabled: true
+  version: "$exact_version"
+  env:
+    - name: ENABLE_AUTO_DRAIN
+      value: "false"
+    - name: DISABLE_DEV_CHAR_SYMLINK_CREATION
+      value: "true"
+    - name: CC
+      value: "/usr/bin/gcc-12"
+    - name: CXX
+      value: "/usr/bin/g++-12"
+EOF
+
         # Add graphics capabilities for 575+ drivers
         if [[ "$exact_version" == 575.* ]]; then
-            helm_values+=(
-                --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES
-                --set-string driver.env[4].value="compute,utility,graphics"
-            )
+            cat >> "$temp_values_file" << EOF
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: "compute,utility,graphics"
+EOF
             echo -e "${CYAN}📦 Configuring driver $exact_version with Unreal Engine graphics capabilities${NC}"
         else
             echo -e "${GREEN}📦 Configuring verified driver $exact_version${NC}"
         fi
+
+        # Complete the values file
+        cat >> "$temp_values_file" << EOF
+
+toolkit:
+  enabled: true
+
+devicePlugin:
+  enabled: true
+
+dcgmExporter:
+  enabled: true
+
+nodeStatusExporter:
+  enabled: false
+EOF
+
+        # Base Helm values using values file
+        local helm_values=(
+            "nvidia/gpu-operator"
+            --version v24.6.0
+            -f "$temp_values_file"
+        )
         
         # Attempt Helm installation
         if reliable_helm_operation "upgrade --install" "gpu-operator" "gpu-operator" "${helm_values[@]}"; then
@@ -1917,17 +1963,45 @@ install_gpu_operator_with_retry() {
             
             # Wait for operator pods to be ready
             echo "⏳ Waiting for GPU operator pods to be ready..."
-            if kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s; then
-                echo -e "${GREEN}✓ GPU operator pods ready${NC}"
+            # Give pods time to be created first
+            sleep 10
+            
+            # Wait for any pods in gpu-operator namespace to be ready
+            local wait_timeout=300  # 5 minutes for initial pods
+            local elapsed=0
+            local pods_ready=false
+            
+            while [ $elapsed -lt $wait_timeout ]; do
+                local ready_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "Running\|Completed" 2>/dev/null || echo "0")
+                local total_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | wc -l 2>/dev/null || echo "0")
+                
+                if [ "$total_pods" -gt "0" ] && [ "$ready_pods" -gt "0" ]; then
+                    echo -e "${GREEN}✓ GPU operator pods ready ($ready_pods/$total_pods)${NC}"
+                    pods_ready=true
+                    break
+                elif [ "$total_pods" -gt "0" ]; then
+                    echo "  Waiting... $ready_pods/$total_pods pods ready"
+                else
+                    echo "  Waiting for pods to be created..."
+                fi
+                
+                sleep 15
+                elapsed=$((elapsed + 15))
+            done
+            
+            if [ "$pods_ready" = true ]; then
                 
                 # Check for InvalidImageName errors within 2 minutes
                 echo "🔍 Checking for image pull errors..."
                 local check_start=$(date +%s)
-                local image_error_found=false
+                image_error_found=false
                 
                 for i in {1..24}; do  # Check for 2 minutes (24 x 5 seconds)
-                    local invalid_image_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "InvalidImageName" || echo "0")
-                    local image_pull_errors=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "ImagePullBackOff\|ErrImagePull" || echo "0")
+                    local invalid_image_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "InvalidImageName" 2>/dev/null || echo "0")
+                    invalid_image_pods=$(echo "$invalid_image_pods" | tr -d '\n\r ' || echo "0")
+                    
+                    local image_pull_errors=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "ImagePullBackOff\|ErrImagePull" 2>/dev/null || echo "0")
+                    image_pull_errors=$(echo "$image_pull_errors" | tr -d '\n\r ' || echo "0")
                     
                     if [ "$invalid_image_pods" -gt "0" ] || [ "$image_pull_errors" -gt "0" ]; then
                         echo -e "${YELLOW}⚠️  Image errors detected, driver version $exact_version may not exist${NC}"
@@ -1937,6 +2011,7 @@ install_gpu_operator_with_retry() {
                     
                     # Check if driver pods are starting successfully
                     local running_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --no-headers 2>/dev/null | grep -c "Running\|PodInitializing" || echo "0")
+                    running_pods=$(echo "$running_pods" | tr -d '\n\r ' || echo "0")
                     if [ "$running_pods" -gt "0" ]; then
                         echo -e "${GREEN}✓ Driver pods starting successfully with version $exact_version${NC}"
                         image_error_found=false
@@ -1953,8 +2028,14 @@ install_gpu_operator_with_retry() {
                     # Wait for GPU drivers using adaptive waiting
                     echo "Waiting for GPU drivers to be installed on all nodes..."
                     wait_for_gpu_operator_ready 2400  # 40 minutes max for driver installation
+                    
+                    # Cleanup temporary values file on success
+                    rm -f "$temp_values_file"
                     return 0
                 fi
+            else
+                echo -e "${YELLOW}⚠️  GPU operator pods not ready within timeout${NC}"
+                image_error_found=true
             fi
         fi
         
@@ -1966,6 +2047,10 @@ install_gpu_operator_with_retry() {
         echo "🧹 Cleaning up failed installation..."
         helm uninstall gpu-operator -n gpu-operator --timeout=120s 2>/dev/null || true
         kubectl delete pods --all -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+        
+        # Cleanup temporary values file
+        rm -f "$temp_values_file"
+        
         sleep 10
         
         # Try next available version if this was an image error
@@ -1991,6 +2076,9 @@ install_gpu_operator_with_retry() {
             echo -e "${CYAN}🔄 Retrying with driver version $exact_version${NC}"
         fi
     done
+    
+    # Final cleanup of temporary values file
+    rm -f "$temp_values_file"
     
     echo -e "${RED}❌ GPU Operator installation failed after $max_retries attempts${NC}"
     return 1
@@ -2187,9 +2275,9 @@ EOF
     kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny" or . == "a2f") | "\(.metadata.name) (\(.metadata.labels."uneeq.io/node-type")): \(.status.allocatable."nvidia.com/gpu" // "0") GPUs"'
     
     # Also create the standalone config file for manual use
-    if [ ! -f "$PROJECT_DIR/gpu-time-slicing-config.yaml" ]; then
+    if [ ! -f "$KUBERNETES_DIR/gpu-time-slicing-config.yaml" ]; then
         echo "📄 Creating standalone GPU time-slicing config file..."
-        cat > "$PROJECT_DIR/gpu-time-slicing-config.yaml" <<EOF
+        cat > "$KUBERNETES_DIR/gpu-time-slicing-config.yaml" <<EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -2206,12 +2294,12 @@ data:
         - name: nvidia.com/gpu
           replicas: 2
 EOF
-        echo "✓ GPU time-slicing config file created at: $PROJECT_DIR/gpu-time-slicing-config.yaml"
+        echo "✓ GPU time-slicing config file created at: $KUBERNETES_DIR/gpu-time-slicing-config.yaml"
     fi
     
     # Verify and fix ASG desired capacities after rolling updates
     echo "Verifying Auto Scaling Group configurations..."
-    verify_asg_desired_capacities "$cluster_name"
+    verify_asg_desired_capacities "$CLUSTER_NAME"
     
     show_elapsed
 }
@@ -2269,13 +2357,12 @@ setup_kubernetes_resources() {
     echo "☸️  Setting up Kubernetes resources..."
     
     # Create namespace
-    kubectl apply -f "$PROJECT_DIR/manifests/namespace.yaml"
+    kubectl apply -f "$KUBERNETES_DIR/manifests/namespace.yaml"
     
     # Get Docker credentials from terraform vars
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     DOCKER_USERNAME=$(grep docker_username terraform.tfvars | cut -d'"' -f2)
     DOCKER_PASSWORD=$(grep docker_password terraform.tfvars | cut -d'"' -f2)
-    cd "$PROJECT_DIR"
     
     # Create Docker registry secret
     echo "Creating Docker registry secret..."
@@ -2314,10 +2401,9 @@ install_a2f() {
     echo -e "${BLUE}This will take approximately 10-20 minutes (35GB images)${NC}"
     
     # Get Docker credentials
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     DOCKER_USERNAME=$(grep docker_username terraform.tfvars | cut -d'"' -f2)
     DOCKER_PASSWORD=$(grep docker_password terraform.tfvars | cut -d'"' -f2)
-    cd "$PROJECT_DIR"
     
     # Login to Docker Hub with Helm with retry
     echo "Logging into Docker Hub..."
@@ -2328,7 +2414,7 @@ install_a2f() {
     reliable_helm_operation "upgrade --install" "a2f" "uneeq-renderer" \
         "oci://registry-1.docker.io/facemeproduction/a2f" \
         --version 0.1-alpha \
-        -f "$PROJECT_DIR/values/a2f-values.yaml"
+        -f "$KUBERNETES_DIR/values/a2f-values.yaml"
     
     echo "✓ Helm chart installed, now monitoring image pull progress..."
     
@@ -2370,26 +2456,25 @@ install_renny() {
     echo -e "${BLUE}This will take approximately 10-15 minutes (large container images)${NC}"
     
     # Get DHOP credentials from terraform vars
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     DHOP_TENANT_ID=$(grep dhop_tenant_id terraform.tfvars | cut -d'"' -f2)
     DHOP_API_KEY=$(grep dhop_api_key terraform.tfvars | cut -d'"' -f2)
-    cd "$PROJECT_DIR"
     
     # Update Renny values with DHOP credentials
     # Use sed to update the values directly (works on both Mac and Linux)
     # Using | as delimiter to handle special characters in API key
-    sed -i.bak "s|tenantId: \"\"|tenantId: \"$DHOP_TENANT_ID\"|" "$PROJECT_DIR/values/renny-values.yaml"
-    sed -i.bak "s|apiKey: \"\"|apiKey: \"$DHOP_API_KEY\"|" "$PROJECT_DIR/values/renny-values.yaml"
-    rm -f "$PROJECT_DIR/values/renny-values.yaml.bak"
+    sed -i.bak "s|tenantId: \"\"|tenantId: \"$DHOP_TENANT_ID\"|" "$KUBERNETES_DIR/values/renny-values.yaml"
+    sed -i.bak "s|apiKey: \"\"|apiKey: \"$DHOP_API_KEY\"|" "$KUBERNETES_DIR/values/renny-values.yaml"
+    rm -f "$KUBERNETES_DIR/values/renny-values.yaml.bak"
     
     # Validate the chart doesn't contain macOS metadata files
-    if tar -tzf "$PROJECT_DIR/renny-chart.tgz" | grep -E "\._|\.DS_Store" >/dev/null; then
+    if tar -tzf "$KUBERNETES_DIR/renny-chart.tgz" | grep -E "\._|\.DS_Store" >/dev/null; then
         echo "⚠️  Chart contains macOS metadata files, cleaning..."
         temp_dir=$(mktemp -d)
-        tar -xzf "$PROJECT_DIR/renny-chart.tgz" -C "$temp_dir"
+        tar -xzf "$KUBERNETES_DIR/renny-chart.tgz" -C "$temp_dir"
         find "$temp_dir" -name ".DS_Store" -delete
         find "$temp_dir" -name "._*" -delete
-        tar -czf "$PROJECT_DIR/renny-chart.tgz" -C "$temp_dir" renny
+        tar -czf "$KUBERNETES_DIR/renny-chart.tgz" -C "$temp_dir" renny
         rm -rf "$temp_dir"
         echo "✓ Chart cleaned"
     fi
@@ -2397,8 +2482,8 @@ install_renny() {
     # Install Renny using reliable wrapper
     echo "Installing Renny Helm chart with $RENNY_DESIRED_SIZE replicas..."
     reliable_helm_operation "upgrade --install" "renny" "uneeq-renderer" \
-        "$PROJECT_DIR/renny-chart.tgz" \
-        -f "$PROJECT_DIR/values/renny-values.yaml"
+        "$KUBERNETES_DIR/renny-chart.tgz" \
+        -f "$KUBERNETES_DIR/values/renny-values.yaml"
     
     echo "✓ Helm chart installed, now monitoring image pull progress..."
     
@@ -2407,11 +2492,27 @@ install_renny() {
     local max_attempts=60
     local attempt=1
     
-    # Get expected replica count from the deployment
-    local expected_replicas=$(kubectl get deployment renny -n uneeq-renderer -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+    # Get expected replica count from the deployment (Renny uses 'renderer' as deployment name)
+    local expected_replicas=$(kubectl get deployment renderer -n uneeq-renderer -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+    expected_replicas=$(echo "$expected_replicas" | tr -d '\n\r ' || echo "0")
+    
+    # Debug: Show what we're looking for
+    echo "Expected replicas: $expected_replicas"
     
     while [ $attempt -le $max_attempts ]; do
-        READY_PODS=$(kubectl get pods -n uneeq-renderer -l app=renny --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
+        # Check total pods (any status) first for debugging
+        local total_pods=$(kubectl get pods -n uneeq-renderer -l app=renderer --no-headers 2>/dev/null | wc -l || echo "0")
+        total_pods=$(echo "$total_pods" | tr -d '\n\r ' || echo "0")
+        
+        # Check running pods (Renny uses 'renderer' as label)
+        READY_PODS=$(kubectl get pods -n uneeq-renderer -l app=renderer --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
+        READY_PODS=$(echo "$READY_PODS" | tr -d '\n\r ' || echo "0")
+        
+        # Debug output on first few attempts
+        if [ $attempt -le 3 ]; then
+            echo "  Debug: Found $total_pods total pods, $READY_PODS running pods"
+            kubectl get pods -n uneeq-renderer -l app=renderer --no-headers 2>/dev/null || echo "  No pods found with app=renderer label"
+        fi
         
         if [ "$expected_replicas" -gt "0" ] && [ "$READY_PODS" -ge "$expected_replicas" ]; then
             echo -e "${GREEN}✓ $READY_PODS/$expected_replicas Renny pods are running${NC}"
@@ -2425,7 +2526,7 @@ install_renny() {
     
     # Show Renny pod status
     echo "Renny deployment status:"
-    kubectl get pods -n uneeq-renderer -l app=renny
+    kubectl get pods -n uneeq-renderer -l app=renderer
     
     echo -e "${GREEN}✓ Renny installed successfully${NC}"
     show_elapsed
@@ -2453,25 +2554,39 @@ install_autoscaler() {
     
     echo "Installing Cluster Autoscaler..."
     
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     CLUSTER_NAME=$(terraform output -raw cluster_name)
     AUTOSCALER_ROLE_ARN=$(terraform output -raw cluster_autoscaler_role_arn)
     REGION=$(terraform output -raw region)
-    cd "$PROJECT_DIR"
     
     # Add autoscaler repo with retry
     retry_network_operation "Adding autoscaler Helm repository" "helm repo add autoscaler https://kubernetes.github.io/autoscaler"
     retry_network_operation "Updating Helm repositories" "helm repo update"
     
-    # Install cluster autoscaler using reliable wrapper
+    # Create temporary values file for cluster autoscaler
+    local autoscaler_values_file="/tmp/cluster-autoscaler-values-$$.yaml"
+    cat > "$autoscaler_values_file" << EOF
+autoDiscovery:
+  clusterName: $CLUSTER_NAME
+
+awsRegion: $REGION
+
+rbac:
+  create: true
+  serviceAccount:
+    create: true
+    annotations:
+      eks.amazonaws.com/role-arn: "$AUTOSCALER_ROLE_ARN"
+EOF
+
+    # Install cluster autoscaler using values file
     echo "Installing cluster autoscaler for cluster: $CLUSTER_NAME"
     reliable_helm_operation "upgrade --install" "cluster-autoscaler" "kube-system" \
         "autoscaler/cluster-autoscaler" \
-        --set autoDiscovery.clusterName=$CLUSTER_NAME \
-        --set awsRegion=$REGION \
-        --set rbac.serviceAccount.annotations."eks\.amazonaws\.com/role-arn"="$AUTOSCALER_ROLE_ARN" \
-        --set rbac.serviceAccount.create=true \
-        --set rbac.create=true
+        -f "$autoscaler_values_file"
+    
+    # Cleanup values file
+    rm -f "$autoscaler_values_file"
     
     echo "✅ Cluster autoscaler installed"
 }
@@ -2492,10 +2607,9 @@ display_status() {
     echo "Total deployment time: ${TOTAL_MIN} minutes ${TOTAL_SEC} seconds"
     echo ""
     
-    cd "$PROJECT_DIR/terraform"
+    cd "$TERRAFORM_DIR"
     CLUSTER_NAME=$(terraform output -raw cluster_name)
     REGION=$(terraform output -raw region)
-    cd "$PROJECT_DIR"
     
     echo "📊 Cluster Info:"
     echo "Cluster Name: $CLUSTER_NAME"
@@ -2590,7 +2704,7 @@ cleanup_on_error() {
     echo ""
     
     # Show helpful information for common failure points
-    if [ -f "$PROJECT_DIR/terraform/terraform.tfstate" ]; then
+    if [ -f "$TERRAFORM_DIR/terraform.tfstate" ]; then
         echo "⚠️  Partial infrastructure may have been created."
         echo "Check your AWS console for resources that may be incurring charges."
         echo ""
