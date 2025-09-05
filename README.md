@@ -451,47 +451,85 @@ If no output, no NVIDIA modules are loaded and you may need to reinstall the NVI
 
 
 
-## NVIDIA Driver Management (Kubernetes/EKS Deployments)
+## Kubernetes/EKS Deployment
 
-### Driver Version Selection
+### 🚀 Production-Ready Kubernetes Deployment
 
-When deploying with Kubernetes/EKS, the deployment script automatically handles NVIDIA GPU Operator installation. During deployment, you'll be prompted to choose between:
+MiniPrem includes a complete **one-click EKS deployment solution** for production environments with:
 
-1. **Driver 570+** (recommended for production) - Verified and tested configuration
-2. **Driver 575+** (for Unreal Engine 5.6+ compatibility) - Newer driver with enhanced graphics capabilities
+- **✅ Auto-scaling GPU clusters** (10-20 Renny instances)
+- **✅ NVIDIA GPU Operator** with automatic driver management  
+- **✅ High availability** across multiple availability zones
+- **✅ Cost optimization** with GPU time-slicing and auto-scaling
+- **✅ Production monitoring** with CloudWatch integration
 
-### Upgrading NVIDIA Drivers in Kubernetes
+**📍 Location**: [`kubernetes/`](kubernetes/) directory contains the complete EKS deployment
 
-If you initially chose driver 570 and want to upgrade to 575+ later:
+**⚡ Quick Start**:
+```bash
+cd kubernetes
+./scripts/deploy.sh  # Complete deployment in ~30-45 minutes
+```
+
+### NVIDIA Driver Management (Kubernetes/EKS)
+
+#### Driver Version Selection
+
+The EKS deployment automatically handles NVIDIA GPU Operator installation. You'll be prompted to choose:
+
+1. **📋 Driver 570+** (Production Ready)
+   - ✅ Verified and tested configuration
+   - ✅ Maximum stability and compatibility
+   - ✅ GCC-12 + Ubuntu 22.04 optimized
+
+2. **🎮 Driver 575+** (Unreal Engine 5.6+)
+   - ✅ Enhanced graphics capabilities  
+   - ✅ `compute,utility,graphics` driver capabilities
+   - ✅ Latest Vulkan API support
+   - ⚠️ Newer version - monitor carefully
+
+#### Upgrading NVIDIA Drivers
+
+⚠️ **Important**: Due to a Helm limitation with comma-separated values, use values files instead of `--set`:
+
+```yaml
+# gpu-upgrade.yaml
+driver:
+  version: "575.57.08"
+  env:
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: "compute,utility,graphics"
+```
 
 ```bash
-# 1. Update the GPU Operator with newer driver version
-helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator \
-  --reuse-values --set driver.version='>=575.48.31' \
-  --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES \
-  --set-string driver.env[4].value='compute,utility,graphics'
-
-# 2. Wait for driver rollout (may take 15-30 minutes)
+helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator -f gpu-upgrade.yaml
 kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -w
+```
 
-# 3. Verify new driver version
+#### GPU Status Monitoring
+
+```bash
+# Check GPU availability across cluster
+kubectl get nodes -L nvidia.com/gpu,uneeq.io/node-type
+
+# Monitor GPU operator installation
+kubectl get pods -n gpu-operator
+
+# Test GPU functionality
 kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi
 ```
 
-### Checking GPU Status in Kubernetes
+### 📖 Complete Documentation
 
-```bash
-# Check GPU node capacity
-kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."nvidia.com/gpu" == "true") | "\(.metadata.name): \(.status.capacity."nvidia.com/gpu" // "0") GPUs"'
+For detailed Kubernetes deployment instructions, troubleshooting, and advanced configuration:
 
-# Check GPU operator pods
-kubectl get pods -n gpu-operator
+**➡️ [Kubernetes Deployment Guide](kubernetes/README.md)**
 
-# View driver installation logs
-kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset -f
-```
-
-**Note**: Driver upgrades in Kubernetes environments are handled by the GPU Operator and may require node reboots depending on the driver version change.
+- Prerequisites and tool installation
+- AWS credentials and VPC setup  
+- GPU driver troubleshooting
+- Known issues and solutions
+- Production monitoring with CloudWatch
 
 ## Additional Documentation
 

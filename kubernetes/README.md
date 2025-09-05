@@ -178,6 +178,44 @@ The deployment script will automatically:
 - ✅ **Confirm** you're using the correct profile before proceeding
 - ✅ **Provide** clear instructions if credentials are missing or expired
 
+#### **📋 Region Configuration Best Practices**
+
+**Single Source of Truth**: The deployment uses `terraform.tfvars` as the authoritative source for AWS region configuration:
+
+```hcl
+# terraform/terraform.tfvars  
+aws_region = "us-east-1"  # All scripts read from here
+```
+
+**✅ Benefits:**
+- **Consistency**: All scripts (deploy, status, destroy) use the same region
+- **No hardcoded defaults**: Eliminates region mismatch issues  
+- **Clear configuration**: One place to change region for entire deployment
+
+**How It Works:**
+```bash
+# Scripts automatically read region from terraform.tfvars:
+AWS_REGION=$(get_aws_region)  # Function reads from terraform.tfvars
+
+# All AWS CLI commands use this region:
+aws eks describe-cluster --region "$AWS_REGION" --name "$CLUSTER_NAME"
+aws ec2 describe-instances --region "$AWS_REGION" --filters "..."
+```
+
+**Migration Between Regions:**
+```bash
+# 1. Update terraform.tfvars
+aws_region = "us-west-2"  # Change to desired region
+
+# 2. Destroy existing deployment (complete rebuild required)
+./scripts/destroy.sh
+
+# 3. Deploy to new region
+./scripts/deploy.sh
+```
+
+**⚠️ Important**: Changing regions requires complete cluster rebuild as VPC CIDR and service networks cannot be modified after creation.
+
 **Verify your AWS setup:**
 ```bash
 # Check prerequisites with current profile
@@ -187,15 +225,44 @@ The deployment script will automatically:
 ./scripts/check-aws-prerequisites.sh --profile your-profile-name
 ```
 
-**Check VPC availability (important - AWS has VPC limits):**
+#### **🌐 VPC Availability & Configuration Management**
+
+**Check VPC availability (Critical - AWS has VPC limits):**
 ```bash
 ./scripts/check-vpc-usage.sh
 ```
 
-This deployment creates a new VPC, so you need to ensure you haven't hit the VPC limit (5 per region by default). The VPC checker helps you:
-- Analyze VPC usage across all AWS services 
-- Identify unused VPCs that can be safely deleted
-- Check specific VPCs or regions
+This deployment creates a new VPC, so you need to ensure you haven't hit the VPC limit (5 per region by default).
+
+**✅ What the VPC checker does:**
+- **Reads region from `terraform.tfvars`** (single source of truth)
+- **Analyzes VPC usage** across all AWS services in the correct region
+- **Identifies unused VPCs** that can be safely deleted
+- **Provides deletion commands** if VPC limit is reached
+- **Validates VPC/subnet overlap** with your configured CIDR blocks
+
+**Advanced VPC Configuration:**
+```hcl
+# terraform/terraform.tfvars - VPC Configuration
+vpc_cidr = "10.17.0.0/16"        # Main VPC network range  
+service_cidr = "10.117.0.0/16"   # Kubernetes services range
+
+# ⚠️ Important: These cannot be changed after deployment
+# If you need different CIDRs, destroy and rebuild cluster
+```
+
+**VPC Network Planning:**
+```bash
+# Common CIDR options that avoid conflicts:
+vpc_cidr = "10.17.0.0/16"    # Recommended default (65,534 IPs)
+vpc_cidr = "10.50.0.0/16"    # Alternative if 10.17.x conflicts  
+vpc_cidr = "192.168.0.0/16"  # Private network standard
+
+# Service CIDR is automatically calculated:
+# VPC 10.17.0.0/16  → Service 10.117.0.0/16
+# VPC 10.50.0.0/16  → Service 10.150.0.0/16
+# VPC 192.168.0.0/16 → Service 10.117.0.0/16
+```
 
 **VPC Checker Usage Examples:**
 ```bash
@@ -469,15 +536,75 @@ flowchart LR
 
 This deployment uses **Ubuntu 22.04 EKS AMIs** with an optimized GPU driver installation approach:
 
-**Fast Cluster Join Approach:**
-- **Phase 1**: Nodes join cluster quickly (~3 minutes) without GPU drivers
-- **Phase 2**: NVIDIA GPU Operator automatically installs drivers (~5-10 minutes)
-- **Result**: Faster deployment and automatic driver management
+### GPU Operator Installation Process
+
+**📋 Modern Two-Phase GPU Deployment:**
+
+#### **Phase 1: Fast Node Join (~3 minutes)**
+- Ubuntu 22.04 EKS nodes boot and join cluster immediately
+- No GPU drivers installed yet - focuses on cluster connectivity
+- Kubernetes scheduler can place non-GPU workloads immediately
+- AWS EKS integration and networking established
+
+#### **Phase 2: Automatic GPU Driver Installation (~5-10 minutes)**
+The **NVIDIA GPU Operator** handles driver installation completely automatically:
+
+```bash
+# 1. GPU Operator detects Ubuntu 22.04 nodes with NVIDIA hardware
+# 2. Automatically installs:
+#    - NVIDIA drivers (570+ or 575+ based on your selection)  
+#    - CUDA runtime libraries
+#    - Container runtime integration (containerd)
+#    - GPU device plugin for Kubernetes
+#    - Time-slicing configuration for efficiency
+
+# 3. Compiles drivers with optimized build environment:
+#    - GCC-12 compiler for Ubuntu 22.04 compatibility
+#    - Kernel headers automatically resolved
+#    - Proper GLIBC 2.35 linkage
+
+# 4. Configures advanced capabilities:
+#    - Driver 570+: compute,utility capabilities
+#    - Driver 575+: compute,utility,graphics capabilities (Unreal Engine)
+```
+
+**✅ Benefits of GPU Operator Approach:**
+- **Zero manual driver management** - completely automated
+- **Consistent driver versions** across all GPU nodes  
+- **Automatic updates** and rollbacks when needed
+- **Ubuntu 22.04 optimization** with proper compiler selection
+- **Time-slicing support** for GPU resource sharing
+
+### NVIDIA Driver Version Selection
+
+During deployment, you'll be prompted to choose between two driver options:
+
+#### **📋 Driver 570+ (Recommended for Production)**
+```
+✅ Production Ready - Verified and tested configuration
+✅ CUDA 12.4+ support for modern AI workloads  
+✅ Full Ubuntu 22.04 compatibility with GCC-12
+✅ Stable driver version with extensive validation
+✅ Automatic compilation with optimized build environment
+```
+
+#### **🎮 Driver 575+ (For Unreal Engine 5.6+)**
+```
+✅ Enhanced Graphics - Advanced rendering capabilities
+✅ NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
+✅ Latest Vulkan API support for Unreal Engine 5.6+
+✅ Optimized for high-end graphics workloads
+⚠️  Newer version - monitor installation carefully
+```
+
+**Decision Guide:**
+- **Choose 570+** for: Production deployments, maximum stability, proven compatibility
+- **Choose 575+** for: Latest Unreal Engine features, advanced graphics capabilities, development/testing
 
 **GPU Capabilities:**
-- **NVIDIA Driver 570+**: Latest drivers for RTX/A10G GPU support (via GPU Operator)
-- **CUDA 12.4+**: Modern CUDA runtime for Unreal Engine 5.6 compatibility  
-- **Vulkan API Support**: Full Vulkan graphics pipeline support for Renny rendering
+- **CUDA Runtime**: 12.4+ (570 drivers) or 12.6+ (575 drivers)
+- **Vulkan API Support**: Full graphics pipeline support for Renny rendering
+- **Compiler Support**: GCC-12 with Ubuntu 22.04 optimizations
 - **150GB EBS Storage**: Accommodates large AI container images (35GB+)
 
 **Why Ubuntu over Amazon Linux?**
@@ -631,6 +758,150 @@ kubectl describe pods -n uneeq-renderer
 ```
 
 ## 🔧 Troubleshooting & Debugging
+
+### Known Helm Limitations
+
+#### **🚫 Helm --set Cannot Handle Comma-Separated Values**
+
+**Issue**: Helm's `--set` and `--set-string` flags cannot properly parse comma-separated values like:
+```bash
+# This FAILS with "key 'utility' has no value" error:
+--set-string driver.env[4].value=compute,utility,graphics
+```
+
+**Root Cause**: Helm interprets commas as separators between different key-value pairs, not as part of a single value.
+
+**✅ Solution**: Use YAML values files instead of `--set` flags:
+
+```yaml
+# gpu-values.yaml
+driver:
+  env:
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: "compute,utility,graphics"  # No parsing issues in YAML!
+```
+
+```bash
+# Use values file approach
+helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator -f gpu-values.yaml
+```
+
+**When This Affects You:**
+- NVIDIA driver capabilities configuration
+- Any comma-separated environment variables
+- Complex Helm value configurations
+
+**References**: 
+- [Helm GitHub Issue #1556](https://github.com/helm/helm/issues/1556)
+- [Helm GitHub Issue #2952](https://github.com/helm/helm/issues/2952)
+
+### Deployment Script Issues
+
+#### **📁 Directory Management Best Practices**
+
+The deployment scripts use proper directory management to avoid path confusion:
+
+**Directory Variables:**
+```bash
+# Correct usage in deployment scripts:
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"    # Current script location
+KUBERNETES_DIR="$SCRIPT_DIR/.."                                  # kubernetes/ directory  
+TERRAFORM_DIR="$KUBERNETES_DIR/terraform"                        # terraform/ subdirectory
+PROJECT_DIR="$KUBERNETES_DIR/.."                                 # Project root
+```
+
+**Usage Patterns:**
+```bash
+# ✅ Correct - use appropriate directory variables:
+cd "$TERRAFORM_DIR" && terraform apply                          # For Terraform operations
+kubectl apply -f "$KUBERNETES_DIR/manifests/namespace.yaml"     # For Kubernetes manifests  
+helm install renny "$KUBERNETES_DIR/renny-chart.tgz"           # For Helm charts
+
+# ❌ Avoid - hardcoded relative paths:
+cd ../../terraform && terraform apply                           # Fragile and error-prone
+kubectl apply -f ../manifests/namespace.yaml                    # Depends on current directory
+```
+
+**Why This Matters:**
+- Scripts work regardless of where they're called from
+- Clear separation between Kubernetes and Terraform operations  
+- Eliminates "file not found" errors from wrong directories
+- Makes scripts more maintainable and debuggable
+
+#### **🔢 Bash Integer Comparison Errors**
+
+**Issue**: You may see errors like:
+```
+./deploy.sh: line 2014: [: 0
+0: integer expression expected
+```
+
+**Root Cause**: `kubectl` command output contains newlines that bash interprets as separate values in integer comparisons.
+
+**Example Problem**:
+```bash
+# kubectl output contains newlines
+local running_pods=$(kubectl get pods --no-headers | grep -c "Running")
+# Variable contains: "0\n0" instead of "0"
+
+if [ "$running_pods" -gt "0" ]; then  # FAILS: 0\n0 is not an integer
+```
+
+**✅ Solution**: Clean kubectl output before integer comparisons:
+```bash
+local running_pods=$(kubectl get pods --no-headers | grep -c "Running" || echo "0")
+running_pods=$(echo "$running_pods" | tr -d '\n\r ' || echo "0")  # Clean output
+if [ "$running_pods" -gt "0" ]; then  # Now works correctly
+```
+
+**Prevention**: Always clean kubectl output variables:
+```bash
+# Pattern for safe kubectl variable assignment
+local var=$(kubectl_command || echo "0")
+var=$(echo "$var" | tr -d '\n\r ' || echo "0")
+```
+
+#### **🐛 Comprehensive Deployment Issues & Solutions**
+
+Here are solutions to common deployment issues encountered during troubleshooting:
+
+| Issue | Error Message | Root Cause | Solution |
+|-------|---------------|------------|----------|
+| **Helm comma parsing** | `key 'utility' has no value` | `--set` cannot handle comma-separated values | Use YAML values files instead of `--set` |
+| **Bash integer errors** | `[: 0\n0: integer expression expected` | kubectl output contains newlines | Clean with `tr -d '\n\r '` before comparisons |
+| **Driver compilation** | `compiler version mismatch` | Wrong GCC version for Ubuntu 22.04 | Install `gcc-12 g++-12` packages |
+| **Variable scope** | `cluster_name: unbound variable` | Case mismatch in variable names | Use `$CLUSTER_NAME` not `$cluster_name` |
+| **Directory paths** | `terraform.tfvars not found` | Wrong working directory | Use `$TERRAFORM_DIR` and `$KUBERNETES_DIR` variables |
+| **AWS profile** | `No VPCs found in region` | Using wrong/default AWS profile | Set `AWS_PROFILE=your-profile` or use `--profile` |
+| **Region mismatch** | Resources not found | Hardcoded regions in scripts | Read region from `terraform.tfvars` consistently |
+
+**🔧 Quick Debug Commands:**
+```bash
+# Check current configuration
+echo "AWS Profile: $(aws sts get-caller-identity --query 'Arn' --output text)"
+echo "Region: $(grep aws_region terraform/terraform.tfvars | cut -d'"' -f2)"  
+echo "Cluster: $CLUSTER_NAME"
+
+# Verify directory variables  
+echo "Script Dir: $SCRIPT_DIR"
+echo "Kubernetes Dir: $KUBERNETES_DIR"  
+echo "Terraform Dir: $TERRAFORM_DIR"
+
+# Test integer variables before use
+echo "Testing: '$variable_name' = '$(echo "$variable_name" | cat -v)'"
+```
+
+**🚨 Emergency Recovery:**
+```bash
+# If deployment gets stuck, use cleanup script
+./scripts/cleanup.sh  # No confirmations - immediate teardown
+
+# If kubectl is not responding
+aws eks update-kubeconfig --region $(grep aws_region terraform/terraform.tfvars | cut -d'"' -f2) --name $CLUSTER_NAME
+
+# If Terraform state is corrupted
+terraform refresh -var-file=terraform.tfvars
+```
 
 ### Pod Debugging Commands
 
@@ -855,7 +1126,81 @@ For emergency cleanup without confirmations:
 
 **Note**: The deployment script automatically detects and fixes this issue, but updating AWS CLI is the permanent solution.
 
-### GPU Operator Issues
+### GPU Operator & Driver Issues
+
+#### **GPU Driver Compilation Failures**
+
+If GPU Operator shows driver compilation errors, check these common issues:
+
+**1. GCC Compiler Compatibility (Ubuntu 22.04)**
+```bash
+# Check GCC version (should be 12+ for Ubuntu 22.04)
+gcc --version
+
+# Check if build tools are installed
+dpkg -l | grep build-essential
+
+# Install if missing
+sudo apt update && sudo apt install build-essential gcc-12 g++-12
+```
+
+**2. Kernel Headers Compatibility**
+```bash
+# Check kernel version
+uname -r
+
+# Verify kernel headers are installed
+dpkg -l | grep linux-headers-$(uname -r)
+
+# Install if missing
+sudo apt install linux-headers-$(uname -r)
+```
+
+**3. GPU Operator Driver Logs**
+```bash
+# Check driver installation logs
+kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset --tail=100
+
+# Look for specific error patterns:
+# "compiler version mismatch" → GCC compatibility issue  
+# "kernel headers not found" → Missing development packages
+# "NVIDIA driver compilation failed" → Check system requirements
+```
+
+**4. Node-Specific Driver Status**
+```bash
+# Check GPU availability per node
+kubectl get nodes -L nvidia.com/gpu,nvidia.com/gpu.present
+
+# Describe GPU nodes for detailed status  
+kubectl describe nodes -l uneeq.io/node-type=renny | grep -A10 "nvidia.com/gpu"
+
+# Expected output: nvidia.com/gpu: 1 (or 2 with time-slicing)
+```
+
+#### **Driver Version Verification**
+
+```bash
+# Test GPU driver functionality
+kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi
+
+# Expected output should show:
+# - Driver Version: 570.XX.XX or 575.XX.XX
+# - CUDA Version: 12.4+ 
+# - GPU: NVIDIA A10G (24GB VRAM)
+```
+
+#### **Common Error Patterns & Solutions**
+
+| Error Pattern | Likely Cause | Solution |
+|---------------|--------------|----------|
+| `compiler version mismatch` | GCC version incompatible | Install GCC-12: `apt install gcc-12 g++-12` |
+| `kernel headers not found` | Missing development packages | `apt install linux-headers-$(uname -r)` |
+| `GLIBC version too old` | Ubuntu version incompatible | Ensure Ubuntu 22.04+ |
+| `nvidia driver compilation failed` | System requirements | Check all prerequisites above |
+| `ImagePullBackOff` on driver pods | Network/registry issues | Check Docker Hub credentials |
+
+#### **GPU Operator General Issues**
 ```bash
 kubectl logs -n gpu-operator -l app=nvidia-operator
 kubectl describe nodes | grep -A 5 "Allocated resources"
