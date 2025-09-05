@@ -1718,7 +1718,285 @@ configure_kubectl() {
     wait_for_cluster_nodes_ready 1800  # 30 minutes max for node readiness
 }
 
-# Install NVIDIA GPU Operator
+# Validate and select appropriate NVIDIA driver version
+validate_nvidia_driver_version() {
+    local requested_version="$1"
+    
+    # Known working driver versions (in order of preference)
+    local known_versions_575=(
+        "575.57.08"
+        "575.48.31" 
+        "575.36.04"
+    )
+    
+    local known_versions_570=(
+        "570.47.06"
+        "570.36.04"
+    )
+    
+    echo "🔍 Validating NVIDIA driver version..."
+    
+    if [ "$requested_version" = "575" ]; then
+        # Try each 575.x version until we find one that works
+        for version in "${known_versions_575[@]}"; do
+            echo "  Checking if driver $version is available..."
+            if check_nvidia_image_exists "$version"; then
+                echo -e "${GREEN}✓ Driver $version is available${NC}"
+                echo "$version"
+                return 0
+            else
+                echo -e "${YELLOW}⚠️  Driver $version not found${NC}"
+            fi
+        done
+        
+        # Fallback to 570 if no 575 versions work
+        echo -e "${YELLOW}⚠️  No 575.x drivers available, falling back to 570.x${NC}"
+        for version in "${known_versions_570[@]}"; do
+            if check_nvidia_image_exists "$version"; then
+                echo -e "${GREEN}✓ Fallback driver $version is available${NC}"
+                echo "$version"
+                return 0
+            fi
+        done
+    else
+        # Try each 570.x version
+        for version in "${known_versions_570[@]}"; do
+            echo "  Checking if driver $version is available..."
+            if check_nvidia_image_exists "$version"; then
+                echo -e "${GREEN}✓ Driver $version is available${NC}"
+                echo "$version"
+                return 0
+            else
+                echo -e "${YELLOW}⚠️  Driver $version not found${NC}"
+            fi
+        done
+    fi
+    
+    echo -e "${RED}❌ No working driver versions found${NC}"
+    return 1
+}
+
+# Diagnose GPU Operator installation issues and provide guidance
+diagnose_gpu_operator_issues() {
+    echo "🔍 Diagnosing GPU Operator installation issues..."
+    
+    local issues_found=false
+    local gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu=true --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+    
+    # Check for common pod issues
+    local invalid_image_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "InvalidImageName" || echo "0")
+    local image_pull_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "ImagePullBackOff\|ErrImagePull" || echo "0")
+    local crash_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "CrashLoopBackOff" || echo "0")
+    local failed_pods=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Failed --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+    
+    echo "📊 Issue Analysis:"
+    echo "  - GPU nodes: $gpu_nodes"
+    echo "  - InvalidImageName pods: $invalid_image_pods"
+    echo "  - Image pull errors: $image_pull_pods"
+    echo "  - Crash loop pods: $crash_pods"
+    echo "  - Failed pods: $failed_pods"
+    
+    # Issue 1: Invalid driver image version
+    if [ "$invalid_image_pods" -gt "0" ] || [ "$image_pull_pods" -gt "0" ]; then
+        echo -e "${YELLOW}⚠️  Issue: Driver image not found${NC}"
+        echo "   Cause: NVIDIA driver version doesn't exist in registry"
+        echo "   Solution: Script will automatically retry with known working versions"
+        issues_found=true
+    fi
+    
+    # Issue 2: Compilation failures
+    if [ "$crash_pods" -gt "0" ]; then
+        echo -e "${YELLOW}⚠️  Issue: Driver compilation failures detected${NC}"
+        echo "   Checking compilation logs..."
+        
+        # Check for GCC version mismatch
+        local gcc_errors=$(kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset --tail=50 2>/dev/null | grep -c "compiler differs\|gcc.*error\|compilation terminated" || echo "0")
+        if [ "$gcc_errors" -gt "0" ]; then
+            echo "   Cause: GCC compiler version mismatch"
+            echo "   Solution: Using explicit GCC-12 configuration"
+        fi
+        
+        # Check for missing kernel headers
+        local header_errors=$(kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset --tail=50 2>/dev/null | grep -c "kernel.*headers.*not found\|No such file or directory.*linux" || echo "0")
+        if [ "$header_errors" -gt "0" ]; then
+            echo "   Cause: Missing kernel headers"
+            echo "   Solution: Node will install headers automatically"
+        fi
+        
+        issues_found=true
+    fi
+    
+    # Issue 3: No GPU nodes
+    if [ "$gpu_nodes" -eq "0" ]; then
+        echo -e "${YELLOW}⚠️  Issue: No GPU nodes found${NC}"
+        echo "   Cause: Nodes may not have nvidia.com/gpu=true label"
+        echo "   Solution: Check node group configuration and GPU instance types"
+        issues_found=true
+    fi
+    
+    if [ "$issues_found" = "false" ]; then
+        echo -e "${GREEN}✓ No obvious issues detected${NC}"
+    fi
+    
+    return 0
+}
+
+# Check if NVIDIA driver image exists in registry
+check_nvidia_image_exists() {
+    local version="$1"
+    local image="nvcr.io/nvidia/driver:${version}-ubuntu22.04"
+    
+    # Use docker/podman to check if image exists (faster than kubectl)
+    # Note: This is a basic check - the actual validation happens during helm install
+    if command -v docker &> /dev/null; then
+        docker manifest inspect "$image" &>/dev/null && return 0
+    elif command -v podman &> /dev/null; then
+        podman manifest inspect "$image" &>/dev/null && return 0
+    fi
+    
+    # If docker/podman not available, assume version is valid and let helm handle it
+    # Common versions that we know exist based on our research
+    case "$version" in
+        "575.57.08"|"570.47.06"|"575.48.31"|"570.36.04")
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+# Install GPU Operator with retry logic for different error types
+install_gpu_operator_with_retry() {
+    local exact_version="$1"
+    local requested_version="$2"
+    local max_retries=3
+    local retry_count=0
+    
+    echo "Installing GPU operator with driver ${exact_version} and Ubuntu 22.04 compatibility fixes..."
+    
+    while [ $retry_count -lt $max_retries ]; do
+        retry_count=$((retry_count + 1))
+        echo "🚀 Installation attempt $retry_count/$max_retries..."
+        
+        # Base Helm values
+        local helm_values=(
+            "nvidia/gpu-operator"
+            --version v24.6.0
+            --set operator.defaultRuntime=containerd
+            --set driver.enabled=true
+            --set toolkit.enabled=true
+            --set devicePlugin.enabled=true
+            --set dcgmExporter.enabled=true
+            --set nodeStatusExporter.enabled=false
+            --set driver.env[0].name=ENABLE_AUTO_DRAIN
+            --set-string driver.env[0].value="false"
+            --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION
+            --set-string driver.env[1].value="true"
+            --set driver.env[2].name=CC
+            --set-string driver.env[2].value="/usr/bin/gcc-12"
+            --set driver.env[3].name=CXX
+            --set-string driver.env[3].value="/usr/bin/g++-12"
+            --set driver.version="$exact_version"
+        )
+        
+        # Add graphics capabilities for 575+ drivers
+        if [[ "$exact_version" == 575.* ]]; then
+            helm_values+=(
+                --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES
+                --set-string driver.env[4].value="compute,utility,graphics"
+            )
+            echo -e "${CYAN}📦 Configuring driver $exact_version with Unreal Engine graphics capabilities${NC}"
+        else
+            echo -e "${GREEN}📦 Configuring verified driver $exact_version${NC}"
+        fi
+        
+        # Attempt Helm installation
+        if reliable_helm_operation "upgrade --install" "gpu-operator" "gpu-operator" "${helm_values[@]}"; then
+            echo -e "${GREEN}✓ Helm installation successful${NC}"
+            
+            # Wait for operator pods to be ready
+            echo "⏳ Waiting for GPU operator pods to be ready..."
+            if kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s; then
+                echo -e "${GREEN}✓ GPU operator pods ready${NC}"
+                
+                # Check for InvalidImageName errors within 2 minutes
+                echo "🔍 Checking for image pull errors..."
+                local check_start=$(date +%s)
+                local image_error_found=false
+                
+                for i in {1..24}; do  # Check for 2 minutes (24 x 5 seconds)
+                    local invalid_image_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "InvalidImageName" || echo "0")
+                    local image_pull_errors=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | grep -c "ImagePullBackOff\|ErrImagePull" || echo "0")
+                    
+                    if [ "$invalid_image_pods" -gt "0" ] || [ "$image_pull_errors" -gt "0" ]; then
+                        echo -e "${YELLOW}⚠️  Image errors detected, driver version $exact_version may not exist${NC}"
+                        image_error_found=true
+                        break
+                    fi
+                    
+                    # Check if driver pods are starting successfully
+                    local running_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --no-headers 2>/dev/null | grep -c "Running\|PodInitializing" || echo "0")
+                    if [ "$running_pods" -gt "0" ]; then
+                        echo -e "${GREEN}✓ Driver pods starting successfully with version $exact_version${NC}"
+                        image_error_found=false
+                        break
+                    fi
+                    
+                    sleep 5
+                done
+                
+                if [ "$image_error_found" = "false" ]; then
+                    echo -e "${GREEN}✓ GPU Operator installation successful with driver $exact_version${NC}"
+                    echo "GPU Operator v24.6.0+ includes improved DNS resolution handling"
+                    
+                    # Wait for GPU drivers using adaptive waiting
+                    echo "Waiting for GPU drivers to be installed on all nodes..."
+                    wait_for_gpu_operator_ready 2400  # 40 minutes max for driver installation
+                    return 0
+                fi
+            fi
+        fi
+        
+        # Installation failed, diagnose issues before retrying
+        echo -e "${YELLOW}⚠️  Installation failed, diagnosing issues...${NC}"
+        diagnose_gpu_operator_issues
+        
+        # Cleanup failed installation
+        echo "🧹 Cleaning up failed installation..."
+        helm uninstall gpu-operator -n gpu-operator --timeout=120s 2>/dev/null || true
+        kubectl delete pods --all -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+        sleep 10
+        
+        # Try next available version if this was an image error
+        if [ "$image_error_found" = "true" ] && [ $retry_count -lt $max_retries ]; then
+            echo "🔄 Trying next available driver version..."
+            if [ "$requested_version" = "575" ]; then
+                # Try next 575.x version or fallback to 570.x
+                case "$exact_version" in
+                    "575.57.08") exact_version="575.48.31" ;;
+                    "575.48.31") exact_version="575.36.04" ;;
+                    *) exact_version="570.47.06" ;;  # Fallback to 570
+                esac
+            else
+                # Try next 570.x version
+                case "$exact_version" in
+                    "570.47.06") exact_version="570.36.04" ;;
+                    *) 
+                        echo -e "${RED}❌ No more driver versions to try${NC}"
+                        return 1
+                        ;;
+                esac
+            fi
+            echo -e "${CYAN}🔄 Retrying with driver version $exact_version${NC}"
+        fi
+    done
+    
+    echo -e "${RED}❌ GPU Operator installation failed after $max_retries attempts${NC}"
+    return 1
+}
+
+# Install NVIDIA GPU Operator with robust error handling and retry logic
 install_gpu_operator() {
     echo "🎮 Checking NVIDIA GPU Operator status..."
     
@@ -1788,10 +2066,18 @@ install_gpu_operator() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
     
+    # Validate and get exact driver version
+    EXACT_DRIVER_VERSION=$(validate_nvidia_driver_version "$NVIDIA_DRIVER_VERSION")
+    if [ $? -ne 0 ] || [ -z "$EXACT_DRIVER_VERSION" ]; then
+        echo -e "${RED}❌ Failed to find valid driver version${NC}"
+        return 1
+    fi
+    
     echo "GPU Operator will:"
-    echo "  - Install NVIDIA driver ${NVIDIA_DRIVER_VERSION}+ on all GPU nodes"
+    echo "  - Install NVIDIA driver ${EXACT_DRIVER_VERSION} on all GPU nodes"
     echo "  - Configure containerd with NVIDIA runtime"
     echo "  - Enable GPU device plugin and monitoring"
+    echo "  - Use GCC-12 compiler for Ubuntu 22.04 compatibility"
     
     # Add NVIDIA Helm repository with retry
     retry_network_operation "Adding NVIDIA Helm repository" "helm repo add nvidia https://helm.ngc.nvidia.com/nvidia"
@@ -1800,55 +2086,8 @@ install_gpu_operator() {
     # Create namespace
     kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
     
-    # Install GPU Operator with improved compatibility settings and selected driver version
-    echo "Installing GPU operator with driver ${NVIDIA_DRIVER_VERSION}+ and Ubuntu 22.04 compatibility fixes..."
-    
-    # Base Helm values
-    local helm_values=(
-        "nvidia/gpu-operator"
-        --version v24.6.0
-        --set operator.defaultRuntime=containerd
-        --set driver.enabled=true
-        --set toolkit.enabled=true
-        --set devicePlugin.enabled=true
-        --set dcgmExporter.enabled=true
-        --set nodeStatusExporter.enabled=false
-        --set driver.env[0].name=ENABLE_AUTO_DRAIN
-        --set-string driver.env[0].value="false"
-        --set driver.env[1].name=DISABLE_DEV_CHAR_SYMLINK_CREATION
-        --set-string driver.env[1].value="true"
-        --set driver.env[2].name=CC
-        --set-string driver.env[2].value="/usr/bin/gcc-12"
-        --set driver.env[3].name=CXX
-        --set-string driver.env[3].value="/usr/bin/g++-12"
-    )
-    
-    # Add driver version constraint
-    if [ "$NVIDIA_DRIVER_VERSION" = "575" ]; then
-        helm_values+=(
-            --set driver.version=">=575.48.31"
-            --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES
-            --set-string driver.env[4].value="compute,utility,graphics"
-        )
-        echo -e "${CYAN}📦 Configuring for driver 575+ with Unreal Engine graphics capabilities${NC}"
-    else
-        helm_values+=(
-            --set driver.version=">=570.47.06"
-        )
-        echo -e "${GREEN}📦 Configuring for verified driver 570+${NC}"
-    fi
-    
-    reliable_helm_operation "upgrade --install" "gpu-operator" "gpu-operator" "${helm_values[@]}"
-    
-    echo "⏳ Waiting for GPU operator pods to be ready..."
-    kubectl wait --for=condition=ready pod -l app=nvidia-operator -n gpu-operator --timeout=900s || true
-    
-    # Note: DNS patch removed - newer GPU Operator versions handle DNS resolution better
-    echo "GPU Operator v24.6.0+ includes improved DNS resolution handling"
-    
-    # Wait for GPU drivers using adaptive waiting
-    echo "Waiting for GPU drivers to be installed on all nodes..."
-    wait_for_gpu_operator_ready 2400  # 40 minutes max for driver installation
+    # Install GPU Operator with robust error handling
+    install_gpu_operator_with_retry "$EXACT_DRIVER_VERSION" "$NVIDIA_DRIVER_VERSION"
     
     # Verify GPU nodes
     echo "GPU node status:"

@@ -274,6 +274,83 @@ if [ "$CLUSTER_NAME" != "unknown" ] && [ -n "$CLUSTER_NAME" ]; then
     aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME" 2>/dev/null || true
 fi
 
+# Comprehensive GPU Operator cleanup function
+cleanup_gpu_operator_completely() {
+    echo "    🎮 Starting comprehensive GPU Operator cleanup..."
+    
+    # Step 1: Force kill all GPU operator pods immediately
+    echo "      - Force killing all GPU operator pods..."
+    kubectl delete pods -l app=nvidia-driver-daemonset -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+    kubectl delete pods -l app=nvidia-device-plugin-daemonset -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+    kubectl delete pods -l app=nvidia-container-toolkit-daemonset -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+    kubectl delete pods -l app=nvidia-dcgm-exporter -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+    kubectl delete pods -l app=gpu-feature-discovery -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+    kubectl delete pods -l app=nvidia-operator-validator -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+    
+    # Step 2: Remove finalizers from ClusterPolicy to prevent hanging
+    echo "      - Removing ClusterPolicy finalizers..."
+    kubectl patch clusterpolicy cluster-policy --type='merge' -p='{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+    
+    # Step 3: Delete ClusterPolicy and related CRDs
+    echo "      - Deleting GPU Operator CRDs..."
+    kubectl delete clusterpolicy cluster-policy --ignore-not-found=true --timeout=30s 2>/dev/null || true
+    kubectl delete crd clusterpolicies.nvidia.com --ignore-not-found=true --timeout=30s 2>/dev/null || true
+    kubectl delete crd nvidiadrivers.nvidia.com --ignore-not-found=true --timeout=30s 2>/dev/null || true
+    kubectl delete crd gpufeaturepolicies.nvidia.com --ignore-not-found=true --timeout=30s 2>/dev/null || true
+    
+    # Step 4: Clean up node labels and taints that might prevent destruction
+    echo "      - Cleaning up GPU node labels and taints..."
+    kubectl get nodes --no-headers 2>/dev/null | while read node _; do
+        # Remove GPU-related taints
+        kubectl taint node "$node" nvidia.com/gpu:NoSchedule- 2>/dev/null || true
+        kubectl taint node "$node" nvidia.com/gpu:NoExecute- 2>/dev/null || true
+        
+        # Remove GPU-related labels (but keep nvidia.com/gpu=true for node identification)
+        kubectl label node "$node" nvidia.com/cuda.driver.major- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/cuda.driver.minor- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/cuda.driver.rev- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/cuda.runtime.major- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/cuda.runtime.minor- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gfd.timestamp- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.compute.major- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.compute.minor- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.count- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.family- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.machine- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.memory- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.product- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/gpu.replicas- 2>/dev/null || true
+        kubectl label node "$node" nvidia.com/mig.strategy- 2>/dev/null || true
+    done
+    
+    # Step 5: Wait a moment for pods to terminate
+    echo "      - Waiting for pods to terminate..."
+    sleep 15
+    
+    # Step 6: Uninstall helm chart with extended timeout
+    echo "      - Uninstalling GPU Operator Helm chart..."
+    helm uninstall gpu-operator -n gpu-operator --timeout=180s 2>/dev/null || true
+    
+    # Step 7: Force delete any remaining GPU operator resources
+    echo "      - Force deleting remaining GPU operator resources..."
+    kubectl delete daemonsets --all -n gpu-operator --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+    kubectl delete deployments --all -n gpu-operator --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+    kubectl delete replicasets --all -n gpu-operator --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+    kubectl delete jobs --all -n gpu-operator --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
+    
+    # Step 8: Clean up any remaining pods with force
+    echo "      - Final cleanup of any stuck pods..."
+    kubectl delete pods --all -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
+    
+    # Step 9: Remove any stuck finalizers from remaining resources
+    echo "      - Removing finalizers from stuck resources..."
+    kubectl get all -n gpu-operator -o name 2>/dev/null | while read resource; do
+        kubectl patch "$resource" --type='merge' -p='{"metadata":{"finalizers":[]}}' -n gpu-operator 2>/dev/null || true
+    done
+    
+    echo "    ✅ GPU Operator cleanup completed"
+}
+
 # Function to destroy a single deployment (extracted from main logic)
 destroy_single_deployment() {
 
@@ -293,12 +370,8 @@ helm uninstall renny -n uneeq-renderer --timeout=60s 2>/dev/null || true
 echo "  - Uninstalling Audio2Face (with force)..."
 helm uninstall a2f -n uneeq-renderer --timeout=60s 2>/dev/null || true
 
-echo "  - Force killing GPU operator pods..."
-kubectl delete pods -l app=nvidia-driver-daemonset -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
-kubectl delete pods -l app=nvidia-device-plugin-daemonset -n gpu-operator --force --grace-period=0 --wait=false 2>/dev/null || true
-
-echo "  - Uninstalling GPU Operator..."
-helm uninstall gpu-operator -n gpu-operator --timeout=60s 2>/dev/null || true
+echo "  - Comprehensive GPU Operator cleanup..."
+cleanup_gpu_operator_completely
 
 echo "  - Uninstalling Cluster Autoscaler..."
 helm uninstall cluster-autoscaler -n kube-system --timeout=60s 2>/dev/null || true
@@ -336,9 +409,15 @@ echo "  - Force deleting persistent volume claims..."
 kubectl delete pvc --all -n uneeq-renderer --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
 kubectl delete pvc --all -n gpu-operator --force --grace-period=0 --ignore-not-found=true 2>/dev/null || true
 
-# Delete any custom resource definitions we might have created
-echo "  - Cleaning up CRDs..."
-kubectl delete crd clusterpolicies.nvidia.com --ignore-not-found=true 2>/dev/null || true
+# Delete any remaining GPU operator custom resource definitions
+echo "  - Final GPU Operator CRD cleanup..."
+kubectl delete crd clusterpolicies.nvidia.com --ignore-not-found=true --timeout=30s 2>/dev/null || true
+kubectl delete crd nvidiadrivers.nvidia.com --ignore-not-found=true --timeout=30s 2>/dev/null || true
+kubectl delete crd gpufeaturepolicies.nvidia.com --ignore-not-found=true --timeout=30s 2>/dev/null || true
+# Remove finalizers if CRDs are stuck
+kubectl patch crd clusterpolicies.nvidia.com --type='merge' -p='{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+kubectl patch crd nvidiadrivers.nvidia.com --type='merge' -p='{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+kubectl patch crd gpufeaturepolicies.nvidia.com --type='merge' -p='{"metadata":{"finalizers":[]}}' 2>/dev/null || true
 
 # Force delete namespaces
 echo "  - Force deleting namespaces..."
