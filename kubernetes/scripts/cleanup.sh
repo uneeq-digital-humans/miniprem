@@ -14,10 +14,9 @@ echo -e "${RED}⚠️  EMERGENCY CLEANUP - NO CONFIRMATIONS${NC}"
 echo "Starting immediate teardown..."
 
 # Load deployment configuration
-cd "$PROJECT_DIR/terraform"
+cd "$TERRAFORM_DIR"
 init_deployment_config "false" ""
 REGION="$AWS_REGION"
-cd "$PROJECT_DIR"
 
 if [ -n "$CLUSTER_NAME" ]; then
     # Configure kubectl
@@ -37,7 +36,7 @@ if [ -n "$CLUSTER_NAME" ]; then
 fi
 
 # Force terraform destroy
-cd "$PROJECT_DIR/terraform"
+cd "$TERRAFORM_DIR"
 terraform destroy -auto-approve -refresh=false 2>/dev/null || true
 
 echo -e "${GREEN}✅ Emergency cleanup completed${NC}"

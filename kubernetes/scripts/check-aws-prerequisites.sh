@@ -115,19 +115,25 @@ if check "AWS credentials configured" "aws sts get-caller-identity"; then
     echo "  Identity: $USER_ARN"
 fi
 
-# Check default region
-REGION=${AWS_DEFAULT_REGION:-$(aws configure get region)}
+# Check region from terraform.tfvars (single source of truth)
+REGION=""
 
-# If not set, try to get from terraform vars
-if [ -z "$REGION" ] && [ -f "terraform/terraform.tfvars" ]; then
+# Try to get from terraform vars first
+if [ -f "terraform/terraform.tfvars" ]; then
     REGION=$(grep "^aws_region" terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
+elif [ -f "../terraform/terraform.tfvars" ]; then
+    REGION=$(grep "^aws_region" ../terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
 fi
 
-if [ -n "$REGION" ]; then
-    echo -e "Default region: ${GREEN}$REGION${NC}"
+# Validate region is set
+if [ -z "$REGION" ]; then
+    echo -e "AWS region: ${RED}Not configured${NC}"
+    echo -e "${RED}Error: aws_region must be set in terraform.tfvars${NC}"
+    echo "Please add: aws_region = \"us-east-2\"  (or your preferred region)"
+    echo "terraform.tfvars should be the single source of truth for region configuration."
+    exit 1
 else
-    echo -e "Default region: ${YELLOW}Not set (will use us-east-1)${NC}"
-    REGION="us-east-1"
+    echo -e "AWS region: ${GREEN}$REGION${NC} (from terraform.tfvars)"
 fi
 
 echo ""

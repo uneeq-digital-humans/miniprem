@@ -22,10 +22,13 @@ if [ -z "${SCRIPT_DIR:-}" ]; then
     readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 if [ -z "${PROJECT_DIR:-}" ]; then
-    readonly PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    readonly PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+fi
+if [ -z "${KUBERNETES_DIR:-}" ]; then
+    readonly KUBERNETES_DIR="$PROJECT_DIR/kubernetes"
 fi
 if [ -z "${TERRAFORM_DIR:-}" ]; then
-    readonly TERRAFORM_DIR="$PROJECT_DIR/terraform"
+    readonly TERRAFORM_DIR="$PROJECT_DIR/kubernetes/terraform"
 fi
 
 # Global variables (set by functions)
@@ -73,6 +76,52 @@ validate_deployment_id() {
     fi
 }
 
+# Get AWS region from terraform.tfvars (single source of truth)
+# Usage: get_aws_region [terraform_dir]
+get_aws_region() {
+    local terraform_dir="${1:-terraform}"
+    local original_dir="$(pwd)"
+    
+    # Navigate to terraform directory (handle both relative and absolute paths)
+    if [[ "$terraform_dir" = /* ]]; then
+        cd "$terraform_dir" 2>/dev/null || {
+            echo -e "${RED}Error: Cannot access terraform directory: $terraform_dir${NC}" >&2
+            return 1
+        }
+    else
+        cd "$PROJECT_DIR/$terraform_dir" 2>/dev/null || cd "$terraform_dir" 2>/dev/null || {
+            echo -e "${RED}Error: Cannot find terraform.tfvars. Please ensure you're running from the correct directory.${NC}" >&2
+            echo "Expected location: $PROJECT_DIR/$terraform_dir/terraform.tfvars" >&2
+            return 1
+        }
+    fi
+    
+    # Check if terraform.tfvars exists
+    if [ ! -f "terraform.tfvars" ]; then
+        echo -e "${RED}Error: terraform.tfvars not found${NC}" >&2
+        echo "Please create terraform.tfvars with aws_region = \"your-region\"" >&2
+        cd "$original_dir"
+        return 1
+    fi
+    
+    # Extract region from terraform.tfvars
+    local aws_region
+    aws_region=$(awk '/^aws_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null)
+    
+    cd "$original_dir"
+    
+    # Validate region is set
+    if [ -z "$aws_region" ] || [ "$aws_region" = "null" ]; then
+        echo -e "${RED}Error: aws_region not set in terraform.tfvars${NC}" >&2
+        echo "Please add: aws_region = \"us-east-2\"  (or your preferred region)" >&2
+        echo "terraform.tfvars should be the single source of truth for AWS region configuration." >&2
+        return 1
+    fi
+    
+    echo "$aws_region"
+    return 0
+}
+
 # Load configuration from terraform.tfvars
 load_terraform_config() {
     cd "$TERRAFORM_DIR"
@@ -85,7 +134,14 @@ load_terraform_config() {
     # Parse terraform.tfvars
     PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
     ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
-    AWS_REGION=$(awk '/^aws_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "us-east-2")
+    # Read AWS region directly since we're already in terraform directory
+    AWS_REGION=$(awk '/^aws_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null)
+    if [ -z "$AWS_REGION" ] || [ "$AWS_REGION" = "null" ]; then
+        echo -e "${RED}Error: aws_region not set in terraform.tfvars${NC}" >&2
+        echo "Please add: aws_region = \"us-east-2\"  (or your preferred region)" >&2
+        echo "terraform.tfvars should be the single source of truth for AWS region configuration." >&2
+        return 1
+    fi
     
     # Check if deployment_id is already set in terraform.tfvars
     local tfvars_deployment_id
@@ -94,8 +150,6 @@ load_terraform_config() {
     if [ -n "$tfvars_deployment_id" ]; then
         DEPLOYMENT_ID="$tfvars_deployment_id"
     fi
-    
-    cd "$PROJECT_DIR"
 }
 
 # Save deployment ID to persistent storage
@@ -112,7 +166,6 @@ save_deployment_id() {
         # Add new line
         echo "deployment_id = \"$id\"" >> terraform.tfvars
     fi
-    cd "$PROJECT_DIR"
 }
 
 # Load deployment ID from persistent storage
@@ -358,7 +411,6 @@ cleanup_deployment_id() {
     if grep -q "^deployment_id[[:space:]]*=" terraform.tfvars; then
         sed -i.bak 's/^deployment_id[[:space:]]*=.*/deployment_id = ""/' terraform.tfvars
     fi
-    cd "$PROJECT_DIR"
     echo -e "${GREEN}✅ Reset deployment ID in terraform.tfvars${NC}"
 }
 

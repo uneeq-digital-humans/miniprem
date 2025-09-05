@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
         --help|-h)
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --region, -r REGION      AWS region to check (default: from terraform or us-east-1)"
+            echo "  --region, -r REGION      AWS region to check (default: from terraform.tfvars)"
             echo "  --vpc, -v VPC_ID         Check specific VPC ID only"
             echo "  --profile, -p PROFILE    Use specific AWS profile"
             echo "  --help, -h               Show this help message"
@@ -54,7 +54,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Usage: $0 [OPTIONS]"
             echo "Options:"
-            echo "  --region, -r REGION      AWS region to check (default: from terraform or us-east-1)"
+            echo "  --region, -r REGION      AWS region to check (default: from terraform.tfvars)"
             echo "  --vpc, -v VPC_ID         Check specific VPC ID only"
             echo "  --profile, -p PROFILE    Use specific AWS profile"
             echo "  --help, -h               Show this help message"
@@ -74,21 +74,31 @@ if [ -n "$AWS_PROFILE_ARG" ]; then
     export AWS_PROFILE="$AWS_PROFILE_ARG"
 fi
 
-# Determine region to use
+# Determine region to use (terraform.tfvars is single source of truth)
 if [ -z "$REGION" ]; then
-    # Try to get region from terraform output first
-    if [ -f "../terraform/terraform.tfstate" ]; then
-        REGION=$(cd ../terraform && terraform output -raw region 2>/dev/null || echo "")
-    fi
-    
-    # If still empty, check terraform.tfvars
-    if [ -z "$REGION" ] && [ -f "../terraform/terraform.tfvars" ]; then
+    # Check terraform.tfvars first (primary source)
+    if [ -f "../terraform/terraform.tfvars" ]; then
         REGION=$(grep "^aws_region" ../terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
     fi
     
-    # Final fallback
+    # If still empty, check current directory for terraform.tfvars
+    if [ -z "$REGION" ] && [ -f "terraform.tfvars" ]; then
+        REGION=$(grep "^aws_region" terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
+    fi
+    
+    # If still empty, try terraform output (only if infrastructure exists)
+    if [ -z "$REGION" ] && [ -f "../terraform/terraform.tfstate" ]; then
+        REGION=$(cd ../terraform && terraform output -raw region 2>/dev/null || echo "")
+    fi
+    
+    # NO FALLBACK - Region must be explicitly configured
     if [ -z "$REGION" ]; then
-        REGION="us-east-1"
+        echo -e "${RED}Error: AWS region not configured${NC}" >&2
+        echo "Please set aws_region in terraform.tfvars:" >&2
+        echo "  aws_region = \"us-east-2\"" >&2
+        echo "" >&2
+        echo "terraform.tfvars should be the single source of truth for region configuration." >&2
+        exit 1
     fi
 fi
 
@@ -322,7 +332,13 @@ echo -e "${BLUE}================================================${NC}"
 echo ""
 
 echo -e "${YELLOW}NEVER DELETE:${NC}"
-echo "• Default VPC (vpc-0acda9a2bdc4d7332) - This is your account's default VPC"
+# Find the actual default VPC for this account
+DEFAULT_VPC_ID=$(aws ec2 describe-vpcs --region $REGION --filters "Name=isDefault,Values=true" --query 'Vpcs[0].VpcId' --output text 2>/dev/null || echo "")
+if [ -n "$DEFAULT_VPC_ID" ] && [ "$DEFAULT_VPC_ID" != "None" ]; then
+    echo "• Default VPC ($DEFAULT_VPC_ID) - This is your account's default VPC"
+else
+    echo "• No default VPC found in this region"
+fi
 echo ""
 
 echo -e "${GREEN}LIKELY SAFE TO DELETE:${NC}"
@@ -330,7 +346,8 @@ safe_to_delete=()
 in_use=()
 
 for vpc in "${VPCS[@]}"; do
-    if [ "$vpc" == "vpc-0acda9a2bdc4d7332" ]; then
+    # Skip default VPC (dynamically determined)
+    if [ -n "$DEFAULT_VPC_ID" ] && [ "$vpc" == "$DEFAULT_VPC_ID" ]; then
         continue  # Skip default VPC
     fi
     

@@ -71,8 +71,6 @@ else
     CONTROL_INSTANCE="t3.large"
 fi
 
-cd "$PROJECT_DIR"
-
 if [ -z "$CLUSTER_NAME" ]; then
     echo -e "${RED}❌ Could not get cluster information${NC}"
     exit 1
@@ -188,7 +186,7 @@ echo ""
 echo -e "${BLUE}💰 Cost Estimate${NC}"
 echo "===================="
 
-# Instance pricing (USD/hour) - approximate us-east-1 pricing
+# Instance pricing (USD/hour) - approximate pricing (varies by region)
 get_instance_cost() {
     case $1 in
         "t3.large") echo "0.08" ;;

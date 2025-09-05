@@ -77,7 +77,6 @@ else
     echo "Valid components: renny, a2f"
     exit 1
 fi
-cd "$PROJECT_DIR"
 
 # Validate input is a number
 if ! [[ "$DESIRED_COUNT" =~ ^[0-9]+$ ]]; then
@@ -106,10 +105,16 @@ if [ -z "$CLUSTER_NAME" ]; then
     exit 1
 fi
 
+# Get region from terraform.tfvars (single source of truth)
 if ! REGION=$(terraform output -raw region 2>/dev/null); then
-    REGION="us-east-1"
+    # Fallback to reading from terraform.tfvars
+    REGION=$(awk '/^aws_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null)
+    if [ -z "$REGION" ]; then
+        echo -e "${RED}Error: Cannot determine AWS region${NC}" >&2
+        echo "Either deploy infrastructure first (for terraform output) or set aws_region in terraform.tfvars" >&2
+        exit 1
+    fi
 fi
-cd "$PROJECT_DIR"
 
 # Get current node count
 echo "📊 Current $COMPONENT_NAME status:"
@@ -140,9 +145,32 @@ else
     exit 0
 fi
 echo ""
-echo -e "${YELLOW}Proceed with scaling? (yes/no)${NC}"
-read -r response
-if [[ "$response" != "yes" ]]; then
+# Flexible user input validation helper (copied from deploy.sh for consistency)
+read_yes_no() {
+    local prompt="$1"
+    local default="${2:-n}"
+    local response
+    
+    if [[ "$default" =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}${prompt} (Y/n) response: ${NC}"
+    else
+        echo -e "${YELLOW}${prompt} (y/N) response: ${NC}"
+    fi
+    
+    read -r response
+    
+    if [ -z "$response" ]; then
+        response="$default"
+    fi
+    
+    if [[ "$response" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+if ! read_yes_no "Proceed with scaling?" "n"; then
     echo "Scaling cancelled"
     exit 0
 fi

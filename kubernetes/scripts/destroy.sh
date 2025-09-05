@@ -119,7 +119,6 @@ else
     init_deployment_config "false" ""
 fi
 
-cd "$PROJECT_DIR"
 echo -e "${RED}⚠️  WARNING: This will destroy all resources!${NC}"
 echo "This includes:"
 echo "  - EKS cluster and all nodes (Ubuntu GPU + control nodes)"
@@ -688,7 +687,6 @@ fi
 
 echo ""
 echo "🧹 AWS infrastructure destroyed - local project files preserved"
-cd "$PROJECT_DIR"
 
 # NOTE: We do NOT delete any local files - this allows immediate redeployment
 # The destroy script only removes AWS infrastructure, not local project files
