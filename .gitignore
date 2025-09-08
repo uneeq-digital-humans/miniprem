@@ -50,3 +50,6 @@ docker/fast-whisper/models/
 
 # Commit guide file
 commits.mdc
+
+# Claude
+.claude/
