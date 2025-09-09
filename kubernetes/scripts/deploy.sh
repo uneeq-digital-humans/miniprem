@@ -1756,9 +1756,17 @@ validate_nvidia_driver_version() {
         # Try each 575.x version until we find one that works
         for version in "${known_versions_575[@]}"; do
             echo "  Checking if driver $version is available..." >&2
+            FOUND_ALTERNATIVE_VERSION=""  # Reset global variable
             if check_nvidia_image_exists "$version"; then
-                echo -e "${GREEN}✓ Driver $version is available${NC}" >&2
-                echo "$version"
+                # Check if an alternative version was found
+                local final_version="$version"
+                if [ -n "$FOUND_ALTERNATIVE_VERSION" ]; then
+                    final_version="$FOUND_ALTERNATIVE_VERSION"
+                    echo -e "${GREEN}✓ Found compatible driver $final_version (alternative to $version)${NC}" >&2
+                else
+                    echo -e "${GREEN}✓ Driver $version is available${NC}" >&2
+                fi
+                echo "$final_version"
                 return 0
             else
                 echo -e "${YELLOW}⚠️  Driver $version not found${NC}" >&2
@@ -1768,9 +1776,16 @@ validate_nvidia_driver_version() {
         # Fallback to 570 if no 575 versions work
         echo -e "${YELLOW}⚠️  No 575.x drivers available, falling back to 570.x${NC}" >&2
         for version in "${known_versions_570[@]}"; do
+            FOUND_ALTERNATIVE_VERSION=""  # Reset global variable
             if check_nvidia_image_exists "$version"; then
-                echo -e "${GREEN}✓ Fallback driver $version is available${NC}" >&2
-                echo "$version"
+                local final_version="$version"
+                if [ -n "$FOUND_ALTERNATIVE_VERSION" ]; then
+                    final_version="$FOUND_ALTERNATIVE_VERSION"
+                    echo -e "${GREEN}✓ Found compatible fallback driver $final_version (alternative to $version)${NC}" >&2
+                else
+                    echo -e "${GREEN}✓ Fallback driver $version is available${NC}" >&2
+                fi
+                echo "$final_version"
                 return 0
             fi
         done
@@ -1778,9 +1793,16 @@ validate_nvidia_driver_version() {
         # Try each 570.x version
         for version in "${known_versions_570[@]}"; do
             echo "  Checking if driver $version is available..." >&2
+            FOUND_ALTERNATIVE_VERSION=""  # Reset global variable
             if check_nvidia_image_exists "$version"; then
-                echo -e "${GREEN}✓ Driver $version is available${NC}" >&2
-                echo "$version"
+                local final_version="$version"
+                if [ -n "$FOUND_ALTERNATIVE_VERSION" ]; then
+                    final_version="$FOUND_ALTERNATIVE_VERSION"
+                    echo -e "${GREEN}✓ Found compatible driver $final_version (alternative to $version)${NC}" >&2
+                else
+                    echo -e "${GREEN}✓ Driver $version is available${NC}" >&2
+                fi
+                echo "$final_version"
                 return 0
             else
                 echo -e "${YELLOW}⚠️  Driver $version not found${NC}" >&2
@@ -1788,7 +1810,20 @@ validate_nvidia_driver_version() {
         done
     fi
     
-    echo -e "${RED}❌ No working driver versions found${NC}" >&2
+    # If all known versions fail, offer interactive selection
+    echo -e "${YELLOW}⚠️  No known driver versions found. Searching for alternatives...${NC}" >&2
+    
+    # Try to find and present alternatives interactively
+    local selected_version
+    if selected_version=$(present_driver_alternatives); then
+        if [ -n "$selected_version" ] && [ "$selected_version" != "Cancel deployment" ]; then
+            echo -e "${GREEN}✓ User selected driver version: $selected_version${NC}" >&2
+            echo "$selected_version"
+            return 0
+        fi
+    fi
+    
+    echo -e "${RED}❌ No working driver versions found and user cancelled selection${NC}" >&2
     return 1
 }
 
@@ -1862,29 +1897,215 @@ diagnose_gpu_operator_issues() {
     return 0
 }
 
-# Check if NVIDIA driver image exists in registry
-check_nvidia_image_exists() {
-    local version="$1"
-    local image="nvcr.io/nvidia/driver:${version}-ubuntu22.04"
+# Enhanced NVIDIA driver image checking system with multi-repository fallbacks
+# This system provides 4 levels of fallback for maximum robustness:
+# 1. Exact version matching across multiple repositories
+# 2. Version family matching (575.x -> other 575.x versions)  
+# 3. Ubuntu package repository checking
+# 4. Interactive user selection with discovered alternatives
+
+# Helper function to check if image exists in a specific registry
+_check_image_in_registry() {
+    local repo="$1"
+    local version="$2"
+    local os_version="${3:-ubuntu22.04}"
+    local image="${repo}:${version}-${os_version}"
     
-    # Use docker/podman to check if image exists (faster than kubectl)
-    # Note: This is a basic check - the actual validation happens during helm install
+    # Try docker first, then podman
     if command -v docker &> /dev/null; then
         docker manifest inspect "$image" &>/dev/null && return 0
     elif command -v podman &> /dev/null; then
         podman manifest inspect "$image" &>/dev/null && return 0
     fi
     
-    # If docker/podman not available, assume version is valid and let helm handle it
-    # Common versions that we know exist based on our research
-    case "$version" in
-        "575.57.08"|"570.47.06"|"575.48.31"|"570.36.04")
-            return 0
-            ;;
-        *)
-            return 1
-            ;;
+    return 1
+}
+
+# Helper function to try version family matching (575.*, 570.*)
+_try_version_family_match() {
+    local requested_version="$1"
+    local os_version="${2:-ubuntu22.04}"
+    local family="${requested_version%%.*}"  # Extract major version (575, 570, etc.)
+    
+    # Define repositories in priority order
+    local repositories=(
+        "nvcr.io/nvidia/driver"
+        "registry.k8s.io/nvidia/driver"
+        "docker.io/nvidia/driver"
+    )
+    
+    # Family-specific version lists (expandable)
+    local versions_575=("575.57.08" "575.48.31" "575.36.04" "575.51.05" "575.51.10")
+    local versions_570=("570.47.06" "570.36.04" "570.58.14")
+    local versions_5xx=("550.90.07" "535.183.01" "545.29.06")
+    
+    # Select version array based on family
+    local -n version_array
+    case "$family" in
+        "575") version_array=versions_575 ;;
+        "570") version_array=versions_570 ;;
+        "5"*) version_array=versions_5xx ;;
+        *) return 1 ;;
     esac
+    
+    # Try each version in the family across all repositories
+    for version in "${version_array[@]}"; do
+        for repo in "${repositories[@]}"; do
+            if _check_image_in_registry "$repo" "$version" "$os_version"; then
+                echo "$version"  # Return the working version
+                return 0
+            fi
+        done
+    done
+    
+    return 1
+}
+
+# Helper function to check Ubuntu packages for NVIDIA drivers
+_check_ubuntu_packages() {
+    local requested_version="$1"
+    local major_version="${requested_version%%.*}"
+    
+    # Check if apt is available
+    command -v apt-cache &> /dev/null || return 1
+    
+    # Search for NVIDIA driver packages matching the version family
+    if apt-cache search "nvidia-driver-${major_version}" | grep -q "nvidia-driver-${major_version}"; then
+        echo "ubuntu-package-${major_version}"  # Indicate Ubuntu package is available
+        return 0
+    fi
+    
+    return 1
+}
+
+# Helper function to discover available driver versions across all sources
+discover_available_drivers() {
+    local available_versions=()
+    local os_version="ubuntu22.04"
+    
+    # Repositories to check
+    local repositories=(
+        "nvcr.io/nvidia/driver"
+        "registry.k8s.io/nvidia/driver"
+        "docker.io/nvidia/driver"
+    )
+    
+    # Known version families to try
+    local test_versions=("575.57.08" "575.48.31" "570.47.06" "570.36.04" "550.90.07" "535.183.01")
+    
+    # Test each version against each repository
+    for version in "${test_versions[@]}"; do
+        for repo in "${repositories[@]}"; do
+            if _check_image_in_registry "$repo" "$version" "$os_version" 2>/dev/null; then
+                available_versions+=("$version")
+                break  # Found in this repo, move to next version
+            fi
+        done
+    done
+    
+    # Add Ubuntu package versions if available
+    for family in 575 570 550 535; do
+        if _check_ubuntu_packages "${family}.0.0" &>/dev/null; then
+            available_versions+=("${family}.x.x-ubuntu-package")
+        fi
+    done
+    
+    # Return unique versions
+    printf '%s\n' "${available_versions[@]}" | sort -V | uniq
+}
+
+# Interactive function to present driver alternatives to user
+present_driver_alternatives() {
+    echo -e "${YELLOW}⚠️  Preferred NVIDIA driver versions not found${NC}"
+    echo "🔍 Searching for available alternatives..."
+    
+    local available_versions
+    mapfile -t available_versions < <(discover_available_drivers)
+    
+    if [ ${#available_versions[@]} -eq 0 ]; then
+        echo -e "${RED}❌ No NVIDIA driver versions found in any repository${NC}"
+        echo "   This may indicate network connectivity issues or repository access problems."
+        return 1
+    fi
+    
+    echo -e "\n${GREEN}✅ Found ${#available_versions[@]} available NVIDIA driver versions:${NC}"
+    echo "Please select a driver version to use:"
+    
+    # Create selection menu
+    local PS3="Choose driver version (1-$((${#available_versions[@]}+1))): "
+    select driver_version in "${available_versions[@]}" "Cancel deployment"; do
+        if [ "$driver_version" = "Cancel deployment" ]; then
+            echo -e "${YELLOW}⚠️  Deployment cancelled by user${NC}"
+            return 1
+        elif [ -n "$driver_version" ]; then
+            echo -e "${GREEN}✅ Selected driver version: $driver_version${NC}"
+            echo "$driver_version"  # Return selected version
+            return 0
+        else
+            echo -e "${RED}Invalid selection. Please choose a number between 1 and $((${#available_versions[@]}+1))${NC}"
+        fi
+    done
+}
+
+# Enhanced NVIDIA driver image existence check with multi-repository fallback
+# 
+# Usage: check_nvidia_image_exists <version> [os_version]
+# 
+# This function implements a sophisticated 4-phase approach to finding NVIDIA driver images:
+# Phase 1: Direct image check across multiple registries (nvcr.io, registry.k8s.io, docker.io)
+# Phase 2: Version family matching - find compatible versions in same family (575.* -> 575.48.31, etc.)
+# Phase 3: Ubuntu package repository fallback for system-provided drivers  
+# Phase 4: Set failure flag for caller to handle (interactive selection)
+#
+# Sets global variable FOUND_ALTERNATIVE_VERSION if alternative found
+# Returns: 0 if image/alternative found, 1 if not found
+check_nvidia_image_exists() {
+    local version="$1"
+    local os_version="${2:-ubuntu22.04}"
+    
+    # Define repositories in priority order
+    local repositories=(
+        "nvcr.io/nvidia/driver"
+        "registry.k8s.io/nvidia/driver" 
+        "docker.io/nvidia/driver"
+    )
+    
+    # Phase 1: Try exact version across all repositories
+    echo "  🔍 Checking exact version $version..." >&2
+    for repo in "${repositories[@]}"; do
+        if _check_image_in_registry "$repo" "$version" "$os_version"; then
+            echo "  ✅ Found exact version $version in $repo" >&2
+            return 0
+        fi
+    done
+    
+    # Phase 2: Try version family matching (575.* → other 575.x versions)
+    echo "  🔍 Trying version family matching..." >&2
+    local family_version
+    if family_version=$(GLOBAL_FOUND_VERSION="" && _try_version_family_match "$version" "$os_version"); then
+        if [ -n "$family_version" ]; then
+            echo "  ✅ Found compatible version $family_version in same family" >&2
+            # Update global variable for caller to use
+            FOUND_ALTERNATIVE_VERSION="$family_version"
+            return 0
+        fi
+    fi
+    
+    # Phase 3: Check Ubuntu repositories as fallback
+    echo "  🔍 Checking Ubuntu package repositories..." >&2
+    local ubuntu_package
+    if ubuntu_package=$(_check_ubuntu_packages "$version"); then
+        if [ -n "$ubuntu_package" ]; then
+            echo "  ✅ Found Ubuntu package: $ubuntu_package" >&2
+            FOUND_ALTERNATIVE_VERSION="$ubuntu_package"
+            return 0
+        fi
+    fi
+    
+    # Phase 4: If all automated attempts fail, don't automatically present alternatives
+    # Let the calling function decide whether to show interactive menu
+    echo "  ❌ Version $version not found in any repository" >&2
+    return 1
 }
 
 # Install GPU Operator with retry logic for different error types
