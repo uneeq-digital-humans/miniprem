@@ -67,7 +67,7 @@ if [ -z "${YELLOW:-}" ]; then YELLOW='\033[1;33m'; fi
 if [ -z "${BLUE:-}" ]; then BLUE='\033[0;34m'; fi
 if [ -z "${NC:-}" ]; then NC='\033[0m'; fi
 
-# Note: SCRIPT_DIR and PROJECT_DIR already defined in deployment-functions.sh
+# Note: SCRIPT_DIR and KUBERNETES_DIR already defined in deployment-functions.sh
 
 # Timing
 START_TIME=$(date +%s)
@@ -78,7 +78,7 @@ echo "======================================"
 echo ""
 
 # Load deployment configuration
-cd "$PROJECT_DIR/terraform"
+cd "$KUBERNETES_DIR/terraform"
 if [ "$LIST_ONLY" = "true" ]; then
     echo "📋 Listing all deployments..."
     load_terraform_config
@@ -467,7 +467,7 @@ fi
 # Step 4: Delete EKS node groups
 echo ""
 echo "🖥️  Step 4/8: Removing EKS node groups..."
-cd "$PROJECT_DIR/terraform"
+cd "$KUBERNETES_DIR/terraform"
 
 if [ "$CLUSTER_NAME" != "unknown" ]; then
     # List current node groups

@@ -164,7 +164,7 @@ save_deployment_id() {
         sed -i.bak "s/^deployment_id[[:space:]]*=.*/deployment_id = \"$id\"/" terraform.tfvars
     else
         # Add new line
-        echo "deployment_id = \"$id\"" >> terraform.tfvars
+        echo "\ndeployment_id = \"$id\"" >> terraform.tfvars
     fi
 }
 
