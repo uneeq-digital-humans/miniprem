@@ -71,3 +71,6 @@ miniprem-monitor/design-system.md
 miniprem-monitor/WEBSOCKET_ENHANCEMENTS.md
 
 personal_notes/
+
+.deployment_id
+terraform.tfvars.bak
