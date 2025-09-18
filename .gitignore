@@ -59,3 +59,15 @@ commits.mdc
 .claude/
 
 CLAUDE.md
+
+.playwright-mcp/
+customer-package/
+ue56_upgrade_instructions.html
+UneeQ-logo.png
+
+# Miniprem-monitor
+miniprem-monitor/architecture.md
+miniprem-monitor/design-system.md
+miniprem-monitor/WEBSOCKET_ENHANCEMENTS.md
+
+personal_notes/
