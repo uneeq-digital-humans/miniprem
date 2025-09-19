@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ContainerStatus, StatusType } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
-import { RefreshCw, Eye, EyeOff } from 'lucide-react';
+import { RefreshCw, Eye, EyeOff, Play, Square, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
 interface ContainerPanelProps {
@@ -9,15 +9,25 @@ interface ContainerPanelProps {
   loading?: boolean;
   onRefresh?: () => void;
   onViewLogs?: (containerName: string) => void;
+  onStartContainer?: (containerName: string) => void;
+  onStopContainer?: (containerName: string) => void;
+  containerLoading?: string | null;
 }
+
+// Define filter types
+type FilterType = 'all' | 'running' | 'stopped';
 
 export function ContainerPanel({
   containers,
   loading,
   onRefresh,
-  onViewLogs
+  onViewLogs,
+  onStartContainer,
+  onStopContainer,
+  containerLoading = null
 }: ContainerPanelProps) {
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<FilterType>('all');
 
   const getContainerStatus = (status: string): StatusType => {
     if (status.toLowerCase().includes('up')) return 'healthy';
@@ -70,23 +80,158 @@ export function ContainerPanel({
     return { ports: [], hasValidPorts: false };
   };
 
+  // Filter containers based on status
+  const filteredContainers = useMemo(() => {
+    if (statusFilter === 'all') {
+      return containers;
+    }
+
+    return containers.filter(container => {
+      const status = getContainerStatus(container.status);
+      if (statusFilter === 'running') {
+        return status === 'healthy';
+      }
+      if (statusFilter === 'stopped') {
+        return status === 'error' || status === 'unknown';
+      }
+      return true;
+    });
+  }, [containers, statusFilter]);
+
+  // Calculate counts for each filter
+  const filterCounts = useMemo(() => {
+    const all = containers.length;
+    const running = containers.filter(c => getContainerStatus(c.status) === 'healthy').length;
+    const stopped = containers.filter(c => {
+      const status = getContainerStatus(c.status);
+      return status === 'error' || status === 'unknown';
+    }).length;
+
+    return { all, running, stopped };
+  }, [containers]);
+
   return (
     <div className="card p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-          <div className="w-1 h-6 bg-gradient-uneeq rounded mr-3"></div>
-          Docker Containers
-        </h2>
-        <button
-          onClick={onRefresh}
-          className={clsx(
-            'p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
-            loading && 'animate-spin'
-          )}
-          disabled={loading}
-        >
-          <RefreshCw className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-        </button>
+      {/* Improved Header */}
+      <div className="mb-6">
+        {/* Title and Controls Row */}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <div className="w-1 h-6 bg-gradient-uneeq rounded mr-3"></div>
+            Docker Containers
+          </h2>
+
+          <button
+            onClick={onRefresh}
+            className={clsx(
+              'btn-icon',
+              loading && 'animate-spin'
+            )}
+            disabled={loading}
+            title="Refresh containers"
+            aria-label="Refresh containers"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Status Filter - Segmented Control */}
+        <div className="flex items-center justify-between">
+          <div
+            className="inline-flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1"
+            role="tablist"
+            aria-label="Container status filter"
+          >
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={clsx(
+                'px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-uneeq-primary focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-800',
+                statusFilter === 'all'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              )}
+              role="tab"
+              aria-selected={statusFilter === 'all'}
+              aria-controls="container-list"
+              data-testid="filter-all"
+            >
+              All
+              {filterCounts.all > 0 && (
+                <span className={clsx(
+                  'ml-2 px-2 py-0.5 rounded-full text-xs',
+                  statusFilter === 'all'
+                    ? 'bg-gray-100 dark:bg-gray-500 text-gray-600 dark:text-gray-300'
+                    : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
+                )}>
+                  {filterCounts.all}
+                </span>
+              )}
+            </button>
+
+            <button
+              onClick={() => setStatusFilter('running')}
+              className={clsx(
+                'px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-uneeq-primary focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-800',
+                statusFilter === 'running'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              )}
+              role="tab"
+              aria-selected={statusFilter === 'running'}
+              aria-controls="container-list"
+              data-testid="filter-running"
+            >
+              <div className="flex items-center">
+                <div className="w-2 h-2 bg-status-healthy rounded-full mr-1.5"></div>
+                Running
+                {filterCounts.running > 0 && (
+                  <span className={clsx(
+                    'ml-2 px-2 py-0.5 rounded-full text-xs',
+                    statusFilter === 'running'
+                      ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                      : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
+                  )}>
+                    {filterCounts.running}
+                  </span>
+                )}
+              </div>
+            </button>
+
+            <button
+              onClick={() => setStatusFilter('stopped')}
+              className={clsx(
+                'px-3 py-1.5 text-sm font-medium rounded-md transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-uneeq-primary focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-gray-800',
+                statusFilter === 'stopped'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-gray-100 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              )}
+              role="tab"
+              aria-selected={statusFilter === 'stopped'}
+              aria-controls="container-list"
+              data-testid="filter-stopped"
+            >
+              <div className="flex items-center">
+                <div className="w-2 h-2 bg-status-error rounded-full mr-1.5"></div>
+                Stopped
+                {filterCounts.stopped > 0 && (
+                  <span className={clsx(
+                    'ml-2 px-2 py-0.5 rounded-full text-xs',
+                    statusFilter === 'stopped'
+                      ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                      : 'bg-gray-200 dark:bg-gray-600 text-gray-500 dark:text-gray-400'
+                  )}>
+                    {filterCounts.stopped}
+                  </span>
+                )}
+              </div>
+            </button>
+          </div>
+
+          {/* Results count */}
+          <div className="text-sm text-gray-500 dark:text-gray-400">
+            {loading ? 'Loading...' : `${filteredContainers.length} container${filteredContainers.length !== 1 ? 's' : ''}`}
+          </div>
+        </div>
       </div>
 
       {loading ? (
@@ -109,9 +254,15 @@ export function ContainerPanel({
           <p>No containers found</p>
           <p className="text-sm">Docker may not be running or accessible</p>
         </div>
+      ) : filteredContainers.length === 0 ? (
+        <div className="text-center py-8 text-gray-500 dark:text-gray-400" data-testid="no-filtered-containers">
+          <div className="text-2xl mb-2">🔍</div>
+          <p>No {statusFilter === 'running' ? 'running' : statusFilter === 'stopped' ? 'stopped' : ''} containers</p>
+          <p className="text-sm">Try changing the filter or check container status</p>
+        </div>
       ) : (
-        <div className="space-y-2">
-          {containers.map((container, index) => (
+        <div className="space-y-2" id="container-list" role="tabpanel">
+          {filteredContainers.map((container, index) => (
             <div
               key={container.name || index}
               className={clsx(
@@ -155,6 +306,56 @@ export function ContainerPanel({
                       MEM: {container.memory_usage}
                     </div>
                   )}
+
+                  {/* Per-Container Control Buttons */}
+                  {getContainerStatus(container.status) === 'error' && onStartContainer && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStartContainer(container.name);
+                      }}
+                      disabled={containerLoading === container.name}
+                      className={clsx(
+                        'flex items-center space-x-1 px-2 py-1 text-xs rounded border transition-colors',
+                        containerLoading === container.name
+                          ? 'border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                          : 'border-green-300 dark:border-green-600 text-green-700 dark:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/20'
+                      )}
+                      title={`Start ${container.name}`}
+                    >
+                      {containerLoading === container.name ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Play className="w-3 h-3" />
+                      )}
+                      <span>Start</span>
+                    </button>
+                  )}
+
+                  {getContainerStatus(container.status) === 'healthy' && onStopContainer && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStopContainer(container.name);
+                      }}
+                      disabled={containerLoading === container.name}
+                      className={clsx(
+                        'flex items-center space-x-1 px-2 py-1 text-xs rounded border transition-colors',
+                        containerLoading === container.name
+                          ? 'border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 cursor-not-allowed'
+                          : 'border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20'
+                      )}
+                      title={`Stop ${container.name}`}
+                    >
+                      {containerLoading === container.name ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Square className="w-3 h-3" />
+                      )}
+                      <span>Stop</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

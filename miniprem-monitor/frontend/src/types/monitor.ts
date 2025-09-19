@@ -85,7 +85,34 @@ export interface SystemInfo {
     available: boolean;
     error?: string;
     cluster_info?: any;
+    contexts?: KubernetesContext[];
+    current_context?: string;
+    namespaces?: string[];
   };
+}
+
+export interface KubernetesContext {
+  name: string;
+  cluster: string;
+  namespace?: string;
+  user?: string;
+  current: boolean;
+  valid?: boolean;
+}
+
+export interface KubernetesClusterInfo {
+  name: string;
+  context: string;
+  namespace: string;
+  environment: 'local' | 'eks' | 'gke' | 'aks';
+  region?: string;
+  status: 'connected' | 'connecting' | 'error';
+  lastSync?: Date;
+  latency?: number;
+  podCount?: number;
+  nodeCount?: number;
+  connectionError?: string;
+  version?: string;
 }
 
 export interface ConnectionStats {

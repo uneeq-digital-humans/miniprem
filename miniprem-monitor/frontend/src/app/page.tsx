@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket.simple';
 import { MetricsCard } from '../components/MetricsCard';
 import { ContainerPanel } from '../components/ContainerPanel';
-import { KubernetesPanel } from '../components/KubernetesPanel';
+import { KubernetesPanel, ClusterStatus } from '../components/KubernetesPanel';
+import { ClusterInfo } from '../components/ClusterSelector';
 import { LogViewer } from '../components/LogViewer';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { DarkModeToggle } from '../components/DarkModeToggle';
@@ -23,10 +24,29 @@ export default function MonitoringDashboard() {
   const [pods, setPods] = useState<PodStatus[]>([]);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
 
+  // Kubernetes cluster management state
+  const [availableClusters, setAvailableClusters] = useState<ClusterInfo[]>([]);
+  const [currentCluster, setCurrentCluster] = useState<ClusterInfo | null>(null);
+  const [clusterStatus, setClusterStatus] = useState<ClusterStatus | null>(null);
+  const [kubernetesError, setKubernetesError] = useState<string>('');
+
+  // Kubernetes context management state
+  const [availableContexts, setAvailableContexts] = useState<Array<{ name: string; current: boolean; cluster?: string; user?: string; namespace?: string }>>([]);
+  const [currentContext, setCurrentContext] = useState<string>('');
+
+  // Region management state
+  const [currentRegion, setCurrentRegion] = useState<string>('us-east-1');
+  const [availableRegions, setAvailableRegions] = useState<string[]>(['us-east-1', 'us-east-2']);
+  const [regionsLoading, setRegionsLoading] = useState<boolean>(true);
+
   // Loading states
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [containersLoading, setContainersLoading] = useState(true);
   const [podsLoading, setPodsLoading] = useState(true);
+
+  // Container control states
+  const [containerLoading, setContainerLoading] = useState<string | null>(null);
+  const [kubernetesServiceLoading, setKubernetesServiceLoading] = useState(false);
 
   // Log viewer state
   const [logViewer, setLogViewer] = useState({
@@ -118,15 +138,37 @@ export default function MonitoringDashboard() {
         if (response.data?.containers) {
           setContainers(response.data.containers);
           setContainersLoading(false);
+          // Clear container loading state when containers are refreshed
+          setContainerLoading(null);
         } else if (response.data?.pods) {
           setPods(response.data.pods);
           setPodsLoading(false);
+        } else if (response.data?.contexts) {
+          // Handle contexts response
+          setAvailableContexts(response.data.contexts);
+          const current = response.data.contexts.find((ctx: any) => ctx.current);
+          if (current) {
+            setCurrentContext(current.name);
+          }
+          console.log('Updated available contexts:', response.data.contexts);
         } else if (response.data?.logs) {
           setLogViewer(prev => ({
             ...prev,
             logs: response.data?.logs || '',
             loading: false,
           }));
+        } else if (response.data?.switched_to) {
+          // Handle context switch confirmation
+          console.log(`Context switched to: ${response.data.switched_to}`);
+          fetchKubernetesClusters(); // Refresh cluster list
+          handleRefreshContexts(); // Refresh context list
+        } else if (response.data?.container_action) {
+          // Handle container start/stop responses
+          console.log(`Container action completed: ${response.data.container_action}`);
+          setContainerLoading(null);
+          // Trigger container refresh
+          setContainersLoading(true);
+          sendCommand('docker', 'ps');
         }
       }
 
@@ -138,10 +180,120 @@ export default function MonitoringDashboard() {
           loading: false,
         }));
       }
+
+      // Handle cluster context responses
+      else if (response.requestId.startsWith('contexts_') || response.requestId.startsWith('switch-context_')) {
+        fetchKubernetesClusters(); // Refresh cluster list when contexts change
+      }
     } else if (!response.success) {
       console.error('Command failed:', response.error);
     }
   }, []);
+
+  // Fetch available AWS regions from backend
+  const fetchAwsRegions = useCallback(async () => {
+    try {
+      setRegionsLoading(true);
+      const response = await fetch('/api/aws/regions');
+      const data = await response.json();
+
+      if (response.ok && data.success && data.regions) {
+        const regionNames = data.regions
+          .filter((region: any) => region.available !== false)
+          .map((region: any) => region.name)
+          .sort();
+
+        setAvailableRegions(regionNames);
+        console.log(`Loaded ${regionNames.length} AWS regions from backend`);
+      } else {
+        console.error('Failed to fetch AWS regions:', data.error || 'Unknown error');
+        // Keep default regions as fallback
+      }
+    } catch (error) {
+      console.error('Error fetching AWS regions:', error);
+      // Keep default regions as fallback
+    } finally {
+      setRegionsLoading(false);
+    }
+  }, []);
+
+  // Kubernetes cluster management functions
+  const fetchKubernetesClusters = useCallback(async () => {
+    try {
+      const response = await fetch('/api/kubernetes/contexts');
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        // Convert contexts to ClusterInfo format, filtering out non-accessible clusters
+        const clusters: ClusterInfo[] = data.contexts
+          .filter((context: any) => {
+            // Filter out clusters that we know have DNS resolution issues
+            return !context.name.includes('production-71730a2');
+          })
+          .map((context: any) => ({
+            name: context.cluster,
+            context: context.name,
+            namespace: context.namespace,
+            environment: context.name.includes('eks') ? 'eks' as const :
+                        context.name.includes('gke') ? 'gke' as const :
+                        context.name.includes('aks') ? 'aks' as const :
+                        'local' as const,
+            status: context.current ? 'connected' as const : 'error' as const,
+            podCount: pods.filter(pod => pod.namespace === context.namespace).length
+          }));
+
+        setAvailableClusters(clusters);
+
+        // Set current cluster
+        const current = clusters.find(c => c.status === 'connected');
+        if (current) {
+          setCurrentCluster(current);
+
+          // Create cluster status
+          setClusterStatus({
+            isConnected: true,
+            currentContext: current.context,
+            availableClusters: clusters.length,
+            lastSync: new Date().toLocaleTimeString()
+          });
+        }
+
+        // Clear any previous errors
+        setKubernetesError('');
+      } else {
+        // Handle API errors
+        let errorMessage = 'Failed to fetch Kubernetes clusters';
+
+        if (data.error_type === 'authentication_error') {
+          errorMessage = 'Authentication failed. Please run "aws sso login" to refresh your session.';
+        } else if (data.error_type === 'connection_error') {
+          errorMessage = 'Unable to connect to Kubernetes cluster. Please check your network connection.';
+        } else if (data.error) {
+          errorMessage = data.error;
+        }
+
+        setKubernetesError(errorMessage);
+        setClusterStatus({
+          isConnected: false,
+          currentContext: null,
+          availableClusters: 0,
+          lastSync: new Date().toLocaleTimeString(),
+          error: errorMessage
+        });
+      }
+    } catch (error) {
+      const errorMessage = 'Failed to connect to monitoring service. Please check if the backend is running.';
+      console.error('Error fetching Kubernetes clusters:', error);
+      setKubernetesError(errorMessage);
+      setClusterStatus({
+        isConnected: false,
+        currentContext: null,
+        availableClusters: 0,
+        lastSync: new Date().toLocaleTimeString(),
+        error: errorMessage
+      });
+    }
+  }, [pods]);
 
   // Initialize WebSocket
   const {
@@ -159,6 +311,9 @@ export default function MonitoringDashboard() {
       subscribe('kubernetes', 'pods');
       subscribe('system', 'metrics');
       subscribe('system', 'info');
+      // Fetch available regions and clusters
+      fetchAwsRegions();
+      fetchKubernetesClusters();
     },
     onDisconnect: () => {
       console.log('WebSocket disconnected');
@@ -167,6 +322,21 @@ export default function MonitoringDashboard() {
       setMetricsLoading(true);
     },
   });
+
+  // Context refresh handler
+  const handleRefreshContexts = useCallback(() => {
+    if (isConnected) {
+      sendCommand('kubernetes', 'contexts');
+    }
+  }, [isConnected, sendCommand]);
+
+  // Fetch clusters and contexts when pods change or connection is established
+  useEffect(() => {
+    if (isConnected) {
+      fetchKubernetesClusters();
+      handleRefreshContexts();
+    }
+  }, [isConnected, pods.length, fetchKubernetesClusters, handleRefreshContexts]);
 
   // All data now comes via WebSocket subscriptions - no REST API polling needed
 
@@ -184,6 +354,7 @@ export default function MonitoringDashboard() {
       sendCommand('kubernetes', 'pods');
     }
   }, [isConnected, sendCommand]);
+
 
   // Log viewer handlers
   const handleViewContainerLogs = useCallback((containerName: string) => {
@@ -213,6 +384,188 @@ export default function MonitoringDashboard() {
   const handleCloseLogViewer = useCallback(() => {
     setLogViewer(prev => ({ ...prev, isOpen: false }));
   }, []);
+
+
+  const handleClusterSelect = useCallback(async (cluster: ClusterInfo) => {
+    try {
+      const response = await fetch(`/api/kubernetes/context/switch/${cluster.context}`, {
+        method: 'POST'
+      });
+
+      if (response.ok) {
+        setCurrentCluster(cluster);
+        setClusterStatus({
+          name: cluster.name,
+          context: cluster.context,
+          namespace: cluster.namespace,
+          environment: cluster.environment,
+          status: 'connected',
+          lastSync: new Date(),
+          podCount: cluster.podCount
+        });
+
+        // Refresh pod data for the new context
+        if (isConnected) {
+          setPodsLoading(true);
+          sendCommand('kubernetes', 'pods');
+        }
+
+        console.log(`Switched to cluster: ${cluster.name}`);
+      }
+    } catch (error) {
+      console.error('Error switching cluster:', error);
+    }
+  }, [isConnected, sendCommand]);
+
+  const handleOpenSettings = useCallback(() => {
+    // Open a helpful alert with kubectl configuration instructions
+    const instructions = `Kubernetes Cluster Configuration:
+
+1. List available contexts:
+   kubectl config get-contexts
+
+2. Switch to a different context:
+   kubectl config use-context <context-name>
+
+3. Check cluster connectivity:
+   kubectl cluster-info
+
+4. For AWS EKS authentication issues:
+   aws sso login
+   aws eks update-kubeconfig --region <region> --name <cluster-name>
+
+Current Status: ${kubernetesError || 'Ready'}
+Available Clusters: ${availableClusters.length}`;
+
+    alert(instructions);
+    console.log('Opening Kubernetes settings...');
+  }, [kubernetesError, availableClusters.length]);
+
+  const handleContextSwitch = useCallback(async (context: string) => {
+    // Handle context switch via WebSocket or direct API
+    if (isConnected) {
+      sendCommand('kubernetes', 'switch-context', { context });
+    }
+  }, [isConnected, sendCommand]);
+
+  const handleRegionSelect = useCallback(async (region: string) => {
+    console.log(`Region changed to: ${region}`);
+    setCurrentRegion(region);
+
+    // Clear current clusters and status when region changes
+    setAvailableClusters([]);
+    setCurrentCluster(null);
+    setClusterStatus(null);
+
+    // Refresh clusters for the new region
+    fetchKubernetesClusters();
+
+    // Clear pods while switching regions
+    setPodsLoading(true);
+  }, [fetchKubernetesClusters]);
+
+  // Container control handlers
+  const handleStartContainer = useCallback(async (containerName: string) => {
+    console.log(`Starting container: ${containerName}`);
+    setContainerLoading(containerName);
+
+    try {
+      if (isConnected) {
+        // Send WebSocket command to start container
+        sendCommand('docker', 'start', { container: containerName });
+
+        // The response will come back through WebSocket and trigger container refresh
+        // Set a timeout to clear loading state in case of no response
+        setTimeout(() => {
+          if (containerLoading === containerName) {
+            setContainerLoading(null);
+          }
+        }, 10000);
+      }
+    } catch (error) {
+      console.error('Error starting container:', error);
+      alert(`Failed to start container ${containerName}: ${error}`);
+      setContainerLoading(null);
+    }
+  }, [isConnected, sendCommand, containerLoading]);
+
+  const handleStopContainer = useCallback(async (containerName: string) => {
+    console.log(`Stopping container: ${containerName}`);
+    setContainerLoading(containerName);
+
+    try {
+      if (isConnected) {
+        // Send WebSocket command to stop container
+        sendCommand('docker', 'stop', { container: containerName });
+
+        // The response will come back through WebSocket and trigger container refresh
+        // Set a timeout to clear loading state in case of no response
+        setTimeout(() => {
+          if (containerLoading === containerName) {
+            setContainerLoading(null);
+          }
+        }, 10000);
+      }
+    } catch (error) {
+      console.error('Error stopping container:', error);
+      alert(`Failed to stop container ${containerName}: ${error}`);
+      setContainerLoading(null);
+    }
+  }, [isConnected, sendCommand, containerLoading]);
+
+  const handleStartKubernetesService = useCallback(async (region: string) => {
+    console.log(`Starting Kubernetes service in ${region}...`);
+    setKubernetesServiceLoading(true);
+    try {
+      const response = await fetch(`/api/kubernetes/start/${region}`, { method: 'POST' });
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        console.log(`Kubernetes service started successfully in ${region}`);
+        // Refresh pods and clusters after starting
+        if (isConnected) {
+          setPodsLoading(true);
+          sendCommand('kubernetes', 'pods');
+          fetchKubernetesClusters();
+        }
+      } else {
+        console.error('Failed to start Kubernetes service:', data.error || data.message);
+        alert(`Failed to start Kubernetes service: ${data.error || data.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error starting Kubernetes service:', error);
+      alert('Failed to connect to monitoring service. Please check if the backend is running.');
+    } finally {
+      setKubernetesServiceLoading(false);
+    }
+  }, [isConnected, sendCommand, fetchKubernetesClusters]);
+
+  const handleStopKubernetesService = useCallback(async (region: string) => {
+    console.log(`Stopping Kubernetes service in ${region}...`);
+    setKubernetesServiceLoading(true);
+    try {
+      const response = await fetch(`/api/kubernetes/stop/${region}`, { method: 'POST' });
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        console.log(`Kubernetes service stopped successfully in ${region}`);
+        // Refresh pods and clusters after stopping
+        if (isConnected) {
+          setPodsLoading(true);
+          sendCommand('kubernetes', 'pods');
+          fetchKubernetesClusters();
+        }
+      } else {
+        console.error('Failed to stop Kubernetes service:', data.error || data.message);
+        alert(`Failed to stop Kubernetes service: ${data.error || data.message || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error stopping Kubernetes service:', error);
+      alert('Failed to connect to monitoring service. Please check if the backend is running.');
+    } finally {
+      setKubernetesServiceLoading(false);
+    }
+  }, [isConnected, sendCommand, fetchKubernetesClusters]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors" data-testid="dashboard-root">
@@ -261,22 +614,40 @@ export default function MonitoringDashboard() {
         <MetricsCard metrics={systemMetrics} loading={metricsLoading} />
 
 
-        {/* Service Panels */}
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          {/* Docker Containers */}
+        {/* Service Panels - Vertical Layout */}
+        <div className="space-y-6">
+          {/* Docker Containers - Full Width */}
           <ContainerPanel
             containers={containers}
             loading={containersLoading}
             onRefresh={handleRefreshContainers}
             onViewLogs={handleViewContainerLogs}
+            onStartContainer={handleStartContainer}
+            onStopContainer={handleStopContainer}
+            containerLoading={containerLoading}
           />
 
-          {/* Kubernetes Pods */}
+          {/* Kubernetes Pods - Full Width */}
           <KubernetesPanel
             pods={pods}
-            loading={podsLoading}
+            clusterStatus={clusterStatus}
+            availableClusters={availableClusters}
+            currentCluster={currentCluster}
+            currentRegion={currentRegion}
+            availableRegions={availableRegions}
+            availableContexts={availableContexts}
+            currentContext={currentContext}
+            loading={podsLoading || regionsLoading}
+            error={kubernetesError}
             onRefresh={handleRefreshPods}
             onViewLogs={handleViewPodLogs}
+            onOpenSettings={handleOpenSettings}
+            onClusterSelect={handleClusterSelect}
+            onContextSwitch={handleContextSwitch}
+            onRegionSelect={handleRegionSelect}
+            onStartService={handleStartKubernetesService}
+            onStopService={handleStopKubernetesService}
+            serviceLoading={kubernetesServiceLoading}
           />
         </div>
 
