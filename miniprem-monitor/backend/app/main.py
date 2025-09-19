@@ -11,7 +11,14 @@ from typing import Dict, Any
 
 from .websocket.connection_manager import ConnectionManager
 from .services.system_monitor import SystemMonitor
+from .services.kubernetes_monitor import KubernetesMonitor
+from .services.docker_manager import DockerManager
+from .services.aws_region_manager import AwsRegionManager
 from .security.command_executor import CommandExecutor
+from .models.schemas import (
+    DockerServiceRequest, DockerServiceResponse, ServiceControlRequest,
+    RegionListResponse, RegionContextsResponse, RegionStatus
+)
 
 # Configure logging with proper WebSocket disconnect handling
 logging.basicConfig(
@@ -88,6 +95,9 @@ app.add_middleware(
 # Initialize managers
 connection_manager = ConnectionManager()
 system_monitor = SystemMonitor()
+kubernetes_monitor = KubernetesMonitor()
+docker_manager = DockerManager()
+aws_region_manager = AwsRegionManager()
 command_executor = CommandExecutor()
 
 
@@ -133,6 +143,576 @@ async def health_check():
             content={
                 "status": "unhealthy",
                 "error": "Service components not responding",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+@app.get("/api/kubernetes/contexts")
+async def get_kubernetes_contexts():
+    """Get available Kubernetes contexts"""
+    try:
+        contexts = await kubernetes_monitor.get_available_contexts()
+        current_context = await kubernetes_monitor.get_current_context()
+
+        return {
+            "success": True,
+            "contexts": contexts,
+            "current_context": current_context,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error getting Kubernetes contexts: {error_msg}")
+
+        # Determine appropriate HTTP status code based on error type
+        if "Authentication error" in error_msg:
+            status_code = 401
+            error_type = "authentication_error"
+        elif "Connection error" in error_msg:
+            status_code = 502
+            error_type = "connection_error"
+        else:
+            status_code = 500
+            error_type = "server_error"
+
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": error_type,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+@app.post("/api/kubernetes/context/switch/{context_name}")
+async def switch_kubernetes_context(context_name: str):
+    """Switch to a different Kubernetes context"""
+    try:
+        success = await kubernetes_monitor.switch_context(context_name)
+
+        if success:
+            return {
+                "success": True,
+                "switched_to": context_name,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Failed to switch to context: {context_name}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error switching Kubernetes context: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to switch context: {str(e)}")
+
+
+@app.get("/api/kubernetes/cluster/info")
+async def get_cluster_info():
+    """Get Kubernetes cluster information"""
+    try:
+        cluster_info = await kubernetes_monitor.get_cluster_info()
+        return {
+            "cluster_info": cluster_info,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting cluster info: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get cluster info: {str(e)}")
+
+
+@app.get("/api/kubernetes/namespaces")
+async def get_namespaces():
+    """Get Kubernetes namespaces"""
+    try:
+        namespaces = await kubernetes_monitor.get_namespaces()
+        return {
+            "namespaces": namespaces,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting namespaces: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get namespaces: {str(e)}")
+
+
+# AWS Region Management Endpoints
+
+@app.get("/api/aws/regions")
+async def get_available_regions(validate_access: bool = False):
+    """
+    Get list of all available AWS regions.
+
+    Args:
+        validate_access: If True, validate actual access to each region (slower)
+
+    Returns:
+        RegionListResponse with all AWS regions and their availability status
+    """
+    try:
+        logger.info(f"Getting AWS regions list (validate_access={validate_access})")
+
+        regions = await aws_region_manager.get_available_regions(validate_access=validate_access)
+
+        response = RegionListResponse(
+            success=True,
+            regions=regions,
+            total_count=len(regions)
+        )
+
+        return response.dict()
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error getting AWS regions: {error_msg}")
+
+        # Return structured error response
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": "aws_regions_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+@app.get("/api/kubernetes/contexts/{region}")
+async def get_kubernetes_contexts_by_region(region: str):
+    """
+    Get Kubernetes contexts and clusters for a specific AWS region.
+
+    Args:
+        region: AWS region name (e.g., 'us-east-1')
+
+    Returns:
+        RegionContextsResponse with contexts and clusters for the region
+    """
+    try:
+        logger.info(f"Getting Kubernetes contexts for region: {region}")
+
+        # Validate region
+        if not region or len(region) < 8:
+            raise HTTPException(status_code=400, detail="Invalid region format")
+
+        # Get contexts and clusters for the region
+        contexts, clusters = await aws_region_manager.get_kubernetes_contexts_by_region(region)
+        current_context = await kubernetes_monitor.get_current_context()
+
+        response = RegionContextsResponse(
+            success=True,
+            region=region,
+            contexts=contexts,
+            clusters=clusters,
+            current_context=current_context
+        )
+
+        return response.dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error getting contexts for region {region}: {error_msg}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "region": region,
+                "error": error_msg,
+                "error_type": "kubernetes_contexts_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+@app.get("/api/aws/regions/{region}/status")
+async def get_region_status(region: str):
+    """
+    Get detailed status information for a specific AWS region.
+
+    Args:
+        region: AWS region name
+
+    Returns:
+        RegionStatus with detailed region information
+    """
+    try:
+        logger.info(f"Getting status for region: {region}")
+
+        status = await aws_region_manager.get_region_status(region)
+
+        return {
+            "success": True,
+            "region_status": status.dict(),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error getting region status for {region}: {error_msg}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": "region_status_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+# Docker Service Management Endpoints
+
+@app.post("/api/docker/start")
+async def start_docker_service(force: bool = False):
+    """
+    Start Docker engine service.
+
+    Args:
+        force: Force start without confirmation
+
+    Returns:
+        DockerServiceResponse with operation results
+    """
+    try:
+        logger.info(f"Starting Docker service (force={force})")
+
+        request = DockerServiceRequest(action="start", force=force)
+        response = await docker_manager.process_service_request(request)
+
+        status_code = 200 if response.success else 500
+        return JSONResponse(status_code=status_code, content=response.dict())
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error starting Docker service: {error_msg}")
+
+        error_response = DockerServiceResponse(
+            success=False,
+            action="start",
+            status="error",
+            error=f"Start operation failed: {error_msg}",
+            execution_time=0.0
+        )
+
+        return JSONResponse(status_code=500, content=error_response.dict())
+
+
+@app.post("/api/docker/stop")
+async def stop_docker_service(force: bool = False):
+    """
+    Stop Docker engine service.
+
+    Args:
+        force: Force stop without confirmation
+
+    Returns:
+        DockerServiceResponse with operation results
+    """
+    try:
+        logger.info(f"Stopping Docker service (force={force})")
+
+        request = DockerServiceRequest(action="stop", force=force)
+        response = await docker_manager.process_service_request(request)
+
+        status_code = 200 if response.success else 500
+        return JSONResponse(status_code=status_code, content=response.dict())
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error stopping Docker service: {error_msg}")
+
+        error_response = DockerServiceResponse(
+            success=False,
+            action="stop",
+            status="error",
+            error=f"Stop operation failed: {error_msg}",
+            execution_time=0.0
+        )
+
+        return JSONResponse(status_code=500, content=error_response.dict())
+
+
+@app.post("/api/docker/restart")
+async def restart_docker_service(force: bool = False):
+    """
+    Restart Docker engine service.
+
+    Args:
+        force: Force restart without confirmation
+
+    Returns:
+        DockerServiceResponse with operation results
+    """
+    try:
+        logger.info(f"Restarting Docker service (force={force})")
+
+        request = DockerServiceRequest(action="restart", force=force)
+        response = await docker_manager.process_service_request(request)
+
+        status_code = 200 if response.success else 500
+        return JSONResponse(status_code=status_code, content=response.dict())
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error restarting Docker service: {error_msg}")
+
+        error_response = DockerServiceResponse(
+            success=False,
+            action="restart",
+            status="error",
+            error=f"Restart operation failed: {error_msg}",
+            execution_time=0.0
+        )
+
+        return JSONResponse(status_code=500, content=error_response.dict())
+
+
+@app.get("/api/docker/status")
+async def get_docker_service_status():
+    """
+    Get Docker engine service status.
+
+    Returns:
+        DockerServiceResponse with detailed status information
+    """
+    try:
+        logger.info("Getting Docker service status")
+
+        status = await docker_manager.get_docker_status()
+
+        response = DockerServiceResponse(
+            success=True,
+            action="status",
+            status="retrieved",
+            message="Docker status retrieved successfully",
+            engine_status=status,
+            execution_time=0.0
+        )
+
+        return response.dict()
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error getting Docker service status: {error_msg}")
+
+        error_response = DockerServiceResponse(
+            success=False,
+            action="status",
+            status="error",
+            error=f"Status retrieval failed: {error_msg}",
+            execution_time=0.0
+        )
+
+        return JSONResponse(status_code=500, content=error_response.dict())
+
+
+# Kubernetes Cluster Management Endpoints
+
+@app.post("/api/kubernetes/start/{region}")
+async def start_kubernetes_cluster(region: str, cluster_name: str):
+    """
+    Start/connect to a Kubernetes cluster in a specific region.
+
+    Args:
+        region: AWS region name
+        cluster_name: Name of the cluster to start
+
+    Returns:
+        ServiceControlResponse with operation results
+    """
+    try:
+        logger.info(f"Starting Kubernetes cluster {cluster_name} in region {region}")
+
+        # Validate inputs
+        if not region or not cluster_name:
+            raise HTTPException(status_code=400, detail="Region and cluster name are required")
+
+        response = await kubernetes_monitor.start_cluster(region, cluster_name)
+
+        status_code = 200 if response.success else 500
+        return JSONResponse(status_code=status_code, content=response.dict())
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error starting cluster {cluster_name}: {error_msg}")
+
+        from .models.schemas import ServiceControlResponse
+        error_response = ServiceControlResponse(
+            success=False,
+            action="start",
+            service_type="kubernetes",
+            region=region,
+            cluster_name=cluster_name,
+            status="error",
+            error=f"Start operation failed: {error_msg}",
+            execution_time=0.0
+        )
+
+        return JSONResponse(status_code=500, content=error_response.dict())
+
+
+@app.post("/api/kubernetes/stop/{region}")
+async def stop_kubernetes_cluster(region: str, cluster_name: str):
+    """
+    Stop/disconnect from a Kubernetes cluster in a specific region.
+
+    Args:
+        region: AWS region name
+        cluster_name: Name of the cluster to stop
+
+    Returns:
+        ServiceControlResponse with operation results
+    """
+    try:
+        logger.info(f"Stopping Kubernetes cluster {cluster_name} in region {region}")
+
+        # Validate inputs
+        if not region or not cluster_name:
+            raise HTTPException(status_code=400, detail="Region and cluster name are required")
+
+        response = await kubernetes_monitor.stop_cluster(region, cluster_name)
+
+        status_code = 200 if response.success else 500
+        return JSONResponse(status_code=status_code, content=response.dict())
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error stopping cluster {cluster_name}: {error_msg}")
+
+        from .models.schemas import ServiceControlResponse
+        error_response = ServiceControlResponse(
+            success=False,
+            action="stop",
+            service_type="kubernetes",
+            region=region,
+            cluster_name=cluster_name,
+            status="error",
+            error=f"Stop operation failed: {error_msg}",
+            execution_time=0.0
+        )
+
+        return JSONResponse(status_code=500, content=error_response.dict())
+
+
+@app.get("/api/kubernetes/clusters/{region}")
+async def get_kubernetes_clusters_by_region(region: str, cluster_name: str = None):
+    """
+    Get Kubernetes clusters in a specific region.
+
+    Args:
+        region: AWS region name
+        cluster_name: Optional specific cluster name to filter
+
+    Returns:
+        Dictionary with cluster information for the region
+    """
+    try:
+        logger.info(f"Getting Kubernetes clusters for region: {region}")
+
+        clusters = await kubernetes_monitor.get_cluster_info_by_region(region, cluster_name)
+
+        return {
+            "success": True,
+            "region": region,
+            "clusters": [cluster.dict() for cluster in clusters],
+            "cluster_count": len(clusters),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error getting clusters for region {region}: {error_msg}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "region": region,
+                "error": error_msg,
+                "error_type": "kubernetes_clusters_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+# AWS Profile Management
+
+@app.post("/api/aws/profile/{profile_name}")
+async def set_aws_profile(profile_name: str):
+    """
+    Set AWS profile for all AWS operations.
+
+    Args:
+        profile_name: AWS profile name to use
+
+    Returns:
+        Dictionary with operation status
+    """
+    try:
+        logger.info(f"Setting AWS profile to: {profile_name}")
+
+        # Set profile for all components
+        command_executor.set_aws_profile(profile_name)
+
+        return {
+            "success": True,
+            "profile": profile_name,
+            "message": f"AWS profile set to {profile_name}",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error setting AWS profile: {error_msg}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": "aws_profile_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+@app.get("/api/aws/profile")
+async def get_current_aws_profile():
+    """
+    Get current AWS profile.
+
+    Returns:
+        Dictionary with current AWS profile information
+    """
+    try:
+        profile = aws_region_manager.get_aws_profile()
+
+        return {
+            "success": True,
+            "profile": profile,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error getting AWS profile: {error_msg}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": "aws_profile_error",
                 "timestamp": datetime.utcnow().isoformat()
             }
         )

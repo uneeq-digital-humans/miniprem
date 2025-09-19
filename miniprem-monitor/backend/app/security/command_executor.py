@@ -6,6 +6,14 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import logging
 from ..services.system_monitor import SystemMonitor
+from ..services.kubernetes_monitor import KubernetesMonitor
+from ..services.docker_manager import DockerManager
+from ..services.aws_region_manager import AwsRegionManager
+from ..models.schemas import (
+    DockerServiceRequest, DockerServiceResponse, ServiceControlRequest,
+    ServiceControlResponse, AwsRegion, RegionStatus, RegionListResponse,
+    RegionContextsResponse
+)
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +24,7 @@ class CommandExecutor:
     # Whitelisted commands with their safe parameters
     DOCKER_COMMANDS = {
         'ps': {
-            'cmd': ['docker', 'ps', '--format', 'json'],
+            'cmd': ['docker', 'ps', '-a', '--format', 'json'],
             'timeout': 10
         },
         'stats': {
@@ -25,6 +33,16 @@ class CommandExecutor:
         },
         'logs': {
             'cmd': ['docker', 'logs', '--tail', '100', '--timestamps'],
+            'timeout': 30,
+            'requires_params': ['container']
+        },
+        'start': {
+            'cmd': ['docker', 'start'],
+            'timeout': 30,
+            'requires_params': ['container']
+        },
+        'stop': {
+            'cmd': ['docker', 'stop'],
             'timeout': 30,
             'requires_params': ['container']
         }
@@ -39,10 +57,26 @@ class CommandExecutor:
             'cmd': ['kubectl', 'get', 'nodes', '-o', 'json'],
             'timeout': 15
         },
+        'namespaces': {
+            'cmd': ['kubectl', 'get', 'namespaces', '-o', 'json'],
+            'timeout': 15
+        },
+        'contexts': {
+            'cmd': ['kubectl', 'config', 'get-contexts', '-o', 'json'],
+            'timeout': 10
+        },
+        'switch-context': {
+            'cmd': ['kubectl', 'config', 'use-context'],
+            'timeout': 10,
+            'requires_params': ['context']
+        },
         'logs': {
             'cmd': ['kubectl', 'logs', '--tail=100', '--timestamps'],
             'timeout': 30,
             'requires_params': ['pod']
+        },
+        'health': {
+            'timeout': 15
         }
     }
 
@@ -61,6 +95,39 @@ class CommandExecutor:
     SERVICES_COMMANDS = {
         'availability': {
             'timeout': 10
+        },
+        'start': {
+            'timeout': 180
+        },
+        'stop': {
+            'timeout': 60
+        },
+        'restart': {
+            'timeout': 240
+        }
+    }
+
+    AWS_COMMANDS = {
+        'regions': {
+            'timeout': 15
+        },
+        'contexts': {
+            'timeout': 30
+        },
+        'clusters': {
+            'timeout': 30
+        }
+    }
+
+    REGIONS_COMMANDS = {
+        'list': {
+            'timeout': 15
+        },
+        'contexts': {
+            'timeout': 30
+        },
+        'status': {
+            'timeout': 20
         }
     }
 
@@ -76,6 +143,9 @@ class CommandExecutor:
     def __init__(self):
         self.active_processes = 0
         self.system_monitor = SystemMonitor()
+        self.kubernetes_monitor = KubernetesMonitor()
+        self.docker_manager = DockerManager()
+        self.aws_region_manager = AwsRegionManager()
 
     async def execute_command(self, target: str, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
         """Execute a whitelisted command safely or return mock data for Kubernetes"""
@@ -94,27 +164,40 @@ class CommandExecutor:
         if target == 'connections':
             return await self._execute_connections_command(command, params)
 
-        # Return mock data for Kubernetes commands (unless it's health)
-        if target == 'kubernetes':
-            if command == 'health':
-                return await self._execute_kubernetes_health_command(params)
-            else:
-                return self._get_mock_kubernetes_data(command, params)
+        # Handle AWS commands
+        if target == 'aws':
+            return await self._execute_aws_command(command, params)
 
-        # Handle Docker commands (including health)
+        # Handle regions commands
+        if target == 'regions':
+            return await self._execute_regions_command(command, params)
+
+        # Handle real Kubernetes commands
+        if target == 'kubernetes':
+            return await self._execute_kubernetes_command(command, params)
+
+        # Handle Docker commands (including health and service controls)
         if target == 'docker':
             if command == 'health':
                 return await self._execute_docker_health_command(params)
+            elif command in ['start', 'stop'] and params and 'container' in params:
+                # Handle per-container start/stop operations
+                cmd_config = self.DOCKER_COMMANDS.get(command)
+            elif command in ['start', 'stop', 'restart', 'status'] and (not params or 'container' not in params):
+                # Handle global Docker service operations (legacy)
+                return await self._execute_docker_service_command(command, params)
             else:
                 cmd_config = self.DOCKER_COMMANDS.get(command)
 
         # Get command configuration for remaining commands
         elif target == 'system':
             cmd_config = self.SYSTEM_COMMANDS.get(command)
-        elif target == 'services':
-            cmd_config = self.SERVICES_COMMANDS.get(command)
         elif target == 'connections':
             cmd_config = self.CONNECTIONS_COMMANDS.get(command)
+        elif target == 'aws':
+            cmd_config = self.AWS_COMMANDS.get(command)
+        elif target == 'regions':
+            cmd_config = self.REGIONS_COMMANDS.get(command)
         else:
             raise SecurityError(f"Invalid target: {target}")
 
@@ -192,6 +275,20 @@ class CommandExecutor:
             # Parse JSON output for structured commands
             if command in ['ps', 'stats'] and target == 'docker':
                 return await self._parse_docker_json(command, output)
+            elif command in ['start', 'stop'] and target == 'docker':
+                # For container start/stop, return container action result
+                container_name = params.get('container', 'unknown') if params else 'unknown'
+                return {
+                    'success': True,
+                    'data': {
+                        'container_action': f'{command}_{container_name}',
+                        'container': container_name,
+                        'action': command,
+                        'message': f'Container {container_name} {command}ed successfully',
+                        'output': output.strip()
+                    },
+                    'timestamp': datetime.utcnow().isoformat()
+                }
             elif command in ['pods', 'nodes'] and target == 'kubernetes':
                 return await self._parse_kubectl_json(command, output)
             else:
@@ -432,7 +529,7 @@ class CommandExecutor:
             }
 
     async def _execute_services_command(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
-        """Execute services monitoring commands"""
+        """Execute services monitoring and control commands"""
         try:
             if command == 'availability':
                 # Check Docker and Kubernetes availability
@@ -455,6 +552,74 @@ class CommandExecutor:
                     },
                     'timestamp': datetime.utcnow().isoformat()
                 }
+
+            elif command in ['start', 'stop', 'restart']:
+                # Handle service control operations
+                if not params or 'service_type' not in params:
+                    return {
+                        'success': False,
+                        'error': 'Missing required parameter: service_type',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                service_type = params['service_type']
+
+                if service_type == 'docker':
+                    # Handle Docker service control
+                    docker_request = DockerServiceRequest(
+                        action=command,
+                        force=params.get('force', 'false').lower() == 'true'
+                    )
+                    response = await self.docker_manager.process_service_request(docker_request)
+                    return {
+                        'success': response.success,
+                        'data': {
+                            'service_response': response.dict()
+                        },
+                        'error': response.error if not response.success else None,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                elif service_type == 'kubernetes':
+                    # Handle Kubernetes cluster control
+                    region = params.get('region')
+                    cluster_name = params.get('cluster_name')
+
+                    if not region or not cluster_name:
+                        return {
+                            'success': False,
+                            'error': 'Missing required parameters: region and cluster_name for Kubernetes operations',
+                            'timestamp': datetime.utcnow().isoformat()
+                        }
+
+                    if command == 'start':
+                        response = await self.kubernetes_monitor.start_cluster(region, cluster_name)
+                    elif command == 'stop':
+                        response = await self.kubernetes_monitor.stop_cluster(region, cluster_name)
+                    else:
+                        # Restart = stop then start
+                        stop_response = await self.kubernetes_monitor.stop_cluster(region, cluster_name)
+                        if stop_response.success:
+                            response = await self.kubernetes_monitor.start_cluster(region, cluster_name)
+                        else:
+                            response = stop_response
+
+                    return {
+                        'success': response.success,
+                        'data': {
+                            'service_response': response.dict()
+                        },
+                        'error': response.error if not response.success else None,
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                else:
+                    return {
+                        'success': False,
+                        'error': f'Unsupported service type: {service_type}',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
             else:
                 raise SecurityError(f"Services command not allowed: {command}")
 
@@ -510,137 +675,317 @@ class CommandExecutor:
                 'timestamp': datetime.utcnow().isoformat()
             }
 
-    async def _execute_kubernetes_health_command(self, params: Dict[str, str] = None) -> Dict[str, Any]:
-        """Execute Kubernetes health command"""
+    async def _execute_kubernetes_command(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
+        """Execute real Kubernetes commands using KubernetesMonitor"""
         try:
-            k8s_health = await self.system_monitor.get_kubernetes_cluster_health()
-            return {
-                'success': True,
-                'data': {
-                    'kubernetes_health': k8s_health
-                },
-                'timestamp': datetime.utcnow().isoformat()
-            }
+            if command == 'health':
+                # Get comprehensive cluster health
+                health_data = await self.kubernetes_monitor.get_cluster_health()
+                return {
+                    'success': True,
+                    'data': {
+                        'kubernetes_health': health_data
+                    },
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'pods':
+                # Get pods from the cluster
+                namespace = params.get('namespace') if params else None
+                all_namespaces = params.get('all_namespaces', 'false').lower() == 'true' if params else True
+
+                pods = await self.kubernetes_monitor.get_pods(namespace=namespace, all_namespaces=all_namespaces)
+                return {
+                    'success': True,
+                    'data': {'pods': pods},
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'nodes':
+                # Get nodes from the cluster
+                nodes = await self.kubernetes_monitor.get_nodes()
+                return {
+                    'success': True,
+                    'data': {'nodes': nodes},
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'namespaces':
+                # Get namespaces from the cluster
+                namespaces = await self.kubernetes_monitor.get_namespaces()
+                return {
+                    'success': True,
+                    'data': {'namespaces': namespaces},
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'contexts':
+                # Get available contexts
+                contexts = await self.kubernetes_monitor.get_available_contexts()
+                current_context = await self.kubernetes_monitor.get_current_context()
+                return {
+                    'success': True,
+                    'data': {
+                        'contexts': contexts,
+                        'current_context': current_context
+                    },
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'switch-context':
+                # Switch to a different context
+                if not params or 'context' not in params:
+                    return {
+                        'success': False,
+                        'error': 'Missing required parameter: context',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                context_name = params['context']
+                success = await self.kubernetes_monitor.switch_context(context_name)
+
+                if success:
+                    return {
+                        'success': True,
+                        'data': {
+                            'switched_to': context_name
+                        },
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'error': f'Failed to switch to context: {context_name}',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+            elif command == 'logs':
+                # Get pod logs
+                if not params or 'pod' not in params:
+                    return {
+                        'success': False,
+                        'error': 'Missing required parameter: pod',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                pod_name = params['pod']
+                namespace = params.get('namespace', 'default')
+                tail = int(params.get('tail', '100'))
+
+                logs = await self.kubernetes_monitor.get_pod_logs(pod_name, namespace, tail)
+                return {
+                    'success': True,
+                    'data': {'logs': logs},
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            else:
+                return {
+                    'success': False,
+                    'error': f'Kubernetes command not supported: {command}',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
         except Exception as e:
-            logger.error(f"Kubernetes health command execution error: {str(e)}")
+            logger.error(f"Kubernetes command execution error: {str(e)}")
             return {
                 'success': False,
-                'error': f"Kubernetes health command failed: {str(e)}",
+                'error': f"Kubernetes command failed: {str(e)}",
                 'timestamp': datetime.utcnow().isoformat()
             }
 
-    def _get_mock_kubernetes_data(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
-        """Return mock Kubernetes data for demonstration purposes"""
-        if command == 'pods':
-            mock_pods = [
-                {
-                    'name': 'nginx-deployment-7d6c85c4c8-abc12',
-                    'namespace': 'default',
-                    'status': 'Running',
-                    'ready': '1/1',
-                    'restarts': 0,
-                    'age': '2d',
-                    'node': 'worker-node-1'
-                },
-                {
-                    'name': 'redis-master-6dd52c5db-xyz89',
-                    'namespace': 'default',
-                    'status': 'Running',
-                    'ready': '1/1',
-                    'restarts': 1,
-                    'age': '5h',
-                    'node': 'worker-node-2'
-                },
-                {
-                    'name': 'app-backend-8f9c7b6d5-qwerty',
-                    'namespace': 'production',
-                    'status': 'Running',
-                    'ready': '1/1',
-                    'restarts': 0,
-                    'age': '1d',
-                    'node': 'worker-node-1'
-                },
-                {
-                    'name': 'monitoring-grafana-9b8a7c6d-mnopq',
-                    'namespace': 'monitoring',
-                    'status': 'Pending',
-                    'ready': '0/1',
-                    'restarts': 0,
-                    'age': '5m',
-                    'node': 'worker-node-3'
-                }
-            ]
+    async def _execute_docker_service_command(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
+        """Execute Docker service control commands"""
+        try:
+            # Create Docker service request
+            docker_request = DockerServiceRequest(
+                action=command,
+                force=params.get('force', 'false').lower() == 'true' if params else False
+            )
 
-            # Filter by namespace if provided
-            if params and 'namespace' in params:
-                namespace_filter = params['namespace']
-                mock_pods = [pod for pod in mock_pods if pod['namespace'] == namespace_filter]
+            # Process the request
+            response = await self.docker_manager.process_service_request(docker_request)
 
             return {
-                'success': True,
-                'data': {'pods': mock_pods},
+                'success': response.success,
+                'data': {
+                    'docker_response': response.dict()
+                },
+                'error': response.error if not response.success else None,
                 'timestamp': datetime.utcnow().isoformat()
             }
 
-        elif command == 'nodes':
-            mock_nodes = [
-                {
-                    'name': 'master-node',
-                    'status': 'Ready',
-                    'roles': 'control-plane,master',
-                    'age': '15d',
-                    'version': 'v1.28.2'
-                },
-                {
-                    'name': 'worker-node-1',
-                    'status': 'Ready',
-                    'roles': 'worker',
-                    'age': '15d',
-                    'version': 'v1.28.2'
-                },
-                {
-                    'name': 'worker-node-2',
-                    'status': 'Ready',
-                    'roles': 'worker',
-                    'age': '14d',
-                    'version': 'v1.28.2'
-                },
-                {
-                    'name': 'worker-node-3',
-                    'status': 'NotReady',
-                    'roles': 'worker',
-                    'age': '12d',
-                    'version': 'v1.28.2'
-                }
-            ]
-
-            return {
-                'success': True,
-                'data': {'nodes': mock_nodes},
-                'timestamp': datetime.utcnow().isoformat()
-            }
-
-        elif command == 'logs':
-            # Mock pod logs
-            pod_name = params.get('pod', 'unknown-pod') if params else 'unknown-pod'
-            mock_logs = f"""2025-09-16T23:22:00.123Z INFO Starting application...
-2025-09-16T23:22:01.456Z INFO Connected to database
-2025-09-16T23:22:02.789Z INFO Server listening on port 8080
-2025-09-16T23:22:15.123Z INFO Received request GET /health
-2025-09-16T23:22:15.124Z INFO Health check passed
-2025-09-16T23:22:30.456Z WARN High memory usage detected: 85%
-2025-09-16T23:22:45.789Z INFO Processing batch job
-2025-09-16T23:22:50.012Z INFO Batch job completed successfully"""
-
-            return {
-                'success': True,
-                'data': {'logs': mock_logs},
-                'timestamp': datetime.utcnow().isoformat()
-            }
-
-        else:
+        except Exception as e:
+            logger.error(f"Docker service command execution error: {str(e)}")
             return {
                 'success': False,
-                'error': f'Mock data not available for command: {command}',
+                'error': f"Docker service command failed: {str(e)}",
                 'timestamp': datetime.utcnow().isoformat()
             }
+
+    async def _execute_aws_command(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
+        """Execute AWS-related commands"""
+        try:
+            if command == 'regions':
+                # Get list of all AWS regions
+                validate_access = params.get('validate_access', 'false').lower() == 'true' if params else False
+                regions = await self.aws_region_manager.get_available_regions(validate_access=validate_access)
+
+                response = RegionListResponse(
+                    success=True,
+                    regions=regions,
+                    total_count=len(regions)
+                )
+
+                return {
+                    'success': True,
+                    'data': response.dict(),
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'contexts':
+                # Get Kubernetes contexts by region
+                region = params.get('region') if params else None
+                if not region:
+                    return {
+                        'success': False,
+                        'error': 'Missing required parameter: region',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                contexts, clusters = await self.aws_region_manager.get_kubernetes_contexts_by_region(region)
+                current_context = await self.kubernetes_monitor.get_current_context()
+
+                response = RegionContextsResponse(
+                    success=True,
+                    region=region,
+                    contexts=contexts,
+                    clusters=clusters,
+                    current_context=current_context
+                )
+
+                return {
+                    'success': True,
+                    'data': response.dict(),
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'clusters':
+                # Get cluster information for a region
+                region = params.get('region') if params else None
+                cluster_name = params.get('cluster_name') if params else None
+
+                if not region:
+                    return {
+                        'success': False,
+                        'error': 'Missing required parameter: region',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                clusters = await self.kubernetes_monitor.get_cluster_info_by_region(region, cluster_name)
+
+                return {
+                    'success': True,
+                    'data': {
+                        'region': region,
+                        'clusters': [cluster.dict() for cluster in clusters],
+                        'cluster_count': len(clusters)
+                    },
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            else:
+                raise SecurityError(f"AWS command not allowed: {command}")
+
+        except Exception as e:
+            logger.error(f"AWS command execution error: {str(e)}")
+            return {
+                'success': False,
+                'error': f"AWS command failed: {str(e)}",
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+    async def _execute_regions_command(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
+        """Execute regions-related commands"""
+        try:
+            if command == 'list':
+                # Get list of all AWS regions
+                validate_access = params.get('validate_access', 'false').lower() == 'true' if params else False
+                regions = await self.aws_region_manager.get_available_regions(validate_access=validate_access)
+
+                response = RegionListResponse(
+                    success=True,
+                    regions=regions,
+                    total_count=len(regions)
+                )
+
+                return {
+                    'success': True,
+                    'data': response.dict(),
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'contexts':
+                # Get Kubernetes contexts by region
+                region = params.get('region') if params else None
+                if not region:
+                    return {
+                        'success': False,
+                        'error': 'Missing required parameter: region',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                contexts, clusters = await self.aws_region_manager.get_kubernetes_contexts_by_region(region)
+                current_context = await self.kubernetes_monitor.get_current_context()
+
+                response = RegionContextsResponse(
+                    success=True,
+                    region=region,
+                    contexts=contexts,
+                    clusters=clusters,
+                    current_context=current_context
+                )
+
+                return {
+                    'success': True,
+                    'data': response.dict(),
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            elif command == 'status':
+                # Get region status
+                region = params.get('region') if params else None
+                if not region:
+                    return {
+                        'success': False,
+                        'error': 'Missing required parameter: region',
+                        'timestamp': datetime.utcnow().isoformat()
+                    }
+
+                status = await self.aws_region_manager.get_region_status(region)
+
+                return {
+                    'success': True,
+                    'data': {
+                        'region_status': status.dict()
+                    },
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            else:
+                raise SecurityError(f"Regions command not allowed: {command}")
+
+        except Exception as e:
+            logger.error(f"Regions command execution error: {str(e)}")
+            return {
+                'success': False,
+                'error': f"Regions command failed: {str(e)}",
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+    def set_aws_profile(self, profile: str) -> None:
+        """Set AWS profile for all AWS-related operations"""
+        self.aws_region_manager.set_aws_profile(profile)
+        self.kubernetes_monitor.set_aws_profile(profile)
+        logger.info(f"AWS profile set to {profile} for all components")
+

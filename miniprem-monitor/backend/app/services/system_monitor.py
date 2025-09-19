@@ -174,72 +174,169 @@ class SystemMonitor:
         return health_info
 
     async def check_kubectl_availability(self) -> bool:
-        """Check if kubectl is available and configured - mocked for demo"""
-        # Always return True to show mock Kubernetes data
-        self._kubectl_available = True
+        """Check if kubectl is available and configured"""
+        if self._kubectl_available is not None:
+            return self._kubectl_available
+
+        try:
+            result = await asyncio.create_subprocess_exec(
+                'kubectl', 'version', '--client', '--output=json',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await result.communicate()
+
+            if result.returncode == 0:
+                # Check if we can actually connect to a cluster
+                cluster_result = await asyncio.create_subprocess_exec(
+                    'kubectl', 'cluster-info', '--request-timeout=5s',
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                cluster_stdout, cluster_stderr = await cluster_result.communicate()
+
+                self._kubectl_available = cluster_result.returncode == 0
+                if self._kubectl_available:
+                    logger.info("kubectl is available and cluster is accessible")
+                else:
+                    logger.warning(f"kubectl available but no accessible cluster: {cluster_stderr.decode()}")
+            else:
+                self._kubectl_available = False
+                logger.warning(f"kubectl not available: {stderr.decode()}")
+
+        except Exception as e:
+            logger.error(f"Error checking kubectl availability: {str(e)}")
+            self._kubectl_available = False
+
         return self._kubectl_available
 
     async def get_kubernetes_cluster_health(self) -> Dict[str, Any]:
-        """Get comprehensive Kubernetes cluster health information - mocked for demo"""
-        # Return mock cluster health data
-        k8s_health = {
-            'available': True,
-            'cluster_status': 'healthy',
-            'cluster_info': {
-                'kubernetes': 'https://kubernetes.default.svc.cluster.local:443',
-                'kubernetes-dashboard': 'https://kubernetes-dashboard.kube-system.svc.cluster.local'
-            },
-            'version': {
-                'client': 'v1.28.2',
-                'server': 'v1.28.2'
-            },
-            'nodes': {
-                'total_nodes': 4,
-                'ready_nodes': 3,
-                'not_ready_nodes': 1,
-                'node_details': [
-                    {
-                        'name': 'master-node',
-                        'ready': True,
-                        'kubernetes_version': 'v1.28.2',
-                        'container_runtime': 'containerd://1.7.2',
-                        'os': 'Ubuntu 22.04.3 LTS',
-                        'kernel': '5.15.0-76-generic'
-                    },
-                    {
-                        'name': 'worker-node-1',
-                        'ready': True,
-                        'kubernetes_version': 'v1.28.2',
-                        'container_runtime': 'containerd://1.7.2',
-                        'os': 'Ubuntu 22.04.3 LTS',
-                        'kernel': '5.15.0-76-generic'
-                    },
-                    {
-                        'name': 'worker-node-2',
-                        'ready': True,
-                        'kubernetes_version': 'v1.28.2',
-                        'container_runtime': 'containerd://1.7.2',
-                        'os': 'Ubuntu 22.04.3 LTS',
-                        'kernel': '5.15.0-76-generic'
-                    },
-                    {
-                        'name': 'worker-node-3',
-                        'ready': False,
-                        'kubernetes_version': 'v1.28.2',
-                        'container_runtime': 'containerd://1.7.2',
-                        'os': 'Ubuntu 22.04.3 LTS',
-                        'kernel': '5.15.0-76-generic'
+        """Get comprehensive Kubernetes cluster health information"""
+        try:
+            if not await self.check_kubectl_availability():
+                return {'available': False, 'error': 'kubectl not available or no cluster accessible'}
+
+            # Get cluster info
+            info_result = await asyncio.create_subprocess_exec(
+                'kubectl', 'cluster-info', '--output=json',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            info_stdout, info_stderr = await info_result.communicate()
+
+            # Get version info
+            version_result = await asyncio.create_subprocess_exec(
+                'kubectl', 'version', '--output=json',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            version_stdout, version_stderr = await version_result.communicate()
+
+            # Get node info
+            nodes_result = await asyncio.create_subprocess_exec(
+                'kubectl', 'get', 'nodes', '-o', 'json',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            nodes_stdout, nodes_stderr = await nodes_result.communicate()
+
+            # Get namespace count
+            ns_result = await asyncio.create_subprocess_exec(
+                'kubectl', 'get', 'namespaces', '-o', 'json',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            ns_stdout, ns_stderr = await ns_result.communicate()
+
+            k8s_health = {
+                'available': True,
+                'cluster_status': 'healthy'
+            }
+
+            if version_result.returncode == 0:
+                try:
+                    version_data = json.loads(version_stdout.decode())
+                    k8s_health['version'] = {
+                        'client': version_data.get('clientVersion', {}).get('gitVersion', 'Unknown'),
+                        'server': version_data.get('serverVersion', {}).get('gitVersion', 'Unknown')
                     }
-                ]
-            },
-            'namespaces_count': 8
-        }
+                except json.JSONDecodeError:
+                    k8s_health['version'] = {'client': 'Unknown', 'server': 'Unknown'}
 
-        # Mark as degraded due to one NotReady node
-        if k8s_health['nodes']['not_ready_nodes'] > 0:
-            k8s_health['cluster_status'] = 'degraded'
+            if info_result.returncode == 0:
+                try:
+                    info_data = json.loads(info_stdout.decode())
+                    k8s_health['cluster_info'] = info_data
+                except json.JSONDecodeError:
+                    # If JSON parsing fails, try to parse text output
+                    info_text = info_stdout.decode().strip()
+                    k8s_health['cluster_info'] = {'raw_output': info_text}
 
-        return k8s_health
+            if nodes_result.returncode == 0:
+                try:
+                    nodes_data = json.loads(nodes_stdout.decode())
+                    nodes = nodes_data.get('items', [])
+
+                    total_nodes = len(nodes)
+                    ready_nodes = 0
+                    node_details = []
+
+                    for node in nodes:
+                        metadata = node.get('metadata', {})
+                        status = node.get('status', {})
+
+                        # Check if node is ready
+                        is_ready = False
+                        for condition in status.get('conditions', []):
+                            if condition.get('type') == 'Ready' and condition.get('status') == 'True':
+                                is_ready = True
+                                break
+
+                        if is_ready:
+                            ready_nodes += 1
+
+                        node_details.append({
+                            'name': metadata.get('name', 'Unknown'),
+                            'ready': is_ready,
+                            'kubernetes_version': status.get('nodeInfo', {}).get('kubeletVersion', 'Unknown'),
+                            'container_runtime': status.get('nodeInfo', {}).get('containerRuntimeVersion', 'Unknown'),
+                            'os': status.get('nodeInfo', {}).get('operatingSystem', 'Unknown'),
+                            'kernel': status.get('nodeInfo', {}).get('kernelVersion', 'Unknown')
+                        })
+
+                    not_ready_nodes = total_nodes - ready_nodes
+
+                    k8s_health['nodes'] = {
+                        'total_nodes': total_nodes,
+                        'ready_nodes': ready_nodes,
+                        'not_ready_nodes': not_ready_nodes,
+                        'node_details': node_details
+                    }
+
+                    # Set cluster status based on node health
+                    if not_ready_nodes > 0:
+                        k8s_health['cluster_status'] = 'degraded'
+                    if ready_nodes == 0:
+                        k8s_health['cluster_status'] = 'unhealthy'
+
+                except json.JSONDecodeError:
+                    k8s_health['nodes'] = {'error': 'Failed to parse node data'}
+
+            if ns_result.returncode == 0:
+                try:
+                    ns_data = json.loads(ns_stdout.decode())
+                    k8s_health['namespaces_count'] = len(ns_data.get('items', []))
+                except json.JSONDecodeError:
+                    k8s_health['namespaces_count'] = 0
+
+            return k8s_health
+
+        except Exception as e:
+            logger.error(f"Error getting Kubernetes cluster health: {str(e)}")
+            return {
+                'available': False,
+                'error': str(e)
+            }
 
     async def get_kubernetes_cluster_info(self) -> Dict[str, Any]:
         """Get Kubernetes cluster information if available (legacy compatibility)"""
