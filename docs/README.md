@@ -17,9 +17,8 @@ lifelike AI interactions through a virtual human.
 
 ## Documentation Sections
 
-- [Getting Started](/en/guides/getting-started.md) - Installation and basic setup
-- [Platform Components](/en/guides/components.md) - Details on each service
-- [Services](/en/services/overview.md) - Service-specific documentation
-- [API Reference](/en/api/overview.md) - API documentation
+- [Getting Started](guides/getting-started) - Installation and basic setup
+- [Services](guides/services) - Details on each service
+- [API Reference](api/README) - API documentation
 
 [View on GitLab](https://gitlab.com/tgmerritt/miniprem-2025)

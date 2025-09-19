@@ -12,4 +12,4 @@
 - 🔄 Workflow Automation with Flowise
 
 [GitLab](https://gitlab.com/tgmerritt/miniprem-2025)
-[Get Started](/en/#miniprem-platform)
+[Get Started](guides/getting-started.md)

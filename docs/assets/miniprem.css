@@ -1,11 +1,115 @@
+/* Import Inter font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 :root {
+  /* Original Docsify variables */
   --background-color: #1e1e1e;
   --sidebar-background: #252526;
-  --table-row-odd: #1e1e1e;    
-  --table-row-even: #252526;   
+  --table-row-odd: #1e1e1e;
+  --table-row-even: #252526;
+
+  /* UneeQ Color Palette */
+  --uneeq-navy: #2D3142;
+  --uneeq-dark-navy: #1A1D29;
+  --uneeq-orange: #FF8C42;
+  --uneeq-pink: #E91E63;
+  --uneeq-magenta: #EC407A;
+  --uneeq-light: #FFF3E0;
+  --uneeq-gray: #64748B;
+
+  /* UneeQ Gradients */
+  --uneeq-gradient: linear-gradient(135deg, #FF8C42 0%, #FF6B6B 25%, #E91E63 50%, #EC407A 75%, #E91E63 100%);
+  --uneeq-gradient-text: linear-gradient(135deg, #FF8C42 0%, #FF6B6B 25%, #E91E63 50%, #EC407A 75%, #E91E63 100%);
+
+  /* Enhanced theme colors for better integration */
+  --theme-color: var(--uneeq-pink);
+  --theme-color-dark: var(--uneeq-magenta);
 }
 body {
-  background-color: var(--background-color);
+  background-color: var(--content-background);
+  font-family: 'Inter', sans-serif;
+  font-size: 16px; /* Increased base font size */
+  line-height: 1.6;
+}
+
+/* Ensure full page background consistency */
+html {
+  background-color: var(--content-background);
+}
+
+/* Fix scrolling background issue */
+#main {
+  background-color: var(--content-background);
+}
+
+.app-main {
+  background-color: var(--content-background);
+}
+
+/* Light mode (default) - 10% less bright */
+:root {
+  --content-background: #f8f9fa;
+  --content-text: #2d3748;
+  --content-border: #e2e8f0;
+}
+
+/* Enhanced dark mode support */
+.dark {
+  --background-color: var(--uneeq-dark-navy);
+  --sidebar-background: var(--uneeq-navy);
+  --content-background: var(--uneeq-dark-navy);
+  --content-text: #e2e8f0;
+  --content-border: #4a5568;
+}
+
+.dark body,
+.dark html,
+.dark #main,
+.dark .app-main {
+  background-color: var(--content-background);
+}
+
+/* Main content area styling */
+.content {
+  background-color: var(--content-background);
+  color: var(--content-text);
+}
+
+.markdown-section {
+  background-color: var(--content-background);
+  color: var(--content-text);
+  font-size: 1.1rem; /* Larger font for main content */
+}
+
+.markdown-section p {
+  font-size: 1rem;
+  margin-bottom: 1rem;
+}
+
+.markdown-section h1 {
+  font-size: 2.5rem;
+}
+
+.markdown-section h2 {
+  font-size: 2rem;
+}
+
+.markdown-section h3 {
+  font-size: 1.5rem;
+}
+
+/* UneeQ Professional Typography */
+.uneeq-gradient-text {
+  background: var(--uneeq-gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Utility Classes */
+.hidden {
+  display: none !important;
 }
 
 .sidebar {
@@ -220,30 +324,43 @@ section.cover {
 
 .markdown-section pre {
   position: relative;
-  background-color: #282c34;  
-  padding: 1em 1.5em;  
+  background-color: #f7fafc;
+  color: #2d3748;
+  padding: 1em 1.5em;
   border-radius: 4px;
   margin: 1rem 0;
   overflow: auto;
   width: 100%;
   box-sizing: border-box;
+  border: 1px solid var(--content-border);
+  font-size: 1rem; /* Increased font size */
+}
+
+.dark .markdown-section pre {
+  background-color: #282c34;
+  color: #f8f8f2;
+  border: 1px solid var(--content-border);
 }
 
 .markdown-section pre > code {
-  color: #abb2bf;  
-  padding: 0;  
+  color: #2d3748;
+  padding: 0;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 1rem; /* Increased font size */
   line-height: 1.5;
   font-family: Consolas, Monaco, 'Andale Mono', 'Ubuntu Mono', monospace;
   display: block;
   overflow-x: auto;
-  background-color: transparent;  
+  background-color: transparent;
   text-align: left;
   white-space: pre;
   word-spacing: normal;
   word-break: normal;
   word-wrap: normal;
+}
+
+.dark .markdown-section pre > code {
+  color: #abb2bf;
 }
 
 
@@ -481,4 +598,335 @@ section.cover {
 
 .log-debug {
   color: #868e96;
+}
+
+/* ============================================
+   UneeQ Professional Components
+   ============================================ */
+
+/* Step Numbers with Gradient Background */
+.step-number {
+  background: var(--uneeq-gradient);
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.3);
+  margin-right: 0.25rem;
+  margin-bottom: 0;
+  vertical-align: top;
+}
+
+/* Step Container for proper alignment */
+.step-container {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 2rem;
+  gap: 0.25rem;
+}
+
+.step-content {
+  flex: 1;
+}
+
+.step-content h2,
+.step-content h3 {
+  margin-top: 0;
+}
+
+/* Enhanced Code Blocks with UneeQ Styling */
+.code-block {
+  background: #f7fafc;
+  color: #2d3748;
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 1rem; /* Increased font size */
+  line-height: 1.6;
+  white-space: pre-line;
+  margin: 1rem 0;
+  border-left: 4px solid var(--uneeq-pink);
+  border: 1px solid var(--content-border);
+}
+
+.dark .code-block {
+  background: #2a2a2a;
+  color: #f8f8f2;
+  border: 1px solid var(--content-border);
+}
+
+/* YAML Code Blocks */
+.yaml-block {
+  background: #f7fafc;
+  color: #2d3748;
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-x: auto;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 1rem; /* Increased font size */
+  line-height: 1.6;
+  white-space: pre;
+  margin: 1rem 0;
+  border-left: 4px solid var(--uneeq-orange);
+  border: 1px solid var(--content-border);
+}
+
+.dark .yaml-block {
+  background: #2a2a2a;
+  color: #f8f8f2;
+  border: 1px solid var(--content-border);
+}
+
+/* Code Highlighting */
+.code-highlight-add {
+  background: rgba(46, 160, 67, 0.3);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.code-highlight-remove {
+  background: rgba(248, 81, 73, 0.3);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+.code-comment {
+  color: #6A9955;
+}
+
+/* Professional Alert Boxes */
+.alert-box {
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 1rem; /* Increased font size */
+  border: 1px solid var(--content-border);
+}
+
+.alert-box svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.alert-info {
+  background: rgba(255, 140, 66, 0.1);
+  border-left: 4px solid var(--uneeq-orange);
+  color: var(--uneeq-orange);
+}
+
+.dark .alert-info {
+  background: rgba(255, 140, 66, 0.2);
+}
+
+.alert-warning {
+  background: rgba(255, 193, 7, 0.1);
+  border-left: 4px solid #FFC107;
+  color: #FFC107;
+}
+
+.dark .alert-warning {
+  background: rgba(255, 193, 7, 0.2);
+}
+
+.alert-error {
+  background: rgba(248, 81, 73, 0.1);
+  border-left: 4px solid #F85149;
+  color: #F85149;
+}
+
+.dark .alert-error {
+  background: rgba(248, 81, 73, 0.2);
+}
+
+.alert-success {
+  background: rgba(46, 160, 67, 0.1);
+  border-left: 4px solid #2EA043;
+  color: #2EA043;
+}
+
+.dark .alert-success {
+  background: rgba(46, 160, 67, 0.2);
+}
+
+/* Enhanced Headings */
+.markdown-section h1 {
+  background: var(--uneeq-gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.markdown-section h2 {
+  color: var(--uneeq-pink);
+  border-bottom: 2px solid var(--uneeq-pink);
+  padding-bottom: 0.5rem;
+}
+
+.markdown-section h3 {
+  color: var(--uneeq-orange);
+}
+
+/* Enhanced Links */
+.markdown-section a {
+  color: var(--uneeq-pink);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-bottom-color 0.3s ease;
+}
+
+.markdown-section a:hover {
+  border-bottom-color: var(--uneeq-pink);
+}
+
+/* Enhanced Inline Code */
+.markdown-section code:not([class*="lang-"]):not([class*="language-"]) {
+  background-color: var(--uneeq-light);
+  color: var(--uneeq-navy);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.dark .markdown-section code:not([class*="lang-"]):not([class*="language-"]) {
+  background-color: var(--uneeq-dark-navy);
+  color: var(--uneeq-light);
+}
+
+/* Enhanced Blockquotes */
+.markdown-section blockquote {
+  background: rgba(233, 30, 99, 0.1);
+  border-left: 4px solid var(--uneeq-pink);
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 1rem 0;
+  color: inherit;
+}
+
+.markdown-section blockquote p {
+  margin: 0;
+}
+
+/* Dark Mode Toggle Button */
+.dark-mode-toggle {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 1000;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--uneeq-gradient);
+  border: none;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.3);
+  transition: transform 0.3s ease;
+}
+
+.dark-mode-toggle:hover {
+  transform: scale(1.1);
+}
+
+.dark-mode-toggle svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* Responsive Design for Mobile */
+@media screen and (max-width: 768px) {
+  .step-number {
+    width: 32px;
+    height: 32px;
+    font-size: 14px;
+  }
+
+  .dark-mode-toggle {
+    top: 0.5rem;
+    left: 0.5rem;
+    width: 36px;
+    height: 36px;
+  }
+
+  .code-block,
+  .yaml-block {
+    font-size: 0.75rem;
+    padding: 0.75rem;
+  }
+}
+
+/* Enhanced Sidebar with UneeQ Styling */
+.sidebar .sidebar-nav li strong {
+  color: var(--uneeq-orange);
+  font-weight: 600;
+}
+
+.sidebar .sidebar-nav li a {
+  color: #ccc;
+  transition: color 0.3s ease;
+}
+
+.sidebar .sidebar-nav li a:hover {
+  color: var(--uneeq-pink);
+}
+
+.sidebar .sidebar-nav li.active > a {
+  color: var(--uneeq-pink);
+  border-right: 3px solid var(--uneeq-pink);
+}
+
+/* Enhanced Cover Page */
+.cover h1 {
+  background: var(--uneeq-gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.cover h2 {
+  color: var(--uneeq-gray);
+}
+
+/* Page Break Classes for Print */
+.page-break {
+  page-break-before: always;
+}
+
+.no-page-break {
+  page-break-inside: avoid;
+}
+
+@media print {
+  .page-break {
+    page-break-before: always;
+  }
+
+  .no-page-break {
+    page-break-inside: avoid;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .step-number,
+  .alert-box {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
 }
