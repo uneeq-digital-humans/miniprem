@@ -2,7 +2,9 @@
 # Playwright
 node_modules/
 /test-results/
+/test-screenshots/
 /playwright-report/
 /blob-report/
 /playwright/.cache/
 .next/
+tests/*.md
