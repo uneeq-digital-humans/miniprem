@@ -43,11 +43,9 @@ spec:
         args: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "{{ .Values.renderer.extraCmdArgs }}"]
         env:
         - name: A2F_ADDRESS
-          value: {{ .Values.renderer.a2f.url }}
-        - name: A2F_AUDIO_DELAY_TIME_MS
-          value: "240"
-        - name: A2F_AUDIO_SAMPLE_RATE
-          value: "16000"
+          value: "http://a2f.uneeq-renderer.svc.cluster.local:52000"
+        - name: NEW_SPEECH_OVERRIDE
+          value: "1"
         - name: AZURE_REGION
           value: {{ .Values.renderer.tts.azureRegion }}
         - name: AZURE_SPEECH_KEY

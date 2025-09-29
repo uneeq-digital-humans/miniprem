@@ -6,11 +6,11 @@
 
 ## Overview
 
-MiniPrem is an integrated platform that combines a digital human interface (Renny) with LLM capabilities (vLLM), workflow automation (Flowise), and comprehensive monitoring tools (Prometheus + Grafana). This setup allows you to deploy and manage advanced AI interactions through a virtual human interface.
+MiniPrem is an integrated platform that combines a digital human interface (Renny) with advanced internal speech processing, LLM capabilities (vLLM), workflow automation (Flowise), and comprehensive monitoring tools (Prometheus + Grafana). This setup allows you to deploy and manage advanced AI interactions through a virtual human interface with simplified, more reliable speech generation.
 
 ## Features
 
-- **Digital Human Interface**: Powered by Renny, with real-time facial animation
+- **Digital Human Interface**: Powered by Renny, with internal speech processing and real-time facial animation
 - **LLM Integration**: vLLM running Gemma3 for natural language understanding
 - **LLM Integration**: vLLM running Mistral-7B-Instruct-v0.3 for natural language understanding
 - **Workflow Automation**: Flowise for building and managing AI workflows
@@ -18,6 +18,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 - **Queue Management**: Redis for reliable message processing
 - **RIME AI**: High-quality text-to-speech via a simple API
 - **Whisper**: OpenAI's speech recognition for accurate audio transcription
+- **Internal Speech Processing**: Advanced speech system with NEW_SPEECH_OVERRIDE for enhanced performance
 
 ## Quick Start
 
@@ -44,7 +45,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
    ./install_miniprem.sh
    ```
 
-   The installer will prompt you to select either a **Default Install** (Renny + Audio2Face only) or a **Full Install** (all services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
+   The installer will prompt you to select either a **Default Install** (Renny only) or a **Full Install** (all services: Renny, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
 
    You can re-run the installer at any time to upgrade from Default to Full, or to change your selection.
 
@@ -184,8 +185,7 @@ Use the included `miniprem.sh` script to manage the platform:
 The services started will depend on your installation type (Default or Full) as specified during installation. The installation type is saved in the `.miniprem_install_type` file. To switch between installation types, simply run the installer again and select a different option.
 
 ### Default Install Services
-* Renny (Digital Human)
-* Audio2Face (Facial Animation)
+* Renny (Digital Human with Internal Speech Processing)
 
 ### Full Install Services
 * All services in Default Install, plus:
@@ -197,11 +197,30 @@ The services started will depend on your installation type (Default or Full) as 
 * RIME (Text-to-Speech API)
 * Log Streamer (Container Log Viewer)
 
+## Internal Speech Processing (NEW_SPEECH_OVERRIDE)
+
+MiniPrem v5.6mha introduces an advanced internal speech processing system that replaces the previous Audio2Face integration, providing improved reliability and performance.
+
+### Key Benefits:
+- **🚀 Enhanced Performance**: Speech and facial animation processing occurs internally within Renny
+- **🔧 Improved Reliability**: Eliminates network dependencies between speech and animation services
+- **💰 Cost Reduction**: Fewer containers and resources required (no Audio2Face services)
+- **🛠️ Simplified Management**: Single service handles both speech processing and facial animation
+
+### Configuration:
+The internal speech system is enabled via the `NEW_SPEECH_OVERRIDE=1` environment variable, which:
+- Activates Renny's built-in speech processing engine
+- Handles text-to-speech conversion internally
+- Generates synchronized facial animations automatically
+- Provides fallback to Azure Speech Services if needed
+
+This represents a significant architectural improvement, moving from a multi-service approach to a streamlined, integrated solution.
+
 ## Docker Configuration
 
 MiniPrem uses two main Docker Compose files:
 
-* `docker/docker-compose.default.yml` - Used for Default Install (Renny + Audio2Face only)
+* `docker/docker-compose.default.yml` - Used for Default Install (Renny only)
 * `docker/docker-compose.yml` - Used for Full Install (all services)
 
 The appropriate file is automatically selected based on your installation type.
@@ -369,14 +388,9 @@ Verify the Tenant ID by acccessing a customer account on the UneeQ Admin Portal.
 The JWSSecret is the API key which you can verify on the same admin page, in the Security section.
 
 ### If the Digital Human does not start
-(Audio2Face troubleshooting)
-Nvidia / Audio2Face Troubleshooting
+GPU and Driver Troubleshooting
 
-When starting MiniPrem, if you see an error related audio2face: 
-
-`Container audio2face_with_emotion  Error`
-
-There could be an issue with either the GPU card or driver.
+When starting MiniPrem, if Renny fails to start, there could be an issue with either the GPU card or driver.
 
 Check Card and Driver Status by verifying card is physically installed:
 
@@ -390,15 +404,15 @@ To check if drivers are installed:
 dpkg -l | grep nvidia-driver
 lsmod | grep nvidia
 ```
-If no output from either command, then no NVIDIA modules are loaded. 
-
+If no output from either command, then no NVIDIA modules are loaded.
 
 If it does appear the drivers are loaded, verify they are running properly:
 `nvidia-smi`
 
 A typical nvidia-smi output should look like this:
 ```
-+-----------------------------------------------------------------------------+| NVIDIA-SMI 545.XX.XX    Driver Version: 545.XX.XX    CUDA Version: 12.X     |
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 580.XX.XX    Driver Version: 580.XX.XX    CUDA Version: 12.X     |
 +-----------------------------------------------------------------------------+
 | GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
 | Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
@@ -411,34 +425,32 @@ A typical nvidia-smi output should look like this:
 ```
 
 Key things to look for:
-- Driver Version (top line)
+- Driver Version (top line) - should be 580.XX or higher
 - GPU Name
 
-If you see a `command not found` error, it usually means the NVIDIA drivers aren't installed properly. 
+If you see a `command not found` error, it usually means the NVIDIA drivers aren't installed properly.
 
 If you see "NVIDIA-SMI has failed" error, it usually means either:
 - The drivers aren't properly loaded
 - There's a conflict with Secure Boot
 - The drivers aren't compatible with your current kernel
 
-
 ### To (Re)Install Nvidia Drivers
 Update Ubuntu Linux first and then install latest available NVIDIA driver.
 
-`sudo apt update
-sudo apt install nvidia-driver`
+```bash
+sudo apt update
+sudo apt install nvidia-driver-580
+```
 
 Before rebooting, verify loading the NVIDIA drivers manually:
 `sudo modprobe nvidia`
 
-
-If you see this specific message: 
+If you see this specific message:
 
 `ERROR: could not insert 'nvidia': Key was rejected by service`
 
-The system is rejecting the NVIDIA module, likely because Secure Boot is enabled in the UEFI settings. To fix this issue, restart the computer and press DEL, F12, or the appropriate key during startup to access the BIOS settings. Find and disable the Secure Boot option in the BIOS menu. While NVIDIA drivers from official Ubuntu repositories are typically digitally signed, kernel updates sometimes prevent GPU drivers from loading properly
-
-
+The system is rejecting the NVIDIA module, likely because Secure Boot is enabled in the UEFI settings. To fix this issue, restart the computer and press DEL, F12, or the appropriate key during startup to access the BIOS settings. Find and disable the Secure Boot option in the BIOS menu. While NVIDIA drivers from official Ubuntu repositories are typically digitally signed, kernel updates sometimes prevent GPU drivers from loading properly.
 
 Once Secure Boot is disabled, you should be able to verify again if NVIDIA drivers are loaded once Ubuntu is booted:
 `lsmod | grep nvidia`

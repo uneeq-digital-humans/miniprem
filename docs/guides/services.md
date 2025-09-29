@@ -12,20 +12,20 @@ The MiniPrem platform consists of several integrated services that work together
 | Redis | Queue management | 6379 | - |
 | Prometheus | Metrics collection | 9090 | [Monitoring Guide](monitoring.md) |
 | Grafana | Metrics visualization | 3001 | [Monitoring Guide](monitoring.md) |
-| Audio2Face | Facial animation | 50000, 52000 | [Renny Guide](renny.md) |
 | RIME | Text-to-speech API | 8100 | [RIME Guide](rime.md) |
 | Whisper | Speech recognition | 9000 | [Whisper Guide](whisper.md) |
 
 ## Service Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│    Renny    │◄────┤ Audio2Face  │     │   Flowise   │
-│Digital Human│     │ Animation   │     │ Workflow    │
-└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
-       │                   │                   │
-       │                   │                   │
-       ▼                   ▼                   ▼
+┌─────────────────────────────┐     ┌─────────────┐
+│          Renny              │     │   Flowise   │
+│   Digital Human with        │     │ Workflow    │
+│ Internal Speech Processing  │     │             │
+└──────────┬──────────────────┘     └──────┬──────┘
+           │                               │
+           │                               │
+           ▼                               ▼
 ┌─────────────────────────────────────────────────────┐
 │                 Docker Network                      │
 └─────────────┬─────────────┬─────────────┬───────────┘
@@ -46,9 +46,9 @@ The MiniPrem platform consists of several integrated services that work together
 ## Service Dependencies
 
 - **Renny** depends on:
-  - Audio2Face services for facial animation
-  - Azure Speech Services for text-to-speech (external)
+  - Internal speech processing system (built-in)
   - UneeQ platform for avatar rendering (external)
+  - NEW_SPEECH_OVERRIDE environment variable for enhanced speech
 
 - **Flowise** depends on:
   - vLLM for language model capabilities
@@ -65,8 +65,8 @@ Each service is configured via environment variables in the Docker Compose file.
 
 - **Renny**:
   - `DHOP_ADDRESS`: UneeQ platform address
-  - `A2F_ADDRESS`: Audio2Face service address
-  - `AZURE_REGION` & `AZURE_SPEECH`: Speech service credentials
+  - `NEW_SPEECH_OVERRIDE`: Enable internal speech processing (set to 1)
+  - `AZURE_REGION` & `AZURE_SPEECH`: Speech service credentials (optional fallback)
 
 - **Flowise**:
   - `DATABASE_TYPE`: Set to SQLite for local database

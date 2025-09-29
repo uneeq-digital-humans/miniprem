@@ -15,7 +15,7 @@
 import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-// Mock data for consistent testing
+// Mock data for consistent testing - Audio2Face removed per NEW_SPEECH_OVERRIDE=1
 const mockPods = [
   {
     name: 'renny-deployment-abc123',
@@ -29,13 +29,15 @@ const mockPods = [
     memory_usage: '512Mi'
   },
   {
-    name: 'audio2face-deployment-def456',
+    name: 'renny-deployment-def456',
     namespace: 'uneeq-renderer',
-    status: 'Pending',
-    ready: '0/1',
-    age: '5m',
-    restarts: 1,
-    node: 'ip-10-0-1-101.ec2.internal'
+    status: 'Running',
+    ready: '1/1',
+    age: '1d',
+    restarts: 0,
+    node: 'ip-10-0-1-101.ec2.internal',
+    cpu_usage: '120m',
+    memory_usage: '480Mi'
   },
   {
     name: 'failed-pod-ghi789',
@@ -43,7 +45,8 @@ const mockPods = [
     status: 'Failed',
     ready: '0/1',
     age: '10m',
-    restarts: 3
+    restarts: 3,
+    node: 'ip-10-0-1-102.ec2.internal'
   }
 ];
 
@@ -56,7 +59,7 @@ const mockClusterStatus = {
   status: 'connected' as const,
   lastSync: new Date(),
   latency: 45,
-  podCount: 12,
+  podCount: 8, // Reduced from 12 - Audio2Face pods removed per NEW_SPEECH_OVERRIDE=1
   nodeCount: 3
 };
 

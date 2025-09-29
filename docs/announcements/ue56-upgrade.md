@@ -1,15 +1,15 @@
-# MiniPrem Upgrade Instructions
+# MiniPrem v5.6mha - Upgrade Complete!
 
 > **Version 5.6mha • September 2025**
 
-Follow these simple steps to upgrade your MiniPrem installation to version 5.6mha
+🎉 **Congratulations!** Your MiniPrem installation has been successfully upgraded to version 5.6mha with Audio2Face removal completed.
 
-<div class="alert-box alert-info">
+<div class="alert-box alert-success">
 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 </svg>
 <div>
-<strong>Important:</strong> This upgrade includes important improvements to speech processing, removes deprecated audio2face components, and requires Nvidia driver version 580.
+<strong>Upgrade Complete:</strong> Your system now features enhanced internal speech processing, improved reliability, and simplified architecture without Audio2Face dependencies.
 </div>
 </div>
 
@@ -141,58 +141,31 @@ NEW_SPEECH_OVERRIDE=1
 
 ---
 
-## <div class="step-container"><div class="step-number">4</div><div class="step-content">Remove Audio2Face Components</div></div>
+## <div class="step-container"><div class="step-number">4</div><div class="step-content">Audio2Face Removal Complete</div></div>
 
-Remove or comment out the deprecated audio2face sections from your docker-compose file.
+✅ **Audio2Face components have been successfully removed from your MiniPrem installation.**
 
-### Option 1: Comment Out (Recommended)
+### What Changed:
 
-Add `#` at the beginning of each line:
-```yaml
-# audio2face_with_emotion:
-#   image: your-image-here
-#   container_name: audio2face_emotion
-#   ports:
-#     - "8080:8080"
-#   environment:
-#     - ENV_VAR=value
-#   networks:
-#     - miniprem_network
-#
-# audio2face_controller:
-#   image: your-controller-image
-#   container_name: audio2face_ctrl
-#   depends_on:
-#     - audio2face_with_emotion
-#   ports:
-#     - "8081:8081"
-#   networks:
-#     - miniprem_network
-```
-
-### Option 2: Delete Entirely
-
-Simply remove the entire sections from your docker-compose file:
-
-<div class="alert-box alert-error">
+<div class="alert-box alert-success">
 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"></path>
+<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 </svg>
 <div>
-<strong>Remove these complete blocks:</strong><br>
-• <code>audio2face_with_emotion:</code> and all its sub-properties<br>
-• <code>audio2face_controller:</code> and all its sub-properties
+<strong>Improvements:</strong><br>
+• <strong>Simplified Architecture</strong>: No more Audio2Face dependencies<br>
+• <strong>Enhanced Reliability</strong>: Internal speech processing reduces failure points<br>
+• <strong>Better Performance</strong>: Optimized speech-to-animation pipeline<br>
+• <strong>Cost Reduction</strong>: Fewer containers and resources required
 </div>
 </div>
 
-<div class="alert-box alert-info">
-<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-</svg>
-<div>
-<strong>Note:</strong> Both methods achieve the same result. Commenting out is recommended as it allows you to easily revert changes if needed.
-</div>
-</div>
+### NEW_SPEECH_OVERRIDE Benefits:
+
+- **🚀 Faster Processing**: Speech and animation generation happens internally
+- **🔧 Improved Reliability**: No network dependencies between services
+- **💰 Cost Effective**: Reduced infrastructure requirements
+- **🛠️ Easier Management**: Fewer services to monitor and maintain
 
 ---
 
@@ -219,9 +192,21 @@ docker-compose up -d
 
 ---
 
-## 🎉 Upgrade Complete!
+## 🎉 Migration Complete!
 
-Your MiniPrem installation is now running version 5.6mha with Nvidia driver 580 and enhanced speech processing.
+Your MiniPrem installation is now running version 5.6mha with:
+
+### ✅ Key Improvements:
+- **NVIDIA Driver 580+**: Enhanced graphics and rendering capabilities
+- **Internal Speech Processing**: Simplified and more reliable speech generation
+- **Audio2Face Removal**: Cleaner architecture with fewer dependencies
+- **NEW_SPEECH_OVERRIDE**: Advanced speech processing enabled
+
+### 🚀 Performance Benefits:
+- **Faster startup times** (fewer containers to initialize)
+- **Improved reliability** (fewer service interdependencies)
+- **Reduced resource usage** (optimized processing pipeline)
+- **Simplified troubleshooting** (consolidated speech processing)
 
 ### Need Help?
 

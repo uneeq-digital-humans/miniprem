@@ -32,7 +32,7 @@ cd miniprem-2025
 ./install_miniprem.sh
 ```
 
-The installer will prompt you to select either a **Default Install** (Renny + Audio2Face only) or a **Full Install** (all services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
+The installer will prompt you to select either a **Default Install** (Renny with internal speech processing) or a **Full Install** (all services: Renny, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
 You can re-run the installer at any time to upgrade from Default to Full, or to change your selection.
 
 ### 3. Configuration Values

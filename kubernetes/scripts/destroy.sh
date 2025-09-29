@@ -125,7 +125,7 @@ echo "  - EKS cluster and all nodes (Ubuntu GPU + control nodes)"
 echo "  - VPC and networking resources"
 echo "  - Launch templates for GPU nodes"
 echo "  - Auto Scaling Groups"
-echo "  - All deployed applications (Renny, A2F, GPU Operator)"
+echo "  - All deployed applications (Renny, GPU Operator)"
 echo "  - All data in the cluster"
 echo "  - All load balancers"
 echo "  - All EBS volumes"
@@ -360,14 +360,10 @@ echo "🛑 Step 1/8: Force terminating all applications..."
 echo "  - Force killing all Renny sessions and pods..."
 kubectl delete pods -l app=renderer -n uneeq-renderer --force --grace-period=0 --wait=false 2>/dev/null || true
 
-echo "  - Force killing all A2F pods..."  
-kubectl delete pods -l app=a2f -n uneeq-renderer --force --grace-period=0 --wait=false 2>/dev/null || true
 
 echo "  - Uninstalling Renny (with force)..."
 helm uninstall renny -n uneeq-renderer --timeout=60s 2>/dev/null || true
 
-echo "  - Uninstalling Audio2Face (with force)..."
-helm uninstall a2f -n uneeq-renderer --timeout=60s 2>/dev/null || true
 
 echo "  - Comprehensive GPU Operator cleanup..."
 cleanup_gpu_operator_completely
@@ -722,7 +718,7 @@ echo ""
 echo "Time elapsed: ${ELAPSED_MIN} minutes ${ELAPSED_SEC} seconds"
 echo ""
 echo "🧹 AWS DESTRUCTION SUMMARY:"
-echo "✅ Applications force-terminated (Renny, A2F, GPU Operator)"
+echo "✅ Applications force-terminated (Renny, GPU Operator)"
 echo "✅ Kubernetes resources cleaned (secrets, configs, time-slicing)"
 echo "✅ Nodes drained and ASGs scaled to 0"
 echo "✅ EKS node groups deleted"

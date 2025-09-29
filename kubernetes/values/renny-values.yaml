@@ -6,11 +6,6 @@ deployment:
   replicas: 4  # Production setting - 2 per Renny node
 
 renderer:
-  a2f:
-    url: http://a2f.uneeq-renderer.svc.cluster.local:52000
-    audioDelayMs: 240        # A2F_AUDIO_DELAY_TIME_MS from docker
-    audioSampleRate: 16000   # A2F_AUDIO_SAMPLE_RATE from docker
-  
   # Required for secret template
   cp:
     flowiseApiKey: ""        # Optional

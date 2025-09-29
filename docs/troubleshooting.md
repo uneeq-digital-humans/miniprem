@@ -153,9 +153,9 @@ This guide provides solutions for common issues you might encounter when running
    curl -I $DHOP_ADDRESS
    ```
 
-3. Check Audio2Face services:
+3. Check internal speech processing:
    ```bash
-   docker ps | grep audio2face
+   docker logs renny | grep -i speech
    ```
 
 4. Verify configuration.dat file:
@@ -163,25 +163,24 @@ This guide provides solutions for common issues you might encounter when running
    cat docker/configuration.dat
    ```
 
-### Audio2Face Connectivity Issues
+### Speech Processing Issues
 
-**Symptoms**: Facial animations not working correctly
+**Symptoms**: Facial animations or speech not working correctly
 
 **Solutions**:
-1. Check Audio2Face services:
+1. Check speech processing configuration:
    ```bash
-   docker logs audio2face_with_emotion
-   docker logs audio2face_controller
+   docker logs renny | grep -i "speech\|audio"
    ```
 
-2. Verify network configuration:
+2. Verify NEW_SPEECH_OVERRIDE environment variable:
    ```bash
-   docker exec -it renny ping audio2face-gateway
+   docker exec -it renny env | grep NEW_SPEECH_OVERRIDE
    ```
 
-3. Check A2F configuration:
+3. Check Renny internal speech system status:
    ```bash
-   cat docker/a2f-config.yml
+   curl -s http://localhost:8081/health | grep -i speech
    ```
 
 ## Monitoring Issues

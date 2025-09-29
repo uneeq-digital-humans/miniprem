@@ -11,7 +11,7 @@ echo
 
 # 1. Node Status Overview
 echo "📊 NODE OVERVIEW:"
-echo "Desired State: 2 control + 2 renny + 2 a2f = 6 nodes total"
+echo "Desired State: 2 control + 2 renny = 4 nodes total"
 kubectl get nodes -L uneeq.io/node-type,eks.amazonaws.com/sourceLaunchTemplateVersion --no-headers | \
 awk '{print $6 ": " $1 " (v" $7 ")"} END {print "Total: " NR " nodes"}'
 echo
@@ -20,12 +20,12 @@ echo
 echo "🏗️  AUTO SCALING GROUP STATUS:"
 aws autoscaling describe-auto-scaling-groups \
     --query "AutoScalingGroups[?contains(AutoScalingGroupName, 'renny-production')].{Type:AutoScalingGroupName,Desired:DesiredCapacity,Actual:length(Instances)}" \
-    --output table | grep -E "Type|a2f|renny|control"
+    --output table | grep -E "Type|renny|control"
 echo
 
 # 3. GPU Driver Status
 echo "🎮 GPU DRIVER STATUS:"
-echo "Expected: 4 running driver pods (2 renny + 2 a2f)"
+echo "Expected: 2 running driver pods (2 renny)"
 kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --no-headers | \
 awk '{running += ($2 == "1/1" && $3 == "Running"); total++} END {print "Running: " running "/" total}'
 
@@ -47,7 +47,7 @@ echo
 
 # 5. Launch Template Version Check
 echo "🔧 LAUNCH TEMPLATE VERSIONS:"
-echo "Expected: control=v1, renny=v4, a2f=v4"
+echo "Expected: control=v1, renny=v4"
 kubectl get nodes --no-headers -L uneeq.io/node-type,eks.amazonaws.com/sourceLaunchTemplateVersion | \
 awk '{
     if ($6 != "" && $7 != "") {
@@ -71,8 +71,8 @@ echo
 
 # 6. GPU Hardware Verification
 echo "🔧 GPU HARDWARE VERIFICATION:"
-echo "Expected: Renny nodes should have 2 GPUs (time-sliced), A2F nodes should have 2 GPUs"
-kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny" or . == "a2f") | "\(.metadata.name): \(.status.allocatable."nvidia.com/gpu" // "0") GPU(s)"' | while read line; do
+echo "Expected: Renny nodes should have 2 GPUs (time-sliced)"
+kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" == "renny") | "\(.metadata.name): \(.status.allocatable."nvidia.com/gpu" // "0") GPU(s)"' | while read line; do
     echo "  $line"
 done
 
@@ -108,7 +108,6 @@ fi
 echo
 echo "🎮 GPU FUNCTIONALITY TEST:"
 renderer_pod=$(kubectl get pods -n uneeq-renderer -l app=renderer --no-headers -o custom-columns=":metadata.name" | head -1)
-a2f_pod=$(kubectl get pods -n uneeq-renderer -l app=a2f --no-headers -o custom-columns=":metadata.name" | head -1)
 
 if [ -n "$renderer_pod" ]; then
     echo "Testing GPU on Renny node via $renderer_pod:"
@@ -118,13 +117,6 @@ else
     echo "  No Renny pods available for GPU testing"
 fi
 
-if [ -n "$a2f_pod" ]; then
-    echo "Testing GPU on A2F node via $a2f_pod:"
-    gpu_info=$(kubectl exec $a2f_pod -n uneeq-renderer -- nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader,nounits 2>/dev/null || echo "GPU test failed")
-    echo "  $gpu_info"
-else
-    echo "  No A2F pods available for GPU testing"
-fi
 echo
 
 # 7. Quick Health Summary
@@ -135,10 +127,10 @@ gpu_ready=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset --no
 app_ready=$(kubectl get pods -n uneeq-renderer --no-headers | grep -c "Running" || echo 0)
 
 echo "Nodes: $ready_nodes/$total_nodes ready"
-echo "GPU Drivers: $gpu_ready/4 running"  
+echo "GPU Drivers: $gpu_ready/2 running"
 echo "Applications: $app_ready pods running"
 
-if [ $ready_nodes -eq 6 ] && [ $gpu_ready -eq 4 ] && [ $app_ready -gt 2 ]; then
+if [ $ready_nodes -eq 4 ] && [ $gpu_ready -eq 2 ] && [ $app_ready -gt 2 ]; then
     echo "🎉 Cluster Status: HEALTHY"
 else
     echo "⚠️  Cluster Status: NEEDS ATTENTION"

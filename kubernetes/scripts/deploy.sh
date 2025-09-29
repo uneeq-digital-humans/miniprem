@@ -355,7 +355,7 @@ wait_for_cluster_nodes_ready() {
     local expected_nodes=$TOTAL_EXPECTED_NODES
     
     echo "🔍 Checking cluster node readiness..."
-    echo "Expected nodes: $CONTROL_NODES control + $RENNY_DESIRED_SIZE renny + $A2F_DESIRED_SIZE a2f = $expected_nodes total"
+    echo "Expected nodes: $CONTROL_NODES control + $RENNY_DESIRED_SIZE renny = $expected_nodes total"
     
     # Quick check if nodes are already ready
     local existing_ready_nodes=$(kubectl get nodes --no-headers 2>/dev/null | grep -c " Ready " | tr -d ' \n' || echo "0")
@@ -567,8 +567,8 @@ wait_for_gpu_operator_ready() {
     if [ $gpu_nodes -eq 0 ]; then
         echo -e "${YELLOW}⚠️  No GPU nodes detected yet, continuing anyway${NC}"
         # Use dynamically calculated GPU nodes
-        gpu_nodes=$GPU_NODES  # renny + a2f from config
-        echo "Using calculated GPU nodes: $RENNY_DESIRED_SIZE renny + $A2F_DESIRED_SIZE a2f = $gpu_nodes total"
+        gpu_nodes=$GPU_NODES  # renny from config
+        echo "Using calculated GPU nodes: $RENNY_DESIRED_SIZE renny = $gpu_nodes total"
     fi
     
     echo "Targeting $gpu_nodes GPU nodes for driver installation"
@@ -905,21 +905,19 @@ load_config() {
     
     # GPU node configuration
     RENNY_DESIRED_SIZE=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
-    A2F_DESIRED_SIZE=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
     
     RENNY_INSTANCE_TYPE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.4xlarge")
-    A2F_INSTANCE_TYPE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "g5.4xlarge")
     
     # Calculate total nodes
-    TOTAL_EXPECTED_NODES=$((CONTROL_NODES + RENNY_DESIRED_SIZE + A2F_DESIRED_SIZE))
-    GPU_NODES=$((RENNY_DESIRED_SIZE + A2F_DESIRED_SIZE))
+    TOTAL_EXPECTED_NODES=$((CONTROL_NODES + RENNY_DESIRED_SIZE))
+    GPU_NODES=$RENNY_DESIRED_SIZE
     
     # Return to original directory
     cd "$current_dir"
     
     # Export for use in other functions (deployment variables already exported by init_deployment_config)
-    export CONTROL_NODES RENNY_DESIRED_SIZE A2F_DESIRED_SIZE TOTAL_EXPECTED_NODES GPU_NODES
-    export RENNY_INSTANCE_TYPE A2F_INSTANCE_TYPE
+    export CONTROL_NODES RENNY_DESIRED_SIZE TOTAL_EXPECTED_NODES GPU_NODES
+    export RENNY_INSTANCE_TYPE
 }
 
 # Check if target cluster exists and is healthy
@@ -968,7 +966,7 @@ check_existing_cluster() {
     # Check if required node groups exist
     local missing_nodegroups=()
     # Use dynamically constructed node group names matching Terraform
-    local expected_nodegroups=("${cluster_name}-control" "${cluster_name}-renny-gpu-v4" "${cluster_name}-a2f-gpu-v4")
+    local expected_nodegroups=("${cluster_name}-control" "${cluster_name}-renny-gpu-v4")
     
     echo "Validating node groups..."
     for ng in "${expected_nodegroups[@]}"; do
@@ -1731,7 +1729,6 @@ docker_password = ""  # Your Docker Hub password
 # Optional: Override default values
 # aws_region = "us-east-2"
 # renny_instance_type = "g5.4xlarge"
-# a2f_instance_type = "g5.4xlarge"
 # renny_min_size = 10
 # renny_max_size = 20
 # renny_desired_size = 10
@@ -1829,11 +1826,7 @@ deploy_infrastructure() {
     # Use dynamically loaded configuration
     local renny_desired=$RENNY_DESIRED_SIZE
     local renny_instance=$RENNY_INSTANCE_TYPE
-    local a2f_desired=$A2F_DESIRED_SIZE
-    local a2f_instance=$A2F_INSTANCE_TYPE
-    
     echo "  - $renny_desired GPU nodes for Renny ($renny_instance, Ubuntu 22.04)"
-    echo "  - $a2f_desired GPU nodes for Audio2Face ($a2f_instance, Ubuntu 22.04)"
     echo "  - $CONTROL_NODES control plane nodes (t3.large)"
     echo ""
     echo "Ubuntu GPU nodes provide:"
@@ -2805,7 +2798,7 @@ EOF
     fi
     
     echo "📊 Current GPU capacity per node:"
-    kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny" or . == "a2f") | "\(.metadata.name) (\(.metadata.labels."uneeq.io/node-type")): \(.status.allocatable."nvidia.com/gpu" // "0") GPUs"'
+    kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny") | "\(.metadata.name) (\(.metadata.labels."uneeq.io/node-type")): \(.status.allocatable."nvidia.com/gpu" // "0") GPUs"'
     
     # Also create the standalone config file for manual use
     if [ ! -f "$KUBERNETES_DIR/gpu-time-slicing-config.yaml" ]; then
@@ -2844,12 +2837,10 @@ verify_asg_desired_capacities() {
     
     # Get expected desired capacities from terraform outputs
     local expected_renny=$(terraform output -json node_groups 2>/dev/null | jq -r '.renny.desired_size // 2')
-    local expected_a2f=$(terraform output -json node_groups 2>/dev/null | jq -r '.a2f.desired_size // 2') 
     local expected_control=$(terraform output -json node_groups 2>/dev/null | jq -r '.control.desired_size // 2')
-    
+
     # Check and fix each ASG
-    check_and_fix_asg_capacity "$cluster_name" "renny-gpu" "$expected_renny"
-    check_and_fix_asg_capacity "$cluster_name" "a2f-gpu" "$expected_a2f"  
+    check_and_fix_asg_capacity "$cluster_name" "renny-gpu" "$expected_renny"  
     check_and_fix_asg_capacity "$cluster_name" "control" "$expected_control"
     
     echo "✅ ASG desired capacities verified"
@@ -2907,61 +2898,6 @@ setup_kubernetes_resources() {
         --dry-run=client -o yaml | kubectl apply -f -
 }
 
-# Install Audio2Face
-install_a2f() {
-    echo "🎭 Checking Audio2Face status..."
-    
-    # Check if A2F is already installed and running
-    if helm list -n uneeq-renderer | grep -q "a2f.*deployed"; then
-        echo "✓ Audio2Face already installed"
-        
-        # Check if pods are ready
-        local a2f_pods=$(kubectl get pods -n uneeq-renderer -l app=a2f --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
-        local total_a2f=$(kubectl get pods -n uneeq-renderer -l app=a2f --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
-        
-        if [ "$a2f_pods" -gt "0" ] && [ "$a2f_pods" -eq "$total_a2f" ]; then
-            echo "✓ Audio2Face pods already running ($a2f_pods/$total_a2f)"
-            kubectl get pods -n uneeq-renderer -l app=a2f
-            return 0
-        else
-            echo "⚠️  Audio2Face installed but pods not ready ($a2f_pods/$total_a2f), monitoring..."
-            wait_for_large_images "a2f" "uneeq-renderer" 1800
-            return 0
-        fi
-    fi
-    
-    echo "Installing Audio2Face..."
-    echo -e "${BLUE}This will take approximately 10-20 minutes (35GB images)${NC}"
-    
-    # Get Docker credentials
-    cd "$TERRAFORM_DIR"
-    DOCKER_USERNAME=$(grep docker_username terraform.tfvars | cut -d'"' -f2)
-    DOCKER_PASSWORD=$(grep docker_password terraform.tfvars | cut -d'"' -f2)
-    
-    # Login to Docker Hub with Helm with retry
-    echo "Logging into Docker Hub..."
-    retry_network_operation "Docker Hub login" "echo '$DOCKER_PASSWORD' | helm registry login registry-1.docker.io -u '$DOCKER_USERNAME' --password-stdin"
-    
-    # Install A2F using reliable wrapper
-    echo "Installing Audio2Face Helm chart..."
-    reliable_helm_operation "upgrade --install" "a2f" "uneeq-renderer" \
-        "oci://registry-1.docker.io/facemeproduction/a2f" \
-        --version 0.1-alpha \
-        -f "$KUBERNETES_DIR/values/a2f-values.yaml"
-    
-    echo "✓ Helm chart installed, now monitoring image pull progress..."
-    
-    # Wait for A2F pods to be ready with enhanced monitoring
-    echo "Waiting for Audio2Face pods to be ready (this may take 10-20 minutes for 35GB images)..."
-    wait_for_large_images "a2f" "uneeq-renderer" 1800  # 30 minutes for massive images
-    
-    # Verify A2F deployment
-    echo "Audio2Face deployment status:"
-    kubectl get pods -n uneeq-renderer -l app=a2f
-    
-    echo -e "${GREEN}✓ Audio2Face installed successfully${NC}"
-    show_elapsed
-}
 
 # Install Renny
 install_renny() {
@@ -3153,7 +3089,6 @@ display_status() {
     echo "📋 Node Summary:"
     echo "  - Control nodes: ${CONTROL_NODES}x t3.large (Amazon Linux 2023)"
     echo "  - Renny GPU nodes: ${RENNY_DESIRED_SIZE}x ${RENNY_INSTANCE_TYPE} (Ubuntu 22.04)"
-    echo "  - A2F GPU nodes: ${A2F_DESIRED_SIZE}x ${A2F_INSTANCE_TYPE} (Ubuntu 22.04)"
     kubectl get nodes -L uneeq.io/node-type,nvidia.com/gpu
     echo ""
     
@@ -3163,8 +3098,6 @@ display_status() {
     echo "Total Renny pods: $RENNY_COUNT"
     echo ""
     
-    echo "🎭 Audio2Face Status:"
-    kubectl get pods -n uneeq-renderer -l app=a2f
     echo ""
     
     echo "💵 Estimated Costs:"
@@ -3224,7 +3157,6 @@ main() {
     install_gpu_operator
     configure_gpu_time_slicing
     setup_kubernetes_resources
-    install_a2f
     install_renny
     install_autoscaler
     display_status

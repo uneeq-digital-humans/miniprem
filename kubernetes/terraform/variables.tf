@@ -59,11 +59,6 @@ variable "renny_instance_type" {
   default     = "g5.4xlarge"
 }
 
-variable "a2f_instance_type" {
-  description = "Instance type for Audio2Face GPU nodes"
-  type        = string
-  default     = "g5.4xlarge"
-}
 
 variable "renny_min_size" {
   description = "Minimum number of Renny nodes"
@@ -83,23 +78,6 @@ variable "renny_desired_size" {
   default     = 10
 }
 
-variable "a2f_min_size" {
-  description = "Minimum number of A2F nodes"
-  type        = number
-  default     = 2
-}
-
-variable "a2f_max_size" {
-  description = "Maximum number of A2F nodes"
-  type        = number
-  default     = 5
-}
-
-variable "a2f_desired_size" {
-  description = "Desired number of A2F nodes"
-  type        = number
-  default     = 2
-}
 
 # DHOP Configuration
 variable "dhop_url" {

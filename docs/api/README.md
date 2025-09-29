@@ -180,11 +180,11 @@ GET /health
 ```json
 {
   "status": "ok",
-  "version": "0.477-c3972",
+  "version": "5.6mha",
   "connections": {
-    "a2f": "connected",
+    "internal_speech": "enabled",
     "uneeq": "connected",
-    "azure_speech": "connected"
+    "azure_speech": "fallback_available"
   }
 }
 ```

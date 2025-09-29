@@ -58,16 +58,12 @@ REGION="$AWS_REGION"
 # Read actual configuration from terraform.tfvars for accurate cost calculations
 if [ -f "terraform.tfvars" ]; then
     RENNY_DESIRED=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "10")
-    A2F_DESIRED=$(awk '/^a2f_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "2")
     RENNY_INSTANCE=$(awk '/^renny_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.4xlarge")
-    A2F_INSTANCE=$(awk '/^a2f_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "g5.4xlarge")
     CONTROL_INSTANCE=$(awk '/^control_instance_type[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars || echo "t3.large")
 else
     echo -e "${YELLOW}⚠️  terraform.tfvars not found, using defaults${NC}"
     RENNY_DESIRED="10"
-    A2F_DESIRED="2"
     RENNY_INSTANCE="g5.4xlarge"
-    A2F_INSTANCE="g5.4xlarge"
     CONTROL_INSTANCE="t3.large"
 fi
 
@@ -110,11 +106,9 @@ echo ""
 echo "Node Groups:"
 CONTROL_NODES=$(kubectl get nodes -l uneeq.io/node-type=control --no-headers 2>/dev/null | wc -l || echo "0")
 RENNY_NODES=$(kubectl get nodes -l uneeq.io/node-type=renny --no-headers 2>/dev/null | wc -l || echo "0")
-A2F_NODES=$(kubectl get nodes -l uneeq.io/node-type=a2f --no-headers 2>/dev/null | wc -l || echo "0")
 
 echo "  Control Nodes: $CONTROL_NODES ($CONTROL_INSTANCE)"
 echo "  Renny GPU Nodes: $RENNY_NODES ($RENNY_INSTANCE)"
-echo "  A2F GPU Nodes: $A2F_NODES ($A2F_INSTANCE)"
 echo ""
 
 # Pod status
@@ -135,19 +129,6 @@ else
     echo -e "Renny: ${RED}❌ Not deployed${NC}"
 fi
 
-# A2F pods
-A2F_RUNNING=$(kubectl get pods -n uneeq-renderer -l app=a2f --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
-A2F_TOTAL=$(kubectl get pods -n uneeq-renderer -l app=a2f --no-headers 2>/dev/null | wc -l || echo "0")
-
-if [ "$A2F_TOTAL" -gt 0 ]; then
-    if [ "$A2F_RUNNING" -eq "$A2F_TOTAL" ]; then
-        echo -e "Audio2Face: ${GREEN}✅ $A2F_RUNNING/$A2F_TOTAL pods running${NC}"
-    else
-        echo -e "Audio2Face: ${YELLOW}⚠️  $A2F_RUNNING/$A2F_TOTAL pods running${NC}"
-    fi
-else
-    echo -e "Audio2Face: ${RED}❌ Not deployed${NC}"
-fi
 
 # GPU Operator
 GPU_OP_RUNNING=$(kubectl get pods -n gpu-operator --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
@@ -200,17 +181,15 @@ get_instance_cost() {
 
 CONTROL_COST=$(get_instance_cost "$CONTROL_INSTANCE")
 RENNY_COST=$(get_instance_cost "$RENNY_INSTANCE")
-A2F_COST=$(get_instance_cost "$A2F_INSTANCE")
 
 # Calculate actual costs based on running nodes and NAT gateway
-HOURLY_COST=$(echo "scale=2; ($CONTROL_NODES * $CONTROL_COST) + ($RENNY_NODES * $RENNY_COST) + ($A2F_NODES * $A2F_COST) + 0.045" | bc 2>/dev/null || echo "15")
+HOURLY_COST=$(echo "scale=2; ($CONTROL_NODES * $CONTROL_COST) + ($RENNY_NODES * $RENNY_COST) + 0.045" | bc 2>/dev/null || echo "10")
 DAILY_COST=$(echo "scale=2; $HOURLY_COST * 24" | bc 2>/dev/null || echo "360")
 MONTHLY_COST=$(echo "scale=2; $DAILY_COST * 30" | bc 2>/dev/null || echo "10800")
 
 echo "Instance breakdown:"
 echo "  Control ($CONTROL_INSTANCE): $CONTROL_NODES × \$$CONTROL_COST/hr = \$$(echo "scale=2; $CONTROL_NODES * $CONTROL_COST" | bc)/hr"
 echo "  Renny ($RENNY_INSTANCE): $RENNY_NODES × \$$RENNY_COST/hr = \$$(echo "scale=2; $RENNY_NODES * $RENNY_COST" | bc)/hr"
-echo "  A2F ($A2F_INSTANCE): $A2F_NODES × \$$A2F_COST/hr = \$$(echo "scale=2; $A2F_NODES * $A2F_COST" | bc)/hr"
 echo "  NAT Gateway: \$0.045/hr"
 echo ""
 
@@ -240,7 +219,5 @@ echo -e "${GREEN}Status check complete${NC}"
 echo ""
 echo "Commands:"
 echo "  Scale Renny: ./scripts/scale.sh <count>"
-echo "  Scale A2F: ./scripts/scale.sh -c a2f <count>"
 echo "  Destroy: ./scripts/destroy.sh"
 echo "  Logs (Renny): kubectl logs -n uneeq-renderer -l app=renny --tail=50"
-echo "  Logs (A2F): kubectl logs -n uneeq-renderer -l app=a2f --tail=50"

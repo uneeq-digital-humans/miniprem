@@ -2,13 +2,13 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
 
-  cluster_name                 = local.cluster_name
-  cluster_version              = var.kubernetes_version
+  cluster_name    = local.cluster_name
+  cluster_version = var.kubernetes_version
 
-  vpc_id                       = module.vpc.vpc_id
-  subnet_ids                   = module.vpc.private_subnets
+  vpc_id                         = module.vpc.vpc_id
+  subnet_ids                     = module.vpc.private_subnets
   cluster_endpoint_public_access = true
-  
+
   # Configure service IPv4 CIDR from customer choice
   cluster_service_ipv4_cidr = var.service_cidr
 
@@ -16,7 +16,7 @@ module "eks" {
   enable_irsa = true
 
   # Disable KMS encryption for reference deployment (can be enabled later)
-  create_kms_key = false
+  create_kms_key            = false
   cluster_encryption_config = {}
 
   # Enable cluster addons

@@ -48,13 +48,12 @@ if [ "$SHOW_HELP" = true ] || [ -z "${DESIRED_COUNT:-}" ]; then
     echo "Usage: ./scale.sh [OPTIONS] <desired_count>"
     echo ""
     echo "Options:"
-    echo "  --component, -c COMPONENT  Component to scale (renny|a2f) [default: renny]"
+    echo "  --component, -c COMPONENT  Component to scale (renny) [default: renny]"
     echo "  --profile PROFILE_NAME     Use specific AWS profile"
     echo "  --help, -h                 Show this help message"
     echo ""
     echo "Examples:"
     echo "  ./scale.sh 15              # Scale Renny to 15 nodes"
-    echo "  ./scale.sh -c a2f 3        # Scale Audio2Face to 3 nodes"
     echo "  ./scale.sh --profile prod 12  # Scale with specific AWS profile"
     echo ""
     exit 0
@@ -67,14 +66,9 @@ if [ "$COMPONENT" = "renny" ]; then
     MIN_COUNT=$(awk '/^renny_min_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "10")
     COMPONENT_NAME="Renny"
     NODE_LABEL="renny"
-elif [ "$COMPONENT" = "a2f" ]; then
-    MAX_COUNT=$(awk '/^a2f_max_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "5")
-    MIN_COUNT=$(awk '/^a2f_min_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "2")
-    COMPONENT_NAME="Audio2Face"
-    NODE_LABEL="a2f"
 else
     echo -e "${RED}❌ Invalid component: $COMPONENT${NC}"
-    echo "Valid components: renny, a2f"
+    echo "Valid components: renny"
     exit 1
 fi
 

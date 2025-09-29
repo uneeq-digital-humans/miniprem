@@ -4,7 +4,7 @@ This guide covers the Renny digital human component of the MiniPrem platform, wh
 
 ## Overview
 
-Renny is a digital human avatar powered by UneeQ's technology that provides a visual interface for AI interactions. It combines facial animations, lip synchronization, and gesture capabilities to create a more engaging conversational experience.
+Renny is a digital human avatar powered by UneeQ's technology that provides a visual interface for AI interactions. It features an advanced internal speech processing system that handles facial animations, lip synchronization, and gesture capabilities to create a more engaging conversational experience with improved reliability and performance.
 
 ## Accessing Renny
 
@@ -15,9 +15,9 @@ Renny is a digital human avatar powered by UneeQ's technology that provides a vi
 
 The Renny component interacts with several other services:
 
-1. **Audio2Face Integration**: Converts audio to facial animations
+1. **Internal Speech Processing**: Built-in system converts audio to facial animations
 2. **UneeQ Platform**: Manages the digital human rendering
-3. **Azure Speech Services**: Provides text-to-speech capabilities
+3. **Azure Speech Services**: Optional fallback for text-to-speech capabilities
 
 ## Configuration
 
@@ -33,12 +33,12 @@ The primary configuration for Renny is stored in `docker/configuration.dat`, whi
 
 Key environment variables in `docker/docker-compose.env`:
 
-- **A2F_ADDRESS**: Audio2Face service address
+- **NEW_SPEECH_OVERRIDE**: Enable internal speech processing (set to 1)
 - **DHOP_ADDRESS**: UneeQ platform address
 - **DHOP_APIKEY**: UneeQ platform API key
 - **DHOP_TENANTID**: UneeQ tenant ID
-- **AZURE_REGION**: Azure region for speech services
-- **AZURE_SPEECH**: Azure speech service key
+- **AZURE_REGION**: Azure region for speech services (optional fallback)
+- **AZURE_SPEECH**: Azure speech service key (optional fallback)
 
 ## Health Monitoring
 
@@ -76,9 +76,9 @@ The integration between Renny and the LLM (via Flowise) works as follows:
 
 1. User input is captured (text or audio)
 2. The input is processed by the Flowise/vLLM pipeline
-3. The response is converted to speech via Azure TTS
-4. Audio2Face generates facial animations synchronized with the speech
-5. Renny renders the animated avatar speaking the response
+3. The response is converted to speech via Renny's internal speech system
+4. Internal speech processing generates facial animations synchronized with the speech
+5. Renny renders the animated avatar speaking the response with improved reliability
 
 ## Advanced Customization
 
@@ -103,13 +103,14 @@ volumes:
   - ~/.Xauthority:/home/ue4/.Xauthority
 ```
 
-### Animation Settings
+### Speech Processing Settings
 
-Audio2Face animation parameters can be tuned in the A2F configuration files:
+Internal speech processing parameters can be controlled via environment variables:
 
-- **Lip Synchronization**: Controls mouth movement accuracy
-- **Expression Intensity**: Adjusts the strength of facial expressions
-- **Blinking Parameters**: Controls eye blinking frequency and style
+- **NEW_SPEECH_OVERRIDE**: Primary switch for internal speech system (set to 1)
+- **Lip Synchronization**: Built-in mouth movement accuracy controls
+- **Expression Intensity**: Automatic facial expression strength adjustment
+- **Blinking Parameters**: Built-in eye blinking frequency and style
 
 ## Troubleshooting
 
@@ -120,13 +121,14 @@ Audio2Face animation parameters can be tuned in the A2F configuration files:
    - Verify GPU drivers and rendering capabilities
 
 2. **Poor Animation Quality**:
-   - Check A2F service health
-   - Verify audio quality and processing
+   - Check internal speech processing logs
+   - Verify NEW_SPEECH_OVERRIDE is set to 1
 
 3. **Connection Issues**:
    - Verify UneeQ platform connectivity
    - Check network settings and firewall rules
 
 4. **Audio-Visual Sync Problems**:
-   - Adjust `A2F_AUDIO_DELAY_TIME_MS` parameter
+   - Internal speech system handles sync automatically
    - Check system performance for rendering lags
+   - Verify GPU resources are available

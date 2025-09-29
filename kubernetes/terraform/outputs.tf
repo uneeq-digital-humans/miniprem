@@ -57,12 +57,6 @@ output "node_groups" {
       max_size     = aws_eks_node_group.renny.scaling_config[0].max_size
       desired_size = aws_eks_node_group.renny.scaling_config[0].desired_size
     }
-    a2f = {
-      name         = aws_eks_node_group.a2f.node_group_name
-      min_size     = aws_eks_node_group.a2f.scaling_config[0].min_size
-      max_size     = aws_eks_node_group.a2f.scaling_config[0].max_size
-      desired_size = aws_eks_node_group.a2f.scaling_config[0].desired_size
-    }
     control = {
       name         = aws_eks_node_group.control.node_group_name
       min_size     = aws_eks_node_group.control.scaling_config[0].min_size
