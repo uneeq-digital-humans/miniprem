@@ -74,3 +74,4 @@ personal_notes/
 
 .deployment_id
 terraform.tfvars.bak
+kubernetes/values/my-renny-values.yml

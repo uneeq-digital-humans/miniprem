@@ -41,8 +41,7 @@ kubernetes/
 │   ├── gpu-operator.yaml
 │   └── autoscaler.yaml
 ├── values/             # Helm chart values
-│   ├── renny-values.yaml
-│   └── a2f-values.yaml
+│   └── renny-values.yaml
 ├── scripts/            # Deployment scripts
 │   ├── deploy.sh       # One-click deployment (~30-45 min)
 │   ├── scale.sh        # Scale Renny instances
@@ -327,12 +326,11 @@ chmod +x scripts/*.sh
 
 This will:
 1. ✅ Check prerequisites
-2. 🏗️ Deploy VPC and EKS cluster via Terraform (~15-20 minutes)  
+2. 🏗️ Deploy VPC and EKS cluster via Terraform (~15-20 minutes)
 3. 🚀 Fast cluster join for Ubuntu nodes (~3-5 minutes)
 4. 🎮 Install NVIDIA GPU Operator for automatic driver installation (~5-10 minutes)
-5. 🎭 Deploy Audio2Face on dedicated GPU nodes (~3-5 minutes)
-6. 🤖 Deploy Renny on separate GPU nodes (10 instances) (~5-10 minutes)
-7. ⚖️ Configure autoscaling (10-20 instances)
+5. 🤖 Deploy Renny with internal speech processing (10 instances) (~5-10 minutes)
+6. ⚖️ Configure autoscaling (10-20 instances)
 
 **Total deployment time: ~30-45 minutes**
 
@@ -380,10 +378,6 @@ flowchart TB
                             RN3[g5.4xlarge<br/>NVIDIA A10G<br/>Renny-N]
                         end
                         
-                        subgraph A2FNodes["🎭 A2F GPU Node Group"]
-                            AN1[g5.4xlarge<br/>NVIDIA A10G<br/>A2F-1]
-                            AN2[g5.4xlarge<br/>NVIDIA A10G<br/>A2F-2]
-                        end
                         
                         subgraph GPUOperator["⚡ GPU Operator"]
                             GO[nvidia-gpu-operator<br/>Driver Management]
@@ -431,7 +425,7 @@ flowchart TB
     classDef external fill:#E1E8ED,stroke:#333,color:#000
     
     class AWS,Region,VPC aws
-    class EKS,CP,ControlNodes,RennyNodes,A2FNodes,GPUOperator k8s
+    class EKS,CP,ControlNodes,RennyNodes,GPUOperator k8s
     class RN1,RN2,RN3,AN1,AN2 gpu
     class User,TURN,DHOP external
 ```
@@ -445,7 +439,6 @@ sequenceDiagram
     participant User as 👤 User Browser
     participant TURN as 🔄 UneeQ TURN
     participant Renny as 🤖 Renny Pod
-    participant A2F as 🎭 A2F Pod
     participant DHOP as ☁️ DHOP API
     
     Note over User,DHOP: Session Initialization
@@ -454,18 +447,16 @@ sequenceDiagram
     Renny->>DHOP: Register & authenticate
     DHOP-->>User: Session created
     
-    Note over User,A2F: WebRTC Connection Setup
+    Note over User,Renny: WebRTC Connection Setup
     User->>TURN: ICE candidates (NAT traversal)
     TURN->>Renny: Relay ICE candidates
     Renny->>TURN: ICE response
     TURN->>User: WebRTC connection established
     
-    Note over User,A2F: Active Session Flow
+    Note over User,Renny: Active Session Flow
     User->>TURN: "Hello, can you help me?"
     TURN->>Renny: Audio data via WebRTC
-    Renny->>A2F: Generate facial animation
-    A2F-->>Renny: Animation data
-    Renny->>Renny: Render with Unreal Engine
+    Renny->>Renny: Generate facial animation & Render with Unreal Engine
     Renny->>TURN: Video + Audio stream
     TURN->>User: Digital human response
     
@@ -529,8 +520,7 @@ flowchart LR
 - **Operating System**: Ubuntu 22.04 EKS AMIs for GPU nodes (optimized for Vulkan/Unreal Engine)
 - **Node Groups**:
   - **Control Plane**: 2x t3.large nodes (for management)
-  - **Renny Nodes**: 10-20x g5.4xlarge GPU instances (Ubuntu)
-  - **A2F Nodes**: 2-5x g5.4xlarge GPU instances (Ubuntu)
+  - **Renny Nodes**: 10-20x g5.4xlarge GPU instances (Ubuntu, with internal speech processing)
 
 ### GPU Configuration & Compatibility
 
@@ -618,9 +608,7 @@ During deployment, you'll be prompted to choose between two driver options:
 ```
 Internet → ALB/NLB → EKS Cluster
                       ├── GPU Node Group (Renny)
-                      │   └── 10-20 g5.4xlarge instances
-                      ├── GPU Node Group (A2F)
-                      │   └── 2-5 g5.4xlarge instances
+                      │   └── 10-20 g5.4xlarge instances (internal speech)
                       └── Control Node Group
                           └── 2 t3.large instances
 ```
@@ -744,7 +732,7 @@ kubectl get pods --all-namespaces
 
 **After Deployment** (when applications are running):
 ```bash
-# Check Renny and A2F pods
+# Check Renny pods
 kubectl get pods -n uneeq-renderer
 
 # Check GPU operator status
@@ -959,10 +947,6 @@ kubectl describe nodes -l uneeq.io/node-type=a2f | grep -A10 "Allocated resource
 # Debug Renny container
 kubectl exec -it -n uneeq-renderer <renny-pod-name> -- /bin/bash
 
-# Debug A2F container (has 2 containers)
-kubectl exec -it -n uneeq-renderer <a2f-pod-name> -c a2x -- /bin/bash
-kubectl exec -it -n uneeq-renderer <a2f-pod-name> -c a2f-controller -- /bin/bash
-
 # Debug node directly
 kubectl debug node/<node-name> -it --image=busybox
 ```
@@ -1030,11 +1014,10 @@ kubectl auth can-i get pods --all-namespaces
 
 ### Updating Configuration
 
-1. Edit values files in `values/`
-2. Upgrade Helm releases:
+1. Edit values file in `values/renny-values.yaml`
+2. Upgrade Helm release:
 ```bash
 helm upgrade renny ./renny-chart.tgz -n uneeq-renderer -f values/renny-values.yaml
-helm upgrade a2f oci://registry-1.docker.io/facemeproduction/a2f -n uneeq-renderer -f values/a2f-values.yaml
 ```
 
 ### Cleanup
@@ -1075,8 +1058,7 @@ For emergency cleanup without confirmations:
 - **NAT Gateways** (3x): ~$135/month
 - **Control Nodes** (2x t3.large): ~$120/month
 - **Renny Nodes** (10x g5.4xlarge): ~$8,760/month
-- **A2F Nodes** (2x g5.4xlarge): ~$1,752/month
-- **Total Base**: ~$10,840/month
+- **Total Base**: ~$9,088/month
 
 *Note: Costs scale with the number of Renny instances (10-20)*
 
@@ -1212,9 +1194,10 @@ kubectl describe pod <renny-pod> -n uneeq-renderer
 kubectl logs <renny-pod> -n uneeq-renderer
 ```
 
-### A2F Connection Issues
+### Speech Processing Issues
+Renny now uses internal speech processing (NEW_SPEECH_OVERRIDE=1). Check Renny logs for speech-related errors:
 ```bash
-kubectl exec -it <renny-pod> -n uneeq-renderer -- curl http://audio2face-gateway:52000/health
+kubectl logs <renny-pod> -n uneeq-renderer | grep -i "speech\|audio"
 ```
 
 ## 🔍 Kubernetes Debugging & Monitoring
@@ -1290,7 +1273,7 @@ kubectl describe pod <pod-name> -n uneeq-renderer | grep -A5 -B5 "Pulling\|Pulle
 **Current Resource Usage**:
 ```bash
 # Check how many pods per node
-kubectl get pods -o wide -A | grep -E "renderer|a2f"
+kubectl get pods -o wide -A | grep renderer
 
 # View resource requests vs allocatable
 kubectl describe nodes | grep -A10 "Allocated resources"
@@ -1307,8 +1290,7 @@ Based on **g5.4xlarge specifications**:
 - **GPU**: 1x NVIDIA A10G (24GB VRAM)
 
 **Expected Pod Capacity per Node**:
-- **Renny pods**: 1 per g5.4xlarge (exclusive GPU access required)
-- **A2F pods**: 1 per g5.4xlarge (exclusive GPU access required)
+- **Renny pods**: 1-2 per g5.4xlarge (with GPU time-slicing enabled)
 - **Control pods**: Multiple per t3.large (no GPU required)
 
 ### 📊 Application Health Monitoring
@@ -1324,28 +1306,19 @@ kubectl logs <renny-pod> -n uneeq-renderer -f
 # Check for specific connection issues
 kubectl logs <renny-pod> -n uneeq-renderer | grep -E "signalling|uneeq|connection|error|warn"
 
-# Check A2F connectivity from Renny
-kubectl logs <renny-pod> -n uneeq-renderer | grep -i "a2f\|audio2face"
+# Check speech processing status
+kubectl logs <renny-pod> -n uneeq-renderer | grep -i "speech\|NEW_SPEECH_OVERRIDE"
 ```
 
-**Check A2F Application Logs**:
-```bash
-# A2F has multiple containers
-kubectl logs <a2f-pod> -n uneeq-renderer -c a2f-controller --tail=50
-kubectl logs <a2f-pod> -n uneeq-renderer -c a2x --tail=50
-
-# Check A2F service availability
-kubectl get svc a2f -n uneeq-renderer
-```
 
 **Key Log Messages to Look For**:
 
 ✅ **Healthy Renny logs**:
 ```
 "Connecting to DHOP at wss://api.enterprise.uneeq.io:443/signalling-service"
-"DHOP connected. About to send the auth request"  
+"DHOP connected. About to send the auth request"
 "Connected to SS wss://api.enterprise.uneeq.io"
-"Mounting Project plugin UneeqA2FClient"
+"NEW_SPEECH_OVERRIDE enabled" (indicates internal speech processing active)
 ```
 
 ⚠️ **Warning signs**:
@@ -1393,8 +1366,8 @@ kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset --tail=50
 
 **Network Connectivity**:
 ```bash
-# Test A2F service from Renny pod
-kubectl exec <renny-pod> -n uneeq-renderer -- nslookup a2f.uneeq-renderer.svc.cluster.local
+# Test internal speech processing
+kubectl exec <renny-pod> -n uneeq-renderer -- env | grep NEW_SPEECH_OVERRIDE
 
 # Check service endpoints
 kubectl get endpoints -n uneeq-renderer
@@ -1418,8 +1391,7 @@ kubectl describe pod <pod-name> -n uneeq-renderer | grep -A10 "Requests\|Limits"
 ```
 
 **Expected Resource Usage**:
-- **Renny pods**: ~4 CPU cores, ~10GB RAM, 1 GPU when active
-- **A2F pods**: ~2 CPU cores, ~4GB RAM, 1 GPU  
+- **Renny pods**: ~4 CPU cores, ~10GB RAM, 1 GPU when active (with internal speech processing)
 - **Control pods**: ~1 CPU core, ~2GB RAM, no GPU
 
 ### 🚨 Alerting & Monitoring Setup
@@ -1428,7 +1400,7 @@ kubectl describe pod <pod-name> -n uneeq-renderer | grep -A10 "Requests\|Limits"
 - Pod restart counts: `kubectl get pods -n uneeq-renderer`
 - GPU utilization per node: Check GPU operator logs
 - Image pull success rate: Monitor events for failures
-- A2F service availability: Check service endpoints
+- Speech processing health: Monitor Renny logs for NEW_SPEECH_OVERRIDE messages
 - DHOP connection health: Monitor Renny logs for connection messages
 
 **Setting Up Monitoring**:
@@ -1443,14 +1415,14 @@ kubectl top pods -n uneeq-renderer
 
 ### ☁️ CloudWatch Logs - Application Error Monitoring
 
-All Renny and A2F application logs are automatically sent to **AWS CloudWatch Logs** for centralized monitoring and troubleshooting.
+All Renny application logs are automatically sent to **AWS CloudWatch Logs** for centralized monitoring and troubleshooting.
 
 #### 📍 Log Group Locations
 ```bash
 # EKS cluster logs (general Kubernetes events)
 /aws/eks/[cluster-name]/cluster
 
-# Container application logs (Renny, A2F pods)
+# Container application logs (Renny pods)
 /aws/containerinsights/[cluster-name]/application
 ```
 
@@ -1469,7 +1441,7 @@ fields @timestamp, service, renderer_id, client_session_id, message
 ```sql
 fields @timestamp, renderer_id, message, category
 | filter service = "renderer"
-| filter message like /DNS resolution failed|Failed to send audio|A2F/
+| filter message like /speech.*failed|Failed to send audio|NEW_SPEECH_OVERRIDE/
 | sort @timestamp desc
 | limit 20
 ```
@@ -1483,11 +1455,11 @@ fields @timestamp, client_session_id, message, category
 | sort @timestamp desc
 ```
 
-**Find Connection Issues with A2F Service:**
+**Find Speech Processing Issues:**
 ```sql
 fields @timestamp, message, client_session_id
 | filter service = "renderer"
-| filter message like /A2F.*failed|audio.*failed|DNS.*failed/
+| filter message like /speech.*failed|audio.*failed|NEW_SPEECH_OVERRIDE/
 | sort @timestamp desc
 | limit 25
 ```
@@ -1519,7 +1491,7 @@ fields @timestamp, message, category, log_level
 #### 📊 Key Log Categories to Monitor
 
 - **`LogWebRTCMessageHandler`**: WebRTC data channel errors (speak requests)
-- **`LogUneeqA2FStreamer`**: A2F connectivity and audio streaming issues  
+- **`LogUneeqSpeechProcessor`**: Internal speech processing and audio issues  
 - **`LogPixelStreaming`**: Video streaming and connection problems
 - **`LogUneeqTTSClient`**: Text-to-Speech service issues
 - **`LogBlueprintUserMessages`**: Unreal Engine application logic errors
@@ -1527,10 +1499,10 @@ fields @timestamp, message, category, log_level
 #### 🚨 Common Error Patterns to Watch For
 
 ```sql
-# DNS resolution failures (A2F connectivity)
-filter message like /DNS resolution failed/
+# Speech processing failures
+filter message like /speech.*failed|NEW_SPEECH_OVERRIDE/
 
-# Audio streaming problems  
+# Audio streaming problems
 filter message like /Failed to send audio/
 
 # WebRTC connection issues
@@ -1547,7 +1519,7 @@ filter message like /Failed to.*session|session.*failed/
 
 - **Filter by Time**: Always set appropriate time ranges to avoid scanning massive logs
 - **Use `renderer_id`**: Track issues across specific Renny instances
-- **Combine Filters**: Use `and` to narrow down results (e.g., `log_level = "error" and message like /A2F/`)
+- **Combine Filters**: Use `and` to narrow down results (e.g., `log_level = "error" and message like /speech/`)
 - **Export Results**: Use "Export results" to save troubleshooting data
 - **Set Up Alarms**: Create CloudWatch alarms for critical error patterns
 
@@ -1557,7 +1529,7 @@ For issues specific to:
 - **Infrastructure**: Check Terraform state and AWS Console
 - **Kubernetes**: Use `kubectl describe` and `kubectl logs`
 - **GPU**: Check NVIDIA GPU Operator logs
-- **Renny/A2F**: Contact UneeQ support with pod logs
+- **Renny**: Contact UneeQ support with pod logs
 
 ## 🔄 Updates and Maintenance
 
@@ -1583,11 +1555,8 @@ cd terraform && terraform apply
 ```bash
 # Edit terraform/terraform.tfvars and modify any of:
 renny_min_size = 5         # Change minimum Renny nodes
-renny_max_size = 15        # Change maximum Renny nodes  
+renny_max_size = 15        # Change maximum Renny nodes
 renny_desired_size = 8     # Change current Renny nodes
-a2f_min_size = 1          # Change minimum A2F nodes
-a2f_max_size = 3          # Change maximum A2F nodes
-a2f_desired_size = 1      # Change current A2F nodes
 
 # Apply changes
 cd terraform && terraform apply
@@ -1605,8 +1574,6 @@ If you would like to manually scale the EC2 instances down (i.e. shut down the c
 aws autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[?contains(AutoScalingGroupName, 'renny-production')].AutoScalingGroupName" --output text
 
 # Then scale down with actual names:
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-ID-GOES-HERE --desired-capacity 0 --min-size 0
-
 aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-ID-GOES-HERE --desired-capacity 0 --min-size 0
 
 aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-ID-GOES-HERE --desired-capacity 0 --min-size 0
@@ -1619,8 +1586,6 @@ Scale the instances back up when you want to serve requests. First get the actua
 aws autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[?contains(AutoScalingGroupName, 'renny-production')].AutoScalingGroupName" --output text
 
 # Then scale up with actual names (example):
-aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-a2f-gpu-v4-ID-GOES-HERE --desired-capacity 2 --min-size 2
-
 aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-renny-gpu-v4-ID-GOES-HERE --desired-capacity 2 --min-size 2
 
 aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-production-control-ID-GOES-HERE --desired-capacity 2 --min-size 2
@@ -1631,10 +1596,6 @@ aws autoscaling update-auto-scaling-group --auto-scaling-group-name eks-renny-pr
 # Update Renny configuration
 # Edit values/renny-values.yaml, then:
 helm upgrade renny ./renny-chart.tgz -n uneeq-renderer -f values/renny-values.yaml
-
-# Update A2F configuration  
-# Edit values/a2f-values.yaml, then:
-helm upgrade a2f oci://registry-1.docker.io/facemeproduction/a2f -n uneeq-renderer -f values/a2f-values.yaml
 ```
 
 **Instance Types (with caution):**

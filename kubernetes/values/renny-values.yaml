@@ -1,5 +1,5 @@
 # Renny Helm values
-image: "facemeproduction/renny:0.632-47d09"
+image: "facemeproduction/renny:5.6speechanim"
 
 deployment:
   nodeType: renny
