@@ -17,7 +17,7 @@ class CommandRequest(BaseModel):
         target = values.get('target')
         allowed_commands = {
             'docker': ['ps', 'stats', 'logs', 'health', 'start', 'stop', 'restart', 'status'],
-            'kubernetes': ['pods', 'nodes', 'logs', 'health', 'start', 'stop', 'restart', 'status', 'contexts', 'clusters'],
+            'kubernetes': ['pods', 'nodes', 'logs', 'health', 'start', 'stop', 'restart', 'status', 'contexts', 'clusters', 'switch-context'],
             'system': ['metrics', 'info', 'health'],
             'services': ['availability', 'start', 'stop', 'restart'],
             'connections': ['stats'],
