@@ -1954,7 +1954,13 @@ validate_nvidia_driver_version() {
     
     # Known working driver versions (in order of preference)
     # Using verified available versions from NVIDIA registry
+    local known_versions_580=(
+        "580.82.07"
+        "580.95.05"
+    )
+
     local known_versions_575=(
+        "575.57.08"
         "575.57.05"
         "575.44.14"
     )
@@ -1979,10 +1985,12 @@ validate_nvidia_driver_version() {
     
     # Try versions based on requested version family
     local version_families=()
-    if [ "$requested_version" = "575" ]; then
-        version_families=("575" "570" "550" "535")
+    if [ "$requested_version" = "580" ]; then
+        version_families=("580" "575" "570" "550" "535")
+    elif [ "$requested_version" = "575" ]; then
+        version_families=("575" "580" "570" "550" "535")
     else
-        version_families=("570" "550" "535" "575")
+        version_families=("570" "550" "535" "575" "580")
     fi
 
     for family in "${version_families[@]}"; do
@@ -2169,27 +2177,29 @@ _check_registry_http() {
     return 1
 }
 
-# Helper function to try version family matching (575.*, 570.*)
+# Helper function to try version family matching (580.*, 575.*, 570.*)
 _try_version_family_match() {
     local requested_version="$1"
     local os_version="${2:-ubuntu22.04}"
-    local family="${requested_version%%.*}"  # Extract major version (575, 570, etc.)
-    
+    local family="${requested_version%%.*}"  # Extract major version (580, 575, 570, etc.)
+
     # Define repositories in priority order
     local repositories=(
         "nvcr.io/nvidia/driver"
         "registry.k8s.io/nvidia/driver"
         "docker.io/nvidia/driver"
     )
-    
+
     # Family-specific version lists (expandable)
+    local versions_580=("580.82.07" "580.95.05")
     local versions_575=("575.57.08" "575.48.31" "575.36.04" "575.51.05" "575.51.10")
     local versions_570=("570.47.06" "570.36.04" "570.58.14")
     local versions_5xx=("550.90.07" "535.183.01" "545.29.06")
-    
+
     # Select version array based on family
     local version_array_name
     case "$family" in
+        "580") version_array_name="versions_580" ;;
         "575") version_array_name="versions_575" ;;
         "570") version_array_name="versions_570" ;;
         "5"*) version_array_name="versions_5xx" ;;
@@ -2252,7 +2262,7 @@ discover_available_drivers() {
     )
     
     # Known version families to try
-    local test_versions=("575.57.08" "575.48.31" "570.47.06" "570.36.04" "550.90.07" "535.183.01")
+    local test_versions=("580.82.07" "580.95.05" "575.57.08" "575.48.31" "570.47.06" "570.36.04" "550.90.07" "535.183.01")
     
     # Test each version against each repository
     for version in "${test_versions[@]}"; do
@@ -2273,7 +2283,7 @@ discover_available_drivers() {
     fi
     
     # Add Ubuntu package versions if available
-    for family in 575 570 550 535; do
+    for family in 580 575 570 550 535; do
         if _check_ubuntu_packages "${family}.0.0" &>/dev/null; then
             safe_array_append available_versions "${family}.x.x-ubuntu-package"
         fi
@@ -2577,7 +2587,14 @@ install_gpu_operator_with_retry() {
         # Try next available version if this was an image error
         if [ "$image_error_found" = "true" ] && [ $retry_count -lt $max_retries ]; then
             echo "🔄 Trying next available driver version..."
-            if [ "$requested_version" = "575" ]; then
+            if [ "$requested_version" = "580" ]; then
+                # Try next 580.x version or fallback to 575.x
+                case "$exact_version" in
+                    "580.82.07") exact_version="580.95.05" ;;
+                    "580.95.05") exact_version="575.57.08" ;;  # Fallback to 575
+                    *) exact_version="575.48.31" ;;
+                esac
+            elif [ "$requested_version" = "575" ]; then
                 # Try next 575.x version or fallback to 570.x
                 case "$exact_version" in
                     "575.57.08") exact_version="575.48.31" ;;
@@ -2588,7 +2605,7 @@ install_gpu_operator_with_retry() {
                 # Try next 570.x version
                 case "$exact_version" in
                     "570.47.06") exact_version="570.36.04" ;;
-                    *) 
+                    *)
                         echo -e "${RED}❌ No more driver versions to try${NC}"
                         return 1
                         ;;
@@ -2645,30 +2662,29 @@ install_gpu_operator() {
     # Driver version selection with prominent warning
     echo -e "${YELLOW}🎮 NVIDIA Driver Version Selection 🎮${NC}"
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}📋 We recommend NVIDIA Driver 575+ for Unreal Engine 5.6+ compatibility${NC}"
-    echo -e "${YELLOW}⚠️  However, we have only verified driver 570 in production${NC}"
+    echo -e "${CYAN}📋 Select NVIDIA driver version for your GPU workload${NC}"
     echo ""
     echo "Driver options:"
-    echo -e "${GREEN}1)${NC} Use verified driver 570 (recommended for production)"
-    echo -e "${CYAN}2)${NC} Use driver 575+ (for Unreal Engine 5.6+ compatibility)"
+    echo -e "${GREEN}1)${NC} Use driver 575+ (recommended - Unreal Engine 5.6+ compatibility)"
+    echo -e "${CYAN}2)${NC} Use driver 580+ (latest - enhanced performance and features)"
     echo ""
-    
-    # Default to verified driver
-    NVIDIA_DRIVER_VERSION="570"
+
+    # Default to driver 575
+    NVIDIA_DRIVER_VERSION="575"
     if [ "${SCRIPT_NON_INTERACTIVE:-}" = "true" ]; then
-        echo -e "${BLUE}🤖 Non-interactive mode: Using verified driver 570${NC}"
+        echo -e "${BLUE}🤖 Non-interactive mode: Using driver 575${NC}"
     else
         echo -n "Select driver version (1 or 2) [default: 1]: "
         read -t 30 driver_choice || driver_choice="1"
-        
+
         case "${driver_choice:-1}" in
-            2|575|575+)
-                NVIDIA_DRIVER_VERSION="575"
-                echo -e "${CYAN}✓ Selected driver 575+ for Unreal Engine 5.6+ compatibility${NC}"
-                echo -e "${YELLOW}⚠️  Note: This is a newer driver version - monitor installation carefully${NC}"
+            2|580|580+)
+                NVIDIA_DRIVER_VERSION="580"
+                echo -e "${CYAN}✓ Selected driver 580+ for enhanced performance${NC}"
+                echo -e "${YELLOW}⚠️  Note: This is the latest driver version - recommended by NVIDIA GPU Operator v25.3.4${NC}"
                 ;;
             *)
-                echo -e "${GREEN}✓ Using verified driver 570 (production-tested)${NC}"
+                echo -e "${GREEN}✓ Using driver 575+ for Unreal Engine 5.6+ compatibility${NC}"
                 ;;
         esac
     fi
@@ -2709,11 +2725,12 @@ install_gpu_operator() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo -e "Current installation: ${YELLOW}Driver ${NVIDIA_DRIVER_VERSION}+${NC}"
     echo ""
-    if [ "$NVIDIA_DRIVER_VERSION" = "570" ]; then
-        echo -e "${BLUE}🎮 To upgrade to driver 575+ later (for Unreal Engine 5.6+):${NC}"
+    if [ "$NVIDIA_DRIVER_VERSION" = "575" ]; then
+        echo -e "${GREEN}✓ Using driver 575+ - ready for Unreal Engine 5.6+${NC}"
+        echo -e "${BLUE}💡 To upgrade to driver 580+ later:${NC}"
         echo "   1. Update the GPU Operator with newer driver version:"
         echo "      helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator \\"
-        echo "        --reuse-values --set driver.version='>=575.48.31' \\"
+        echo "        --reuse-values --set driver.version='>=580.82.07' \\"
         echo "        --set driver.env[4].name=NVIDIA_DRIVER_CAPABILITIES \\"
         echo "        --set-string driver.env[4].value='compute,utility,graphics'"
         echo ""
@@ -2723,7 +2740,7 @@ install_gpu_operator() {
         echo "   3. Verify new driver version:"
         echo "      kubectl exec -n gpu-operator \$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi"
     else
-        echo -e "${CYAN}✓ Using driver 575+ - ready for Unreal Engine 5.6+${NC}"
+        echo -e "${CYAN}✓ Using driver 580+ - latest recommended version${NC}"
         echo -e "${BLUE}💡 To check driver status:${NC}"
         echo "   kubectl exec -n gpu-operator \$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi"
     fi
