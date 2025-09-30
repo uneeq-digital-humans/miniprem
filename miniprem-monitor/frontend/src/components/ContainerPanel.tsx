@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ContainerStatus, StatusType } from '../types/monitor';
+import { ContainerStatus, StatusType, SystemInfo } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
 import { RefreshCw, Eye, EyeOff, Play, Square, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
@@ -12,6 +12,7 @@ interface ContainerPanelProps {
   onStartContainer?: (containerName: string) => void;
   onStopContainer?: (containerName: string) => void;
   containerLoading?: string | null;
+  systemInfo?: SystemInfo | null;
 }
 
 // Define filter types
@@ -24,7 +25,8 @@ export function ContainerPanel({
   onViewLogs,
   onStartContainer,
   onStopContainer,
-  containerLoading = null
+  containerLoading = null,
+  systemInfo = null
 }: ContainerPanelProps) {
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterType>('all');
@@ -119,6 +121,15 @@ export function ContainerPanel({
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
             <div className="w-1 h-6 bg-gradient-uneeq rounded mr-3"></div>
             Docker Containers
+            {systemInfo && systemInfo.docker && (
+              <div
+                className={clsx(
+                  'ml-3 w-3 h-3 rounded-full',
+                  systemInfo.docker.available ? 'bg-status-healthy' : 'bg-status-error'
+                )}
+                title={systemInfo.docker.available ? 'Available' : `Unavailable: ${systemInfo.docker.error || 'Unknown error'}`}
+              />
+            )}
           </h2>
 
           <button

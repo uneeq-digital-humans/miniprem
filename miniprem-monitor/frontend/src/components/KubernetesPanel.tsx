@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
-import { PodStatus, StatusType } from '../types/monitor';
+import { PodStatus, StatusType, SystemInfo } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
 import { ClusterSelector, ClusterInfo } from './ClusterSelector';
 import { RegionSelector } from './RegionSelector';
@@ -43,6 +43,7 @@ interface KubernetesPanelProps {
   onStartService?: (region: string) => void;
   onStopService?: (region: string) => void;
   serviceLoading?: boolean;
+  systemInfo?: SystemInfo | null;
 }
 
 export function KubernetesPanel({
@@ -64,7 +65,8 @@ export function KubernetesPanel({
   onRegionSelect,
   onStartService,
   onStopService,
-  serviceLoading = false
+  serviceLoading = false,
+  systemInfo = null
 }: KubernetesPanelProps) {
   const [expandedPod, setExpandedPod] = useState<string | null>(null);
   const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
@@ -156,6 +158,15 @@ export function KubernetesPanel({
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center mb-3">
           <div className="w-1 h-6 bg-gradient-uneeq rounded mr-3"></div>
           Kubernetes Pods
+          {systemInfo && systemInfo.kubernetes && (
+            <div
+              className={clsx(
+                'ml-3 w-3 h-3 rounded-full',
+                systemInfo.kubernetes.available ? 'bg-status-healthy' : 'bg-status-error'
+              )}
+              title={systemInfo.kubernetes.available ? 'Available' : `Unavailable: ${systemInfo.kubernetes.error || 'Unknown error'}`}
+            />
+          )}
         </h2>
 
         {/* Controls - Responsive Layout */}

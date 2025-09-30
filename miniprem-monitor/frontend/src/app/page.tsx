@@ -625,6 +625,7 @@ Available Clusters: ${availableClusters.length}`;
             onStartContainer={handleStartContainer}
             onStopContainer={handleStopContainer}
             containerLoading={containerLoading}
+            systemInfo={systemInfo}
           />
 
           {/* Kubernetes Pods - Full Width */}
@@ -648,33 +649,10 @@ Available Clusters: ${availableClusters.length}`;
             onStartService={handleStartKubernetesService}
             onStopService={handleStopKubernetesService}
             serviceLoading={kubernetesServiceLoading}
+            systemInfo={systemInfo}
           />
         </div>
 
-        {/* Service Availability Status */}
-        {systemInfo && systemInfo.docker && systemInfo.kubernetes && (
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="card p-4">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Docker Status</h3>
-              <div className="flex items-center space-x-2">
-                <div className={`w-3 h-3 rounded-full ${systemInfo.docker.available ? 'bg-status-healthy' : 'bg-status-error'}`} />
-                <span className="text-sm text-gray-600 dark:text-gray-300">
-                  {systemInfo.docker.available ? 'Available' : `Unavailable: ${systemInfo.docker.error || 'Unknown error'}`}
-                </span>
-              </div>
-            </div>
-
-            <div className="card p-4">
-              <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2">Kubernetes Status</h3>
-              <div className="flex items-center space-x-2">
-                <div className={`w-3 h-3 rounded-full ${systemInfo.kubernetes.available ? 'bg-status-healthy' : 'bg-status-error'}`} />
-                <span className="text-sm text-gray-600 dark:text-gray-300">
-                  {systemInfo.kubernetes.available ? 'Available' : `Unavailable: ${systemInfo.kubernetes.error || 'Unknown error'}`}
-                </span>
-              </div>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* Log Viewer Modal */}
