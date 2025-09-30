@@ -55,10 +55,8 @@ docker/fast-whisper/models/
 # Commit guide file
 commits.mdc
 
-# Claude
+# Claude (local agent definitions and personal notes)
 .claude/
-
-CLAUDE.md
 
 .playwright-mcp/
 customer-package/
