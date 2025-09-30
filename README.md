@@ -1,6 +1,6 @@
 <div align="center">
 
-![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
 
 # MiniPrem Platform
 
@@ -372,7 +372,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 **© 2025 UneeQ - A FaceMe Company. All rights reserved.**
 
-![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
 
 **Digital Humans. Unlimited Possibilities.**
 
