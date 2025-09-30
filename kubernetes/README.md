@@ -1,4 +1,12 @@
+<div align="center">
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
 # Renny EKS Deployment Solution
+
+> Production-ready Kubernetes deployment for Renny digital humans on AWS EKS
+
+</div>
 
 ## Table of Contents
 
@@ -1745,3 +1753,25 @@ helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator
 - Terraform state should be stored in S3 with versioning
 - Consider using Velero for Kubernetes backup
 - Persistent volumes use EBS with snapshot capabilities
+
+---
+
+## License
+
+This Kubernetes deployment is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

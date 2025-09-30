@@ -1,6 +1,26 @@
+<div align="center">
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
 # MiniPrem Monitor
 
-Real-time monitoring dashboard for Docker containers and Kubernetes pods with UneeQ branding.
+> Real-time monitoring dashboard for Docker containers and Kubernetes pods with UneeQ branding
+
+</div>
+
+## Table of Contents
+
+- [Architecture](#architecture)
+- [Quick Start](#quick-start)
+- [Features](#features)
+- [API Endpoints](#api-endpoints)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Docker Support](#docker-support)
+- [Troubleshooting](#troubleshooting)
+- [Project Structure](#project-structure)
+- [License](#license)
+- [Copyright](#copyright)
 
 ## Architecture
 
@@ -231,4 +251,20 @@ miniprem-monitor/
 
 ## License
 
-Internal MiniPrem project - All rights reserved.
+This monitoring dashboard is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

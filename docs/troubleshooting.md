@@ -1,6 +1,24 @@
-# Troubleshooting Guide
+<div align="center">
 
-This guide provides solutions for common issues you might encounter when running the MiniPrem platform.
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+# MiniPrem Troubleshooting Guide
+
+> Solutions for common issues when running the MiniPrem platform
+
+</div>
+
+## Table of Contents
+
+- [General Troubleshooting Steps](#general-troubleshooting-steps)
+- [vLLM Issues](#vllm-issues)
+- [Flowise Issues](#flowise-issues)
+- [Renny Issues](#renny-issues)
+- [Monitoring Issues](#monitoring-issues)
+- [Network Issues](#network-issues)
+- [Resource Issues](#resource-issues)
+- [License](#license)
+- [Copyright](#copyright)
 
 ## General Troubleshooting Steps
 
@@ -308,3 +326,25 @@ This guide provides solutions for common issues you might encounter when running
 3. Prevent other applications from using the GPU during MiniPrem operation
 
 If you want to add more services or change your install type, re-run the installer and select the desired option.
+
+---
+
+## License
+
+This troubleshooting guide is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

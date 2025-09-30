@@ -1,6 +1,21 @@
-# Getting Started
+<div align="center">
 
-This guide will help you install and configure the MiniPrem platform on your system.
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+# Getting Started with MiniPrem
+
+> Quick installation and configuration guide for the MiniPrem platform
+
+</div>
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Installation](#installation)
+- [Managing the Platform](#managing-the-platform)
+- [Next Steps](#next-steps)
+- [License](#license)
+- [Copyright](#copyright)
 
 ## Prerequisites
 
@@ -102,3 +117,25 @@ Once your MiniPrem platform is up and running, proceed to:
 1. [Configure Flowise](flowise.md) to set up your conversation flows
 2. [Monitor Performance](monitoring.md) using Grafana dashboards
 3. [Customize Renny](renny.md) for your specific use case
+
+---
+
+## License
+
+This guide is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

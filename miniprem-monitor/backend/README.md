@@ -1,6 +1,26 @@
+<div align="center">
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
 # MiniPrem Monitor Backend
 
-A production-ready FastAPI backend for monitoring Docker containers and Kubernetes pods with real-time WebSocket updates. Built with security-first principles to prevent command injection attacks while providing comprehensive monitoring capabilities.
+> Production-ready FastAPI backend for monitoring Docker containers and Kubernetes pods with real-time WebSocket updates
+
+</div>
+
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [API Documentation](#api-documentation)
+- [Security Features](#security-features)
+- [Configuration](#configuration)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Performance Considerations](#performance-considerations)
+- [Integration Examples](#integration-examples)
+- [License](#license)
+- [Copyright](#copyright)
 
 ## Features
 
@@ -362,7 +382,9 @@ curl http://localhost:8000/api/kubernetes/pods | jq '.data'
 
 ## License
 
-This project is part of the MiniPrem platform. See the main project LICENSE file for details.
+This backend is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+
+---
 
 ## Support
 
@@ -371,3 +393,19 @@ For issues related to this monitoring backend:
 2. Review application logs with DEBUG level
 3. Verify Docker and kubectl connectivity independently
 4. Open an issue in the main MiniPrem repository
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

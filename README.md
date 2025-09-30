@@ -1,8 +1,28 @@
+<div align="center">
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
 # MiniPrem Platform
 
-![MiniPrem Logo](docs/images/logo.png)
-
 > A comprehensive digital human platform with LLM integration, real-time facial animation, and monitoring capabilities.
+
+</div>
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+- [Accessing Services](#accessing-services)
+- [Managing MiniPrem](#managing-miniprem)
+- [Internal Speech Processing (NEW_SPEECH_OVERRIDE)](#internal-speech-processing-new_speech_override)
+- [Docker Configuration](#docker-configuration)
+- [Kubernetes/EKS Deployment](#kuberneteseks-deployment)
+- [Additional Documentation](#additional-documentation)
+- [License](#license)
+- [Copyright](#copyright)
 
 ## Overview
 
@@ -225,237 +245,24 @@ MiniPrem uses two main Docker Compose files:
 
 The appropriate file is automatically selected based on your installation type.
 
-## Docker Basics
-
-This section covers essential Docker commands that will help you manage and monitor your MiniPrem installation.
-
-### Checking Docker Status
-
-Verify that Docker is running:
-```bash
-docker info
-```
-
-### Managing Containers
-
-List all running containers:
-```bash
-docker ps
-```
-
-List all containers (including stopped ones):
-```bash
-docker ps -a
-```
-
-View container logs:
-```bash
-docker logs <container_name>
-```
-
-For example, to view Flowise logs:
-```bash
-docker logs flowise
-```
-
-### Managing Images
-
-List all Docker images:
-```bash
-docker images
-```
-
-Remove unused images:
-```bash
-docker image prune
-```
-
-### Container Health Checks
-
-Check container health:
-```bash
-docker inspect --format='{{.State.Health.Status}}' <container_name>
-```
-
-For example, to check Flowise health:
-```bash
-docker inspect --format='{{.State.Health.Status}}' flowise
-```
-
-### Resource Usage
-
-View container resource usage:
-```bash
-docker stats
-```
-
-### Common Issues
-
-If you encounter issues:
-
-1. Check container status:
-   ```bash
-   docker ps -a
-   ```
-
-2. View container logs:
-   ```bash
-   docker logs <container_name>
-   ```
-
-3. Restart a specific container:
-   ```bash
-   docker restart <container_name>
-   ```
-
-4. Check container health:
-   ```bash
-   docker inspect <container_name>
-   ```
-
-### Useful Tips
-
-- Use `docker-compose` commands in the project directory to manage all services together:
-  ```bash
-  docker-compose ps    # View all services
-  docker-compose logs  # View all logs
-  ```
-
-- To view real-time logs with timestamps:
-  ```bash
-  docker logs -f --timestamps <container_name>
-  ```
-
-- To clean up unused resources:
-  ```bash
-  docker system prune
-  ```
-
-Remember that all MiniPrem services are managed through Docker, so these commands will help you monitor and troubleshoot your installation effectively.
+For Docker management commands and tips, see the [Docker documentation](https://docs.docker.com/) or run `docker --help`.
 
 ## Troubleshooting
 
-### Docker Authentication Issues
+For comprehensive troubleshooting guidance, see:
+- [Troubleshooting Guide](docs/troubleshooting.md) - Common issues and solutions
+- **Docker Issues**: `docker logs <container_name>` to view service logs
+- **GPU Issues**: Run `nvidia-smi` to verify GPU availability
+- **Configuration Issues**: Check `docker/configuration.dat` for correct UneeQ credentials
 
-If you encounter Docker authentication errors when pulling images:
-
-1. Ensure you have the correct Docker credentials
-2. Contact UneeQ for assistance with accessing their private image repository
-3. Run `docker login quay.io` with the credentials provided by UneeQ
-
-### Service Connectivity Issues
-
-If services cannot connect to each other:
-
-1. Check that all containers are running with `docker ps`
-2. Verify network connectivity with `docker network inspect uneeq-miniprem_default`
-3. Check container logs with `docker logs <container_name>`
-
-### LLM Performance Issues
-
-If the vLLM LLM is slow or unresponsive:
-
-1. Verify GPU availability with `nvidia-smi`
-2. Check vLLM logs with `docker logs vllm`
-3. Ensure the Gemma3 model was properly downloaded
-
-### Cloud Service Connection Issues
-
-If you cannot connect to UneeQ platform services:
-
-1. Verify your network connection
-2. Ensure your API keys are correctly entered
-3. Check for any IP restrictions on the UneeQ platform
-4. Contact UneeQ support for assistance
-
-### If the Digital Human starts but does not respond
-Verify the contents (cat, nano, vim) of docker/configuration.dat:
-```
-{
-  "Server": "prod-global",
-  "TenantId": "3f3122-5555-5555-o5o5o-99aEXAMPLE7823",
-  "JWSSecret": "MM99EXAMPLEXi3N/CZ3r3h32EXAMPLEq9iydXFKwuNNUwW0g9vmDRBxQ2c3kO0C9M/"
-}
-```
-The **TenantID** is available from the UneeQ admin portal. 
-The **JWSSecret** is the API Key.
-
-The TenantID is available from the UneeQ admin portal. 
-The JWSSecret is their API Key.
-
-Verify the Tenant ID by acccessing a customer account on the UneeQ Admin Portal. Before clicking on any tenant name, click the pencil/edit icon to the right of a tenant.
-
-The JWSSecret is the API key which you can verify on the same admin page, in the Security section.
-
-### If the Digital Human does not start
-GPU and Driver Troubleshooting
-
-When starting MiniPrem, if Renny fails to start, there could be an issue with either the GPU card or driver.
-
-Check Card and Driver Status by verifying card is physically installed:
-
-`lspci | grep -i nvidia`
-
-You should see a NVIDIA card listed if it is physically installed, regardless of the driver status.
-
-To check if drivers are installed:
-
-```
-dpkg -l | grep nvidia-driver
-lsmod | grep nvidia
-```
-If no output from either command, then no NVIDIA modules are loaded.
-
-If it does appear the drivers are loaded, verify they are running properly:
-`nvidia-smi`
-
-A typical nvidia-smi output should look like this:
-```
-+-----------------------------------------------------------------------------+
-| NVIDIA-SMI 580.XX.XX    Driver Version: 580.XX.XX    CUDA Version: 12.X     |
-+-----------------------------------------------------------------------------+
-| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
-|                               |                      |               MIG M. |
-|===============================+======================+======================|
-|   0  NVIDIA GeForce ...  Off | 00000000:01:00.0  On |                  N/A |
-| 30%   45C    P8    16W / 200W|    456MiB /  8192MiB |      2%      Default |
-|                               |                      |                  N/A |
-+-----------------------------------------------------------------------------+
-```
-
-Key things to look for:
-- Driver Version (top line) - should be 580.XX or higher
-- GPU Name
-
-If you see a `command not found` error, it usually means the NVIDIA drivers aren't installed properly.
-
-If you see "NVIDIA-SMI has failed" error, it usually means either:
-- The drivers aren't properly loaded
-- There's a conflict with Secure Boot
-- The drivers aren't compatible with your current kernel
-
-### To (Re)Install Nvidia Drivers
-Update Ubuntu Linux first and then install latest available NVIDIA driver.
-
+**Quick Diagnostic Commands:**
 ```bash
-sudo apt update
-sudo apt install nvidia-driver-580
+./miniprem.sh status  # Check service status
+docker ps -a          # View all containers
+nvidia-smi            # Verify GPU
 ```
 
-Before rebooting, verify loading the NVIDIA drivers manually:
-`sudo modprobe nvidia`
-
-If you see this specific message:
-
-`ERROR: could not insert 'nvidia': Key was rejected by service`
-
-The system is rejecting the NVIDIA module, likely because Secure Boot is enabled in the UEFI settings. To fix this issue, restart the computer and press DEL, F12, or the appropriate key during startup to access the BIOS settings. Find and disable the Secure Boot option in the BIOS menu. While NVIDIA drivers from official Ubuntu repositories are typically digitally signed, kernel updates sometimes prevent GPU drivers from loading properly.
-
-Once Secure Boot is disabled, you should be able to verify again if NVIDIA drivers are loaded once Ubuntu is booted:
-`lsmod | grep nvidia`
-
-If no output, no NVIDIA modules are loaded and you may need to reinstall the NVIDIA driver again.
+For persistent issues, contact UneeQ support with service logs.
 
 
 
@@ -552,3 +359,23 @@ For more detailed information, refer to the following guides:
 - [Renny Integration](docs/guides/renny.md)
 - [vLLM Integration](docs/guides/vllm.md)
 - [vLLM Official Documentation](https://vllm.readthedocs.io/en/latest/)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

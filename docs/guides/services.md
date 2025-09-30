@@ -1,6 +1,24 @@
+<div align="center">
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
 # MiniPrem Services Overview
 
-The MiniPrem platform consists of several integrated services that work together to provide a comprehensive digital human experience. This guide provides an overview of these services and how they interact.
+> Understanding the architecture and integration of MiniPrem platform services
+
+</div>
+
+## Table of Contents
+
+- [Core Services](#core-services)
+- [Service Architecture](#service-architecture)
+- [Service Dependencies](#service-dependencies)
+- [Environment Variables](#environment-variables)
+- [Volumes](#volumes)
+- [Network Configuration](#network-configuration)
+- [Service Health Checks](#service-health-checks)
+- [License](#license)
+- [Copyright](#copyright)
 
 ## Core Services
 
@@ -106,3 +124,25 @@ healthcheck:
 ```
 
 These health checks are used to coordinate service startup dependencies.
+
+---
+
+## License
+
+This guide is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://assets.uneeq.io/logos/uneeq-logo-color.svg)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>
