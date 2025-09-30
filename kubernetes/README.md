@@ -651,6 +651,104 @@ helm upgrade renny ./renny-chart.tgz -n uneeq-renderer -f values/renny-values.ya
 
 ## 🔧 Operations
 
+### Configuring GPU Time-Slicing
+
+GPU time-slicing allows multiple Renny pods to share a single physical GPU, significantly reducing costs. All GPU time-slicing configuration is managed in a **single location**: [values/renny-values.yaml](values/renny-values.yaml).
+
+**Configuration Structure:**
+
+```yaml
+# GPU time-slicing configuration
+gpuTimeSlicing:
+  enabled: true
+  replicasPerGpu: 2  # How many Renny pods can run on one GPU (time-slicing multiplier)
+
+deployment:
+  nodeType: renny
+  totalReplicas: 4   # Total number of Renny pods to deploy
+  # Note: totalReplicas should be a multiple of replicasPerGpu
+  # Example: 4 total pods ÷ 2 pods per GPU = 2 physical GPUs needed
+
+resources:
+  limits:
+    nvidia.com/gpu: 1       # Each pod requests 1 "GPU share"
+    memory: "7Gi"           # Per-pod memory allocation
+    cpu: "3600m"            # Per-pod CPU allocation (3.6 cores)
+```
+
+**How to Modify:**
+
+1. **Change pods per GPU** (e.g., from 2 to 4):
+   ```yaml
+   gpuTimeSlicing:
+     replicasPerGpu: 4  # Now 4 pods can share 1 GPU
+   ```
+
+2. **Change total pod count**:
+   ```yaml
+   deployment:
+     totalReplicas: 8  # Deploy 8 total pods (requires 2 GPUs with replicasPerGpu: 4)
+   ```
+
+3. **Adjust per-pod resources** (if needed):
+   ```yaml
+   resources:
+     limits:
+       memory: "8Gi"    # Increase memory per pod
+       cpu: "4000m"     # Increase CPU per pod
+   ```
+
+**Apply Changes:**
+
+Users can update these values and apply them without redeploying the entire cluster:
+
+```bash
+# Option 1: Re-run deployment script (updates ConfigMap automatically)
+cd kubernetes/
+./scripts/deploy.sh
+
+# Option 2: Manually update ConfigMap and restart GPU device plugins
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: renny-time-slicing-config
+  namespace: gpu-operator
+data:
+  renny: |-
+    version: v1
+    flags:
+      migStrategy: none
+    sharing:
+      timeSlicing:
+        resources:
+        - name: nvidia.com/gpu
+          replicas: 4  # Match replicasPerGpu from renny-values.yaml
+EOF
+
+# Restart device plugin to apply changes
+kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
+
+# Option 3: Update Renny deployment with new replica count
+helm upgrade renny ./renny-chart.tgz -n uneeq-renderer -f values/renny-values.yaml
+```
+
+**Verification:**
+
+```bash
+# Check virtual GPU capacity (should equal physical GPUs × replicasPerGpu)
+kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" == "renny") | "\(.metadata.name): \(.status.allocatable."nvidia.com/gpu" // "0") virtual GPUs"'
+
+# Check running Renny pods
+kubectl get pods -n uneeq-renderer -l app=renny
+```
+
+**Important Notes:**
+- `totalReplicas` must be a multiple of `replicasPerGpu` for optimal distribution
+- Higher `replicasPerGpu` values increase cost savings but may impact performance if pods are GPU-intensive
+- Typical Renny workloads use ~30% GPU utilization, making 2-4 replicas per GPU ideal
+- The deploy.sh script automatically generates the GPU operator ConfigMap from these values
+
 ### Scaling Renny Instances
 
 Scale between 10-20 instances:

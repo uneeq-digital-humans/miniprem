@@ -1,9 +1,22 @@
 # Renny Helm values
 image: "facemeproduction/renny:5.6speechanim"
 
+# GPU time-slicing configuration
+# Controls how many Renny pods share a single physical GPU
+gpuTimeSlicing:
+  enabled: true
+  replicasPerGpu: 2  # How many Renny pods can run on one GPU (time-slicing multiplier)
+
+  # ConfigMap configuration for GPU operator
+  configMap:
+    name: renny-time-slicing-config
+    namespace: gpu-operator
+
 deployment:
   nodeType: renny
-  replicas: 4  # Production setting - 2 per Renny node
+  totalReplicas: 4  # Total number of Renny pods to deploy
+  # Note: totalReplicas should be a multiple of gpuTimeSlicing.replicasPerGpu
+  # Example: 4 total pods ÷ 2 pods per GPU = 2 physical GPUs needed
 
 renderer:
   # Required for secret template
@@ -152,3 +165,5 @@ env:
     value: "all"
   - name: NVIDIA_DRIVER_CAPABILITIES
     value: "all"
+  - name: NEW_SPEECH_OVERRIDE
+    value: 1

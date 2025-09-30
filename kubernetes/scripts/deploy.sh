@@ -2750,18 +2750,32 @@ install_gpu_operator() {
 # Configure GPU time-slicing for production efficiency
 configure_gpu_time_slicing() {
     echo "🔧 Configuring GPU time-slicing for production efficiency..."
-    
+
+    # Read time-slicing replicas from renny-values.yaml
+    local REPLICAS_PER_GPU=$(yq eval '.gpuTimeSlicing.replicasPerGpu' "$KUBERNETES_DIR/values/renny-values.yaml")
+    local CONFIGMAP_NAME=$(yq eval '.gpuTimeSlicing.configMap.name' "$KUBERNETES_DIR/values/renny-values.yaml")
+    local CONFIGMAP_NAMESPACE=$(yq eval '.gpuTimeSlicing.configMap.namespace' "$KUBERNETES_DIR/values/renny-values.yaml")
+
+    # Validate values
+    if [ -z "$REPLICAS_PER_GPU" ] || [ "$REPLICAS_PER_GPU" = "null" ]; then
+        echo "⚠️  Warning: gpuTimeSlicing.replicasPerGpu not found in renny-values.yaml, defaulting to 2"
+        REPLICAS_PER_GPU=2
+    fi
+
+    echo "📊 GPU Time-Slicing Configuration:"
+    echo "   Replicas per GPU: $REPLICAS_PER_GPU"
+    echo "   ConfigMap: $CONFIGMAP_NAME (namespace: $CONFIGMAP_NAMESPACE)"
+
     # Check if time-slicing config already exists
-    if kubectl get configmap renny-time-slicing-config -n gpu-operator >/dev/null 2>&1; then
-        echo "✓ GPU time-slicing configuration already exists"
-    else
-        echo "Creating GPU time-slicing configuration..."
+    if kubectl get configmap "$CONFIGMAP_NAME" -n "$CONFIGMAP_NAMESPACE" >/dev/null 2>&1; then
+        echo "✓ GPU time-slicing configuration already exists, updating with current values..."
+        # Update existing ConfigMap with values from renny-values.yaml
         kubectl apply -f - <<EOF
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: renny-time-slicing-config
-  namespace: gpu-operator
+  name: $CONFIGMAP_NAME
+  namespace: $CONFIGMAP_NAMESPACE
 data:
   renny: |-
     version: v1
@@ -2771,25 +2785,46 @@ data:
       timeSlicing:
         resources:
         - name: nvidia.com/gpu
-          replicas: 2
+          replicas: $REPLICAS_PER_GPU
 EOF
-        echo "✓ GPU time-slicing ConfigMap created"
+        echo "✓ GPU time-slicing ConfigMap updated with replicas: $REPLICAS_PER_GPU"
+    else
+        echo "Creating GPU time-slicing configuration from renny-values.yaml..."
+        kubectl apply -f - <<EOF
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: $CONFIGMAP_NAME
+  namespace: $CONFIGMAP_NAMESPACE
+data:
+  renny: |-
+    version: v1
+    flags:
+      migStrategy: none
+    sharing:
+      timeSlicing:
+        resources:
+        - name: nvidia.com/gpu
+          replicas: $REPLICAS_PER_GPU
+EOF
+        echo "✓ GPU time-slicing ConfigMap created with replicas: $REPLICAS_PER_GPU"
     fi
     
     # Update ClusterPolicy to use time-slicing for renny nodes
     echo "Applying time-slicing configuration to ClusterPolicy..."
-    kubectl patch clusterpolicy cluster-policy --type='merge' -p='{"spec":{"devicePlugin":{"config":{"name":"renny-time-slicing-config","default":"renny"}}}}'
-    
+    kubectl patch clusterpolicy cluster-policy --type='merge' -p="{\"spec\":{\"devicePlugin\":{\"config\":{\"name\":\"$CONFIGMAP_NAME\",\"default\":\"renny\"}}}}"
+
     # Wait for device plugin pods to restart and apply the configuration
     echo "⏳ Waiting for GPU device plugin pods to restart with time-slicing..."
     kubectl wait --for=condition=ready pod -l app=nvidia-device-plugin-daemonset -n gpu-operator --timeout=180s || {
         echo "⚠️  Device plugin pods not ready yet, continuing - they will restart automatically"
     }
-    
+
     # Verify time-slicing is working by checking GPU capacity
     echo "⏳ Verifying GPU time-slicing configuration..."
     local retries=0
     local max_retries=12  # 2 minutes total
+    local expected_multiplier=$REPLICAS_PER_GPU
     while [ $retries -lt $max_retries ]; do
         local renny_gpu_capacity=$(kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" == "renny") | .status.allocatable."nvidia.com/gpu" // "0"' | awk '{sum += $1} END {print sum+0}')
 
@@ -2798,47 +2833,26 @@ EOF
             renny_gpu_capacity=0
         fi
 
-        if [ "$renny_gpu_capacity" -gt "$RENNY_DESIRED_SIZE" ]; then
+        local expected_capacity=$((RENNY_DESIRED_SIZE * expected_multiplier))
+        if [ "$renny_gpu_capacity" -ge "$expected_capacity" ]; then
             echo "✅ GPU time-slicing successfully configured!"
-            echo "   Renny nodes now advertise $renny_gpu_capacity virtual GPUs (${RENNY_DESIRED_SIZE} physical GPUs × 2)"
+            echo "   Renny nodes now advertise $renny_gpu_capacity virtual GPUs (${RENNY_DESIRED_SIZE} physical GPUs × $expected_multiplier)"
             break
         else
             echo "⏳ Waiting for time-slicing to take effect... ($((retries + 1))/$max_retries)"
+            echo "   Expected: $expected_capacity virtual GPUs, Current: $renny_gpu_capacity"
             sleep 10
             ((retries++))
         fi
     done
-    
+
     if [ $retries -eq $max_retries ]; then
         echo "⚠️  Time-slicing verification timeout - configuration applied but may need more time"
         echo "   This is normal and pods should work correctly once device plugins fully restart"
     fi
-    
+
     echo "📊 Current GPU capacity per node:"
     kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."uneeq.io/node-type" | . == "renny") | "\(.metadata.name) (\(.metadata.labels."uneeq.io/node-type")): \(.status.allocatable."nvidia.com/gpu" // "0") GPUs"'
-    
-    # Also create the standalone config file for manual use
-    if [ ! -f "$KUBERNETES_DIR/gpu-time-slicing-config.yaml" ]; then
-        echo "📄 Creating standalone GPU time-slicing config file..."
-        cat > "$KUBERNETES_DIR/gpu-time-slicing-config.yaml" <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: renny-time-slicing-config
-  namespace: gpu-operator
-data:
-  renny: |-
-    version: v1
-    flags:
-      migStrategy: none
-    sharing:
-      timeSlicing:
-        resources:
-        - name: nvidia.com/gpu
-          replicas: 2
-EOF
-        echo "✓ GPU time-slicing config file created at: $KUBERNETES_DIR/gpu-time-slicing-config.yaml"
-    fi
     
     # Verify and fix ASG desired capacities after rolling updates
     echo "Verifying Auto Scaling Group configurations..."
