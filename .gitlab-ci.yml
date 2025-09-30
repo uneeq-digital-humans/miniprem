@@ -16,6 +16,7 @@ pages:
 claude:
   stage: ai
   image: node:24-alpine3.21
+  allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "web"'
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
