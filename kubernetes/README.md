@@ -550,7 +550,7 @@ The **NVIDIA GPU Operator** handles driver installation completely automatically
 ```bash
 # 1. GPU Operator detects Ubuntu 22.04 nodes with NVIDIA hardware
 # 2. Automatically installs:
-#    - NVIDIA drivers (570+ or 575+ based on your selection)  
+#    - NVIDIA drivers (575+ or 580+ based on your selection)
 #    - CUDA runtime libraries
 #    - Container runtime integration (containerd)
 #    - GPU device plugin for Kubernetes
@@ -562,8 +562,8 @@ The **NVIDIA GPU Operator** handles driver installation completely automatically
 #    - Proper GLIBC 2.35 linkage
 
 # 4. Configures advanced capabilities:
-#    - Driver 570+: compute,utility capabilities
-#    - Driver 575+: compute,utility,graphics capabilities (Unreal Engine)
+#    - Driver 575+: compute,utility,graphics capabilities (Production Tested)
+#    - Driver 580+: compute,utility,graphics capabilities (Latest + 5xxx GPU support)
 ```
 
 **✅ Benefits of GPU Operator Approach:**
@@ -577,30 +577,33 @@ The **NVIDIA GPU Operator** handles driver installation completely automatically
 
 During deployment, you'll be prompted to choose between two driver options:
 
-#### **📋 Driver 570+ (Recommended for Production)**
+#### **📋 Driver 575+ (Production Tested)**
 ```
 ✅ Production Ready - Verified and tested configuration
-✅ CUDA 12.4+ support for modern AI workloads  
-✅ Full Ubuntu 22.04 compatibility with GCC-12
-✅ Stable driver version with extensive validation
-✅ Automatic compilation with optimized build environment
-```
-
-#### **🎮 Driver 575+ (For Unreal Engine 5.6+)**
-```
 ✅ Enhanced Graphics - Advanced rendering capabilities
 ✅ NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
-✅ Latest Vulkan API support for Unreal Engine 5.6+
-✅ Optimized for high-end graphics workloads
-⚠️  Newer version - monitor installation carefully
+✅ Vulkan API support for Unreal Engine 5.6+
+✅ CUDA 12.6+ support for modern AI workloads
+✅ Full Ubuntu 22.04 compatibility with GCC-12
+✅ Stable and extensively validated
+```
+
+#### **🚀 Driver 580+ (Latest Release)**
+```
+✅ Latest NVIDIA driver features and optimizations
+✅ REQUIRED for NVIDIA 5xxx series GPUs (RTX 5090, etc.)
+✅ Enhanced performance improvements
+✅ Full graphics and compute capabilities
+✅ CUDA 12.8+ support
+⚠️  Newest release - monitor installation carefully
 ```
 
 **Decision Guide:**
-- **Choose 570+** for: Production deployments, maximum stability, proven compatibility
-- **Choose 575+** for: Latest Unreal Engine features, advanced graphics capabilities, development/testing
+- **Choose 575+** for: Production deployments, maximum stability, proven Unreal Engine 5.6+ compatibility
+- **Choose 580+** for: Latest GPU hardware (5xxx series), cutting-edge features, development/testing
 
 **GPU Capabilities:**
-- **CUDA Runtime**: 12.4+ (570 drivers) or 12.6+ (575 drivers)
+- **CUDA Runtime**: 12.6+ (575 drivers) or 12.8+ (580 drivers)
 - **Vulkan API Support**: Full graphics pipeline support for Renny rendering
 - **Compiler Support**: GCC-12 with Ubuntu 22.04 optimizations
 - **150GB EBS Storage**: Accommodates large AI container images (35GB+)
@@ -795,7 +798,7 @@ kubectl describe nodes -l uneeq.io/node-type=renny | grep nvidia.com/gpu
 **Expected Results:**
 - All GPU operator pods should be `Running` or `Completed`
 - GPU nodes should have label `nvidia.com/gpu.present=true`
-- `nvidia-smi` should show NVIDIA driver 570+ installed
+- `nvidia-smi` should show NVIDIA driver 575+ or 580+ installed
 - Nodes should show `nvidia.com/gpu: 1` in allocatable resources
 
 ### Monitoring
@@ -1073,7 +1076,7 @@ kubectl describe nodes | grep -A 10 "Allocatable" | grep nvidia
 
 #### GPU Verification for Unreal Engine 5.6
 
-**Verify GPUs are working with modern CUDA** (requires CUDA 12.4+ and NVIDIA 570+ drivers for Unreal Engine 5.6):
+**Verify GPUs are working with modern CUDA** (requires CUDA 12.6+ and NVIDIA 575+ drivers for Unreal Engine 5.6):
 ```bash
 # Test GPU functionality with modern CUDA runtime
 kubectl run gpu-test --rm -it --restart=Never \
@@ -1089,8 +1092,8 @@ kubectl run gpu-test-128 --rm -it --restart=Never \
 ```
 
 **Expected Output** for Unreal Engine 5.6 compatibility:
-- **Driver Version**: 570.0 or higher
-- **CUDA Version**: 12.4 or higher (12.8+ recommended for latest UE5.6 features)
+- **Driver Version**: 575.0 or higher (580.0+ required for 5xxx series GPUs)
+- **CUDA Version**: 12.6 or higher (12.8+ recommended for latest features)
 - **GPU**: Should show "NVIDIA A10G" or similar GPU model
 - **GPU Memory**: Available VRAM for rendering workloads
 
@@ -1273,8 +1276,8 @@ kubectl describe nodes -l uneeq.io/node-type=renny | grep -A10 "nvidia.com/gpu"
 kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi
 
 # Expected output should show:
-# - Driver Version: 570.XX.XX or 575.XX.XX
-# - CUDA Version: 12.4+ 
+# - Driver Version: 575.XX.XX or 580.XX.XX
+# - CUDA Version: 12.6+
 # - GPU: NVIDIA A10G (24GB VRAM)
 ```
 

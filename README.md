@@ -296,16 +296,19 @@ cd kubernetes
 
 The EKS deployment automatically handles NVIDIA GPU Operator installation. You'll be prompted to choose:
 
-1. **📋 Driver 570+** (Production Ready)
+1. **📋 Driver 575+** (Production Tested)
    - ✅ Verified and tested configuration
    - ✅ Maximum stability and compatibility
-   - ✅ GCC-12 + Ubuntu 22.04 optimized
-
-2. **🎮 Driver 575+** (Unreal Engine 5.6+)
-   - ✅ Enhanced graphics capabilities  
+   - ✅ Enhanced graphics capabilities
    - ✅ `compute,utility,graphics` driver capabilities
-   - ✅ Latest Vulkan API support
-   - ⚠️ Newer version - monitor carefully
+   - ✅ Vulkan API support for Unreal Engine 5.6+
+
+2. **🚀 Driver 580+** (Latest Release)
+   - ✅ Latest NVIDIA driver features
+   - ✅ **REQUIRED for NVIDIA 5xxx series GPUs** (RTX 5090, etc.)
+   - ✅ Enhanced performance optimizations
+   - ✅ Full graphics and compute capabilities
+   - ⚠️ Newest release - monitor for stability
 
 #### Upgrading NVIDIA Drivers
 

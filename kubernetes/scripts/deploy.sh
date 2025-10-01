@@ -1965,11 +1965,6 @@ validate_nvidia_driver_version() {
         "575.44.14"
     )
 
-    local known_versions_570=(
-        "570.86.15"
-        "570.124.06"
-    )
-
     # Fallback to well-documented working versions
     local known_versions_550=(
         "550.90.07"
@@ -1980,17 +1975,17 @@ validate_nvidia_driver_version() {
         "535.183.01"
         "535.129.03"
     )
-    
+
     echo "🔍 Validating NVIDIA driver version..." >&2
-    
+
     # Try versions based on requested version family
     local version_families=()
     if [ "$requested_version" = "580" ]; then
-        version_families=("580" "575" "570" "550" "535")
+        version_families=("580" "575" "550" "535")
     elif [ "$requested_version" = "575" ]; then
-        version_families=("575" "580" "570" "550" "535")
+        version_families=("575" "580" "550" "535")
     else
-        version_families=("570" "550" "535" "575" "580")
+        version_families=("575" "580" "550" "535")
     fi
 
     for family in "${version_families[@]}"; do
@@ -2177,11 +2172,11 @@ _check_registry_http() {
     return 1
 }
 
-# Helper function to try version family matching (580.*, 575.*, 570.*)
+# Helper function to try version family matching (580.*, 575.*)
 _try_version_family_match() {
     local requested_version="$1"
     local os_version="${2:-ubuntu22.04}"
-    local family="${requested_version%%.*}"  # Extract major version (580, 575, 570, etc.)
+    local family="${requested_version%%.*}"  # Extract major version (580, 575, etc.)
 
     # Define repositories in priority order
     local repositories=(
@@ -2193,7 +2188,6 @@ _try_version_family_match() {
     # Family-specific version lists (expandable)
     local versions_580=("580.82.07" "580.95.05")
     local versions_575=("575.57.08" "575.48.31" "575.36.04" "575.51.05" "575.51.10")
-    local versions_570=("570.47.06" "570.36.04" "570.58.14")
     local versions_5xx=("550.90.07" "535.183.01" "545.29.06")
 
     # Select version array based on family
@@ -2201,7 +2195,6 @@ _try_version_family_match() {
     case "$family" in
         "580") version_array_name="versions_580" ;;
         "575") version_array_name="versions_575" ;;
-        "570") version_array_name="versions_570" ;;
         "5"*) version_array_name="versions_5xx" ;;
         *) return 1 ;;
     esac
@@ -2262,7 +2255,7 @@ discover_available_drivers() {
     )
     
     # Known version families to try
-    local test_versions=("580.82.07" "580.95.05" "575.57.08" "575.48.31" "570.47.06" "570.36.04" "550.90.07" "535.183.01")
+    local test_versions=("580.82.07" "580.95.05" "575.57.08" "575.48.31" "550.90.07" "535.183.01")
     
     # Test each version against each repository
     for version in "${test_versions[@]}"; do
@@ -2283,7 +2276,7 @@ discover_available_drivers() {
     fi
     
     # Add Ubuntu package versions if available
-    for family in 580 575 570 550 535; do
+    for family in 580 575 550 535; do
         if _check_ubuntu_packages "${family}.0.0" &>/dev/null; then
             safe_array_append available_versions "${family}.x.x-ubuntu-package"
         fi
@@ -2599,12 +2592,6 @@ install_gpu_operator_with_retry() {
                 case "$exact_version" in
                     "575.57.08") exact_version="575.48.31" ;;
                     "575.48.31") exact_version="575.36.04" ;;
-                    *) exact_version="570.47.06" ;;  # Fallback to 570
-                esac
-            else
-                # Try next 570.x version
-                case "$exact_version" in
-                    "570.47.06") exact_version="570.36.04" ;;
                     *)
                         echo -e "${RED}❌ No more driver versions to try${NC}"
                         return 1

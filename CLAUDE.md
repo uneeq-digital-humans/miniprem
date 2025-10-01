@@ -91,7 +91,7 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ### Kubernetes Architecture (Production)
 - **EKS Cluster**: Production-ready with auto-scaling
 - **GPU Node Groups**: g5.4xlarge instances with NVIDIA A10G GPUs
-- **GPU Operator**: Automatic NVIDIA driver installation (570+ or 575+)
+- **GPU Operator**: Automatic NVIDIA driver installation (575+ or 580+)
 - **Multi-AZ**: High availability across 3 availability zones
 - **Time-Slicing**: Multiple pods per GPU for cost optimization
 
@@ -208,7 +208,7 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 
 ### Kubernetes GPU Management
 - **GPU Operator**: Handles automatic driver installation
-- **Driver Selection**: 570+ (production stable) or 575+ (Unreal Engine 5.6+)
+- **Driver Selection**: 575+ (production tested) or 580+ (latest + required for 5xxx GPUs)
 - **Time-Slicing Configuration**: All settings in `kubernetes/values/renny-values.yaml`
   - `gpuTimeSlicing.replicasPerGpu`: How many pods share 1 GPU (default: 2)
   - `deployment.totalReplicas`: Total pods to deploy (must be multiple of replicasPerGpu)
