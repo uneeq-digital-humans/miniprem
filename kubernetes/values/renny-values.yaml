@@ -20,12 +20,15 @@ deployment:
 
 renderer:
   # Required for secret template
+  a2f:
+    url: "http://localhost:52000"  # A2F service URL for internal speech processing
+
   cp:
     flowiseApiKey: ""        # Optional
-  
+
   launchDarkly:
     key: ""                  # Optional
-  
+
   dhop:
     apiKey: "your-dhop-api-key-here"
     tenantId: "your-dhop-tenant-id-here"

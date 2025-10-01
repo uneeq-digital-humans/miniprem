@@ -2977,9 +2977,14 @@ install_renny() {
     reliable_helm_operation "upgrade --install" "renny" "uneeq-renderer" \
         "$KUBERNETES_DIR/renny-chart.tgz" \
         -f "$KUBERNETES_DIR/values/renny-values.yaml"
-    
+
     echo "✓ Helm chart installed, now monitoring image pull progress..."
-    
+
+    # Set NEW_SPEECH_OVERRIDE environment variable for internal speech processing
+    echo "Setting NEW_SPEECH_OVERRIDE environment variable..."
+    kubectl set env deployment/renderer -n uneeq-renderer NEW_SPEECH_OVERRIDE="1" >/dev/null 2>&1 || true
+    echo "✓ NEW_SPEECH_OVERRIDE configured"
+
     # Wait for Renny pods to be ready
     echo "Waiting for Renny pods to be ready..."
     local max_attempts=60
