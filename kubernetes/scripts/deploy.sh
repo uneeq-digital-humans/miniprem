@@ -1527,14 +1527,19 @@ test_external_dependencies() {
 # Check prerequisites
 check_prerequisites() {
     echo "📋 Checking prerequisites..."
-    
+
     # Check for required tools
-    for tool in terraform aws kubectl helm jq curl; do
+    for tool in terraform aws kubectl helm jq yq curl; do
         if ! command -v $tool &> /dev/null; then
             echo -e "${RED}❌ $tool is not installed${NC}"
             echo "Please install $tool and try again"
             if [ "$tool" = "jq" ]; then
                 echo "Install jq: https://stedolan.github.io/jq/download/"
+            elif [ "$tool" = "yq" ]; then
+                echo "Install yq:"
+                echo "  macOS: brew install yq"
+                echo "  Linux: wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq && chmod +x /usr/bin/yq"
+                echo "  More info: https://github.com/mikefarah/yq"
             fi
             exit 1
         fi
