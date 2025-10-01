@@ -166,4 +166,10 @@ env:
   - name: NVIDIA_DRIVER_CAPABILITIES
     value: "all"
   - name: NEW_SPEECH_OVERRIDE
-    value: 1
+    value: "1"
+  - name: A2F_ADDRESS
+    value: "http://localhost:52000"
+  - name: A2F_AUDIO_DELAY_TIME_MS
+    value: "240"
+  - name: A2F_AUDIO_SAMPLE_RATE
+    value: "16000"
