@@ -14,7 +14,7 @@ usage() {
     echo -e $WHITE
     cat <<EOF
 $(basename "$0") [--platform-address <UneeQ platform address>] [--platform-key <UneeQ platform API key>] [--tenant <Tenant ID>] [--azure-region <Azure region>] [--azure-speech-key <Azure speech key>] [--renny-image <Docker image name for Renny>] [h]
-Install and configure Renny and A2F services on a laptop/kiosk
+Install and configure Renny digital human with internal speech processing on a laptop/kiosk
 
 Options:
     -h: usage
@@ -63,8 +63,8 @@ extract_url_components() {
 prompt_for_install_type() {
     INSTALL_TYPE=""
     echo "Select installation type:"
-    echo "1) Default Install (Renny + Audio2Face only)"
-    echo "2) Full Install (All services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, Whisper etc.)"
+    echo "1) Default Install (Renny with internal speech processing only)"
+    echo "2) Full Install (All services: Renny with internal speech, Flowise, vLLM, Grafana, Prometheus, RIME, Whisper etc.)"
     read -p "Enter choice [1-2]: " install_choice
     if [[ "$install_choice" == "1" ]]; then
         INSTALL_TYPE="default"
@@ -138,11 +138,9 @@ pull_required_images() {
             setup_rime_credentials
         fi
     else
-        # Only pull images for Renny and Audio2Face
-        info "Pulling Renny and Audio2Face images..."
+        # Only pull images for Renny with internal speech processing
+        info "Pulling Renny images..."
         $DOCKER_CMD pull facemeproduction/renny:0.484-37235
-        $DOCKER_CMD pull facemeproduction/audio2face_with_emotion:local-dev
-        $DOCKER_CMD pull facemeproduction/audio2face_anim_controller:local-dev
         
         # If using RIME in default install, pull RIME images
         if [ "$TTS_PROVIDER" = "rime" ]; then
@@ -833,18 +831,9 @@ start_miniprem() {
             warning "Failed to start RIME services"
         fi
     fi
-    
-    # Finally start A2F services last since they use lots of GPU
-    info "Starting A2F services..."
-    $DOCKER_CMD $COMPOSE_FILES up -d audio2face_with_emotion audio2face_controller
-    if [ $? -ne 0 ]; then
-        warning "Failed to start A2F services - may need more GPU memory"
-        warning "You can try starting them manually later with:"
-        warning "docker compose up -d audio2face_with_emotion audio2face_controller"
-    fi
-    
-    # Start Renny (required for both installation types)
-    info "Starting Renny digital human service..."
+
+    # Start Renny with internal speech processing (required for both installation types)
+    info "Starting Renny digital human service with internal speech processing..."
     $DOCKER_CMD $COMPOSE_FILES up -d renny
     if [ $? -ne 0 ]; then
         fatal "Failed to start Renny service"
@@ -1669,7 +1658,7 @@ main() {
 
     # Make sure PLATFORM_ADDRESS has a default value if it's empty
     if [ -z "$PLATFORM_ADDRESS" ]; then
-        PLATFORM_ADDRESS="wss://api.uneeq.io/signalling-service/v1/ws/renderer"
+        PLATFORM_ADDRESS="wss://api.enterprise.uneeq.io/signalling-service/v1/ws/renderer"
         # Also update it in the env file
         if grep -q "^DHOP_ADDRESS=" "docker/docker-compose.env"; then
             sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=$PLATFORM_ADDRESS|" "docker/docker-compose.env"

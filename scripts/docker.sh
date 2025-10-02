@@ -136,7 +136,7 @@ pull_docker_images() {
     fi
 
     # Docker login for UneeQ images
-    info "Logging in to UneeQ Docker registry for Renny and Audio2Face images..."
+    info "Logging in to UneeQ Docker registry for Renny images..."
     read -p "Enter UneeQ Docker registry username: " UNEEQ_USERNAME
     read -s -p "Enter UneeQ personal access token (PAT): " UNEEQ_PAT
     echo

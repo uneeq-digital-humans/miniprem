@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en" class="">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MiniPrem Upgrade Guide - UneeQ Digital Humans</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        'uneeq-navy': '#2D3142',
+                        'uneeq-dark-navy': '#1A1D29',
+                        'uneeq-orange': '#FF8C42',
+                        'uneeq-pink': '#E91E63',
+                        'uneeq-magenta': '#EC407A',
+                        'uneeq-light': '#FFF3E0',
+                        'uneeq-gray': '#64748B'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .uneeq-gradient {
+            background: linear-gradient(135deg, #FF8C42 0%, #FF6B6B 25%, #E91E63 50%, #EC407A 75%, #E91E63 100%);
+        }
+
+        .uneeq-gradient-text {
+            background: linear-gradient(135deg, #FF8C42 0%, #FF6B6B 25%, #E91E63 50%, #EC407A 75%, #E91E63 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .uneeq-favicon {
+            width: 60%;
+            height: 60%;
+            filter: brightness(0) invert(1);
+        }
+
+        .uneeq-favicon-dark {
+            width: 60%;
+            height: 60%;
+            filter: none;
+        }
+
+        .code-block {
+            background: #1a1a1a;
+            color: #f8f8f2;
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            white-space: pre-line;
+        }
+
+        .dark .code-block {
+            background: #2a2a2a;
+        }
+
+        .yaml-block {
+            background: #1a1a1a;
+            color: #f8f8f2;
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            white-space: pre;
+        }
+
+        .dark .yaml-block {
+            background: #2a2a2a;
+        }
+
+        .code-highlight-add {
+            background: rgba(46, 160, 67, 0.3);
+        }
+
+        .code-highlight-remove {
+            background: rgba(248, 81, 73, 0.3);
+        }
+
+        .code-comment {
+            color: #6A9955;
+        }
+
+        .step-number {
+            background: linear-gradient(135deg, #FF8C42 0%, #E91E63 100%);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            flex-shrink: 0;
+            box-shadow: 0 4px 12px rgba(233, 30, 99, 0.3);
+        }
+
+        .uneeq-logo {
+            height: 60px;
+            width: auto;
+        }
+
+        .uneeq-logo-footer {
+            height: 40px;
+            width: auto;
+        }
+
+        /* PDF-specific styles */
+        @media print {
+            .page-break {
+                page-break-before: always;
+            }
+
+            .no-page-break {
+                page-break-inside: avoid;
+            }
+
+            body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+
+            .uneeq-gradient,
+            .step-number {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+            }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 dark:bg-uneeq-dark-navy">
+    <!-- Header -->
+    <div class="bg-white dark:bg-uneeq-navy shadow-sm">
+        <div class="max-w-4xl mx-auto px-4 py-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-6">
+                    <!-- Actual UneeQ Logo -->
+                    <div class="flex items-center flex-shrink-0">
+                        <div class="uneeq-logo max-w-48">
+                            <img src="https://cdn.prod.website-files.com/63a5141427f9360ebfaf9e6e/67a3d63cb8e3e1732b47c086_UneEQ%20Logo.png" class="h-10 w-auto" />
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-right text-sm text-uneeq-gray dark:text-gray-300">
+                        <p class="font-semibold text-uneeq-navy dark:text-white">MiniPrem Upgrade</p>
+                        <p>Version 5.6mha • January 2025</p>
+                    </div>
+                    <!-- Dark Mode Toggle -->
+                    <button id="dark-mode-toggle" class="w-10 h-10 rounded-full flex items-center justify-center text-uneeq-gray dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                        <svg id="sun-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                        <svg id="moon-icon" class="w-6 h-6 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="max-w-4xl mx-auto px-4 py-8">
+        <!-- Introduction -->
+        <div class="bg-white dark:bg-uneeq-navy rounded-lg shadow-sm p-6 mb-8 no-page-break border-l-4 border-uneeq-pink">
+            <div class="text-center mb-6">
+                <h2 class="text-3xl font-bold uneeq-gradient-text mb-4">MiniPrem Upgrade Instructions</h2>
+                <p class="text-lg text-uneeq-gray dark:text-gray-300">Follow these simple steps to upgrade your MiniPrem installation to
+                    version 5.6mha</p>
+            </div>
+
+            <div class="bg-uneeq-light dark:bg-uneeq-dark-navy border-l-4 border-uneeq-orange p-4 rounded">
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-uneeq-orange mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <p class="text-uneeq-navy dark:text-gray-200 font-medium">This upgrade includes important improvements to speech
+                        processing, removes deprecated audio2face components, and requires Nvidia driver version 580.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 1: Install Nvidia Driver -->
+        <div class="bg-white dark:bg-uneeq-navy rounded-lg shadow-sm p-6 mb-8 page-break">
+            <div class="flex items-start space-x-4 mb-4">
+                <div class="step-number">1</div>
+                <div>
+                    <h3 class="text-xl font-semibold text-uneeq-navy dark:text-white mb-2">Install Nvidia Driver Version 580</h3>
+                    <p class="text-uneeq-gray dark:text-gray-300">Before upgrading MiniPrem, you must install the latest Nvidia driver
+                        version 580 on your Ubuntu system.</p>
+                </div>
+            </div>
+
+            <div class="ml-14">
+                <div class="bg-red-50 dark:bg-red-900/20 border-l-4 border-red-400 p-4 mb-4 rounded">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-red-400 mr-2 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
+                            </path>
+                        </svg>
+                        <div>
+                            <p class="text-sm text-red-800 dark:text-red-300">
+                                <strong>Critical:</strong> This step must be completed before starting Docker
+                                containers. A system reboot is required after driver installation.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Step 1.1: Check Available Drivers</h4>
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">For Desktop systems:</p>
+                        <div class="code-block">sudo ubuntu-drivers list</div>
+                    </div>
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">For Server systems:</p>
+                        <div class="code-block">sudo ubuntu-drivers list --gpgpu</div>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-uneeq-dark-navy p-3 rounded border-l-4 border-gray-300 dark:border-gray-600">
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">You should see output similar to:</p>
+                        <div class="text-xs font-mono text-gray-600 dark:text-gray-400">
+                            nvidia-driver-470<br>
+                            nvidia-driver-535<br>
+                            nvidia-driver-550<br>
+                            <span class="bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300 px-1 rounded">nvidia-driver-580</span><br>
+                            nvidia-driver-580-open
+                        </div>
+                    </div>
+                </div>
+
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Step 1.2: Install Nvidia Driver 580</h4>
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">Install the specific driver version 580:</p>
+                        <div class="code-block">sudo ubuntu-drivers install nvidia-driver-580</div>
+                    </div>
+                    <div class="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-4 rounded">
+                        <div class="flex">
+                            <svg class="w-5 h-5 text-yellow-400 mr-2 mt-0.5" fill="none" stroke="currentColor"
+                                viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
+                                </path>
+                            </svg>
+                            <p class="text-sm text-yellow-800 dark:text-yellow-300">
+                                <strong>Alternative:</strong> If version 580 is not available, use <code
+                                    class="bg-yellow-100 dark:bg-yellow-900/50 px-1 rounded">sudo ubuntu-drivers install</code> to
+                                automatically install the latest compatible driver.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Step 1.3: Reboot Your System</h4>
+                <div class="space-y-4 mb-6">
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">Reboot the system to load the new driver:</p>
+                        <div class="code-block">sudo reboot</div>
+                    </div>
+                </div>
+
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Step 1.4: Verify Installation</h4>
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">After reboot, confirm the driver version:</p>
+                        <div class="code-block">nvidia-smi</div>
+                    </div>
+                    <div class="bg-green-50 dark:bg-green-900/20 p-4 rounded border-l-4 border-green-400">
+                        <p class="text-sm text-green-800 dark:text-green-300 mb-2">
+                            <strong>Expected Output:</strong> You should see driver version 580.xx displayed in the
+                            top-left of the nvidia-smi output.
+                        </p>
+                        <div class="text-xs font-mono text-green-700 dark:text-green-300 bg-green-100 dark:bg-green-900/50 p-2 rounded">
+                            +-----------------------------------------------------------------------------------------+<br>
+                            | NVIDIA-SMI 580.13.xx Driver Version: 580.13.xx CUDA Version: 12.x |
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Update Docker Image -->
+        <div class="bg-white dark:bg-uneeq-navy rounded-lg shadow-sm p-6 mb-8 page-break">
+            <div class="flex items-start space-x-4 mb-4">
+                <div class="step-number">2</div>
+                <div>
+                    <h3 class="text-xl font-semibold text-uneeq-navy dark:text-white mb-2">Update Docker Image Version</h3>
+                    <p class="text-uneeq-gray dark:text-gray-300">Locate and edit your <code
+                            class="bg-gray-100 dark:bg-uneeq-dark-navy dark:text-gray-200 px-2 py-1 rounded text-sm text-uneeq-navy">docker-compose.yml</code> or
+                        <code
+                            class="bg-gray-100 dark:bg-uneeq-dark-navy dark:text-gray-200 px-2 py-1 rounded text-sm text-uneeq-navy">docker-compose.default.yml</code>
+                        file.
+                    </p>
+                </div>
+            </div>
+
+            <div class="ml-14">
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Find the image property and update it:</h4>
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">❌ Old version:</p>
+                        <div class="code-block">
+                            <span class="code-highlight-remove">image: facemeproduction/renny:previous-version</span>
+                        </div>
+                    </div>
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">✅ New version:</p>
+                        <div class="code-block">
+                            <span class="code-highlight-add">image: facemeproduction/renny:5.6mha</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-yellow-50 dark:bg-yellow-900/20 border-l-4 border-yellow-400 p-4 mt-4 rounded">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-yellow-400 mr-2 mt-0.5" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z">
+                            </path>
+                        </svg>
+                        <p class="text-sm text-yellow-800 dark:text-yellow-300">
+                            <strong>Important:</strong> Make sure to update the exact image line in your docker-compose
+                            file. The image property is typically under the main service definition.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Add Environment Variable -->
+        <div class="bg-white dark:bg-uneeq-navy rounded-lg shadow-sm p-6 mb-8 page-break">
+            <div class="flex items-start space-x-4 mb-4">
+                <div class="step-number">3</div>
+                <div>
+                    <h3 class="text-xl font-semibold text-uneeq-navy dark:text-white mb-2">Add New Environment Variable</h3>
+                    <p class="text-uneeq-gray dark:text-gray-300">Edit your <code
+                            class="bg-gray-100 dark:bg-uneeq-dark-navy dark:text-gray-200 px-2 py-1 rounded text-sm text-uneeq-navy">docker-compose.env</code> or
+                        <code
+                            class="bg-gray-100 dark:bg-uneeq-dark-navy dark:text-gray-200 px-2 py-1 rounded text-sm text-uneeq-navy">docker-compose.default.env</code>
+                        file.
+                    </p>
+                </div>
+            </div>
+
+            <div class="ml-14">
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Add this new environment variable:</h4>
+                <div class="code-block mb-4">
+                    <span class="code-highlight-add">NEW_SPEECH_OVERRIDE=1</span>
+                </div>
+
+                <div class="bg-green-50 dark:bg-green-900/20 border-l-4 border-green-400 p-4 rounded">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-green-400 mr-2 mt-0.5" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <p class="text-sm text-green-800 dark:text-green-300">
+                            <strong>Tip:</strong> Add this variable at the end of your environment file for easy
+                            reference.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Remove Audio2Face Components -->
+        <div class="bg-white dark:bg-uneeq-navy rounded-lg shadow-sm p-6 mb-8 page-break">
+            <div class="flex items-start space-x-4 mb-4">
+                <div class="step-number">4</div>
+                <div>
+                    <h3 class="text-xl font-semibold text-uneeq-navy dark:text-white mb-2">Remove Audio2Face Components</h3>
+                    <p class="text-uneeq-gray dark:text-gray-300">Remove or comment out the deprecated audio2face sections from your
+                        docker-compose file.</p>
+                </div>
+            </div>
+
+            <div class="ml-14">
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Remove these sections:</h4>
+
+                <!-- Option 1: Comment Out -->
+                <div class="mb-6 no-page-break">
+                    <h5 class="font-medium text-uneeq-navy dark:text-white mb-2 flex items-center">
+                        <span
+                            class="w-6 h-6 bg-uneeq-orange text-white rounded-full flex items-center justify-center text-xs mr-2">1</span>
+                        Option 1: Comment Out (Recommended)
+                    </h5>
+                    <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-3">Add <code
+                            class="bg-gray-100 dark:bg-uneeq-dark-navy dark:text-gray-200 px-1 rounded text-uneeq-navy">#</code> at the beginning of each line:</p>
+                    <div class="yaml-block">
+                        <span class="code-comment"># audio2face_with_emotion:
+                            # image: your-image-here
+                            # container_name: audio2face_emotion
+                            # ports:
+                            # - "8080:8080"
+                            # environment:
+                            # - ENV_VAR=value
+                            # networks:
+                            # - miniprem_network
+                            #
+                            # audio2face_controller:
+                            # image: your-controller-image
+                            # container_name: audio2face_ctrl
+                            # depends_on:
+                            # - audio2face_with_emotion
+                            # ports:
+                            # - "8081:8081"
+                            # networks:
+                            # - miniprem_network</span>
+                    </div>
+                </div>
+
+                <!-- Option 2: Delete -->
+                <div class="mb-4 no-page-break">
+                    <h5 class="font-medium text-uneeq-navy dark:text-white mb-2 flex items-center">
+                        <span
+                            class="w-6 h-6 bg-uneeq-pink text-white rounded-full flex items-center justify-center text-xs mr-2">2</span>
+                        Option 2: Delete Entirely
+                    </h5>
+                    <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-3">Simply remove the entire sections from your docker-compose
+                        file:</p>
+                    <div class="bg-red-50 dark:bg-red-900/20 p-4 rounded border-l-4 border-red-400">
+                        <p class="text-red-800 dark:text-red-300 text-sm">
+                            <strong>Remove these complete blocks:</strong><br>
+                            • <code class="text-uneeq-navy dark:text-gray-200 bg-red-100 dark:bg-red-900/50 px-1 rounded">audio2face_with_emotion:</code> and
+                            all its sub-properties<br>
+                            • <code class="text-uneeq-navy dark:text-gray-200 bg-red-100 dark:bg-red-900/50 px-1 rounded">audio2face_controller:</code> and
+                            all its sub-properties
+                        </p>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 dark:bg-blue-900/20 border-l-4 border-uneeq-orange p-4 rounded">
+                    <div class="flex">
+                        <svg class="w-5 h-5 text-uneeq-orange mr-2 mt-0.5" fill="none" stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <p class="text-sm text-uneeq-navy dark:text-blue-300">
+                            <strong>Note:</strong> Both methods achieve the same result. Commenting out is recommended
+                            as it allows you to easily revert changes if needed.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5: Restart Services -->
+        <div class="bg-white dark:bg-uneeq-navy rounded-lg shadow-sm p-6 mb-8 page-break">
+            <div class="flex items-start space-x-4 mb-4">
+                <div class="step-number">5</div>
+                <div>
+                    <h3 class="text-xl font-semibold text-uneeq-navy dark:text-white mb-2">Restart Your Services</h3>
+                    <p class="text-uneeq-gray dark:text-gray-300">Apply the changes by restarting your MiniPrem services.</p>
+                </div>
+            </div>
+
+            <div class="ml-14">
+                <h4 class="font-medium text-uneeq-navy dark:text-white mb-3">Run these commands:</h4>
+                <div class="space-y-3">
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">1. Stop current services:</p>
+                        <div class="code-block">docker-compose down</div>
+                    </div>
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">2. Pull new image:</p>
+                        <div class="code-block">docker-compose pull</div>
+                    </div>
+                    <div>
+                        <p class="text-sm text-uneeq-gray dark:text-gray-300 mb-2">3. Start services with new configuration:</p>
+                        <div class="code-block">docker-compose up -d</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="uneeq-gradient rounded-lg shadow-lg p-6 text-white page-break">
+            <div class="text-center">
+                <div class="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4">
+                    <div class="w-12 h-12 rounded-full uneeq-gradient flex items-center justify-center">
+                        <div class="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+                            <img src="https://cdn.prod.website-files.com/63a5141427f9360ebfaf9e6e/63a5141427f9369a45af9fa7_Uneeq_Fav.png" alt="UneeQ" class="uneeq-favicon-dark"
+                                onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+                            <span class="text-uneeq-navy font-bold text-sm hidden">U</span>
+                        </div>
+                    </div>
+                </div>
+                <h3 class="text-2xl font-bold mb-4">🎉 Upgrade Complete!</h3>
+                <p class="text-lg mb-4">Your MiniPrem installation is now running version 5.6mha with Nvidia driver 580
+                    and enhanced speech processing.</p>
+
+                <div class="bg-white bg-opacity-20 rounded-lg p-4 mt-6">
+                    <h4 class="font-semibold mb-2">Need Help?</h4>
+                    <p class="text-sm">Contact our support team at <a href="mailto:support@digitalhumans.com"
+                            class="underline font-semibold">support@digitalhumans.com</a></p>
+                    <p class="text-sm">Visit <a href="https://www.digitalhumans.com"
+                            class="underline font-semibold">digitalhumans.com</a> for more resources</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="bg-white dark:bg-uneeq-navy border-t border-gray-200 dark:border-gray-700 mt-12">
+        <div class="max-w-4xl mx-auto px-4 py-6">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <div class="w-10 h-10 rounded-full uneeq-gradient flex items-center justify-center">
+                        <div class="w-7 h-7 bg-white dark:bg-uneeq-navy rounded-full flex items-center justify-center">
+                            <img src="https://cdn.prod.website-files.com/63a5141427f9360ebfaf9e6e/63a5141427f9369a45af9fa7_Uneeq_Fav.png" alt="UneeQ" class="uneeq-favicon-dark"
+                                onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+                            <span class="text-uneeq-navy font-bold text-xs hidden">U</span>
+                        </div>
+                    </div>
+                    <div class="text-sm text-uneeq-gray dark:text-gray-300">
+                        <p class="text-uneeq-navy dark:text-white font-semibold">© 2025 UneeQ Limited</p>
+                    </div>
+                </div>
+                <div class="text-right text-sm text-uneeq-gray dark:text-gray-300">
+                    <p><a href="https://www.digitalhumans.com"
+                            class="hover:text-uneeq-pink font-semibold uneeq-gradient-text">DIGITALHUMANS.COM</a></p>
+                    <p>MiniPrem v5.6mha Upgrade Guide</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const darkModeToggle = document.getElementById('dark-mode-toggle');
+        const sunIcon = document.getElementById('sun-icon');
+        const moonIcon = document.getElementById('moon-icon');
+        const html = document.documentElement;
+
+        function updateIcons() {
+            if (html.classList.contains('dark')) {
+                sunIcon.classList.remove('hidden');
+                moonIcon.classList.add('hidden');
+            } else {
+                sunIcon.classList.add('hidden');
+                moonIcon.classList.remove('hidden');
+            }
+        }
+
+        // Set initial state
+        if (localStorage.getItem('darkMode') === 'true' || 
+            (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches && !localStorage.getItem('darkMode'))) {
+            html.classList.add('dark');
+        } else {
+            html.classList.remove('dark');
+        }
+        updateIcons();
+
+        // Toggle dark mode
+        darkModeToggle.addEventListener('click', () => {
+            html.classList.toggle('dark');
+            if (html.classList.contains('dark')) {
+                localStorage.setItem('darkMode', 'true');
+            } else {
+                localStorage.setItem('darkMode', 'false');
+            }
+            updateIcons();
+        });
+    </script>
+</body>
+
+</html>

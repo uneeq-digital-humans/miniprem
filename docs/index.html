@@ -8,10 +8,11 @@
   <meta name="description" content="MiniPrem - Digital Human Platform with LLM Integration">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
 
+  <!-- UneeQ Favicon -->
+  <link rel="icon" type="image/png" href="images/uneeq-favicon.png">
+
   <!-- Dark theme -->
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify/themes/dark.css" />
-  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify-select@1.0.0/dist/docsify-select.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flag-icon-css/3.5.0/css/flag-icon.min.css">
 
   <!-- Add Swagger UI for API docs -->
   <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/swagger-ui-dist@5.1.0/swagger-ui.css">
@@ -28,13 +29,6 @@
       grafana: 'http://localhost:3001'
     };
 
-    const languages = {
-      'en': { name: 'English', flag: 'us' },
-      'es': { name: 'Español', flag: 'es' },
-      'de': { name: 'Deutsch', flag: 'de' },
-      'ja': { name: '日本語', flag: 'jp' },
-      'ko': { name: '한국어', flag: 'kr' }
-    };
 
     // Initialize Docsify configuration
     window.$docsify = {
@@ -46,87 +40,32 @@
       auto2top: true,
       noCompile: false,
       themeColor: '#42b983',
-      search: {
-        maxAge: 86400000,
-        paths: 'auto',
-        placeholder: 'Search',
-        noData: 'No Results!',
-        depth: 6
-      },
       plugins: [],
 
-      // Language switcher configuration
-      selectLanguage: {
-        detectLocale: true,
-        defaultLocale: 'en',
-        availableLocales: Object.keys(languages),
-        locales: Object.fromEntries(
-          Object.entries(languages).map(([code, { name }]) => [code, name])
-        )
-      },
-
-      // i18n configuration
-      i18n: {
-        defaultLocale: 'en',
-        locales: {
-          en: {
-            sidebar: 'en/_sidebar.md',  // Use en folder sidebar for English
-            coverpage: 'en/_coverpage.md'  // Use en folder coverpage for English
-          },
-          es: {
-            sidebar: 'es/_sidebar.md',
-            coverpage: 'es/_coverpage.md'
-          },
-          de: {
-            sidebar: 'de/_sidebar.md',
-            coverpage: 'de/_coverpage.md'
-          },
-          ja: {
-            sidebar: 'ja/_sidebar.md',
-            coverpage: 'ja/_coverpage.md'
-          },
-          ko: {
-            sidebar: 'ko/_sidebar.md',
-            coverpage: 'ko/_coverpage.md'
-          }
-        }
-      },
-
-      // Add fallback for untranslated pages
-      fallbackLanguages: ['en']
     };
 
-    // Set current language from URL or localStorage
-    const setLanguage = () => {
-      const urlParams = new URLSearchParams(window.location.search);
-      const storedLang = localStorage.getItem('language');
-      const urlLang = urlParams.get('lang');
-      const lang = urlLang || storedLang || 'en';
-
-      if (Object.keys(languages).includes(lang)) {
-        localStorage.setItem('language', lang);
-        return lang;
-      }
-      return 'en';
-    };
-
-    // Current language
-    window.$docsify.language = setLanguage();
   </script>
 </head>
 
 <body>
+  <!-- Dark Mode Toggle Button -->
+  <button id="dark-mode-toggle" class="dark-mode-toggle">
+    <svg id="sun-icon" class="hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path>
+    </svg>
+    <svg id="moon-icon" class="hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path>
+    </svg>
+  </button>
+
   <div id="app"></div>
 
   <!-- Docsify v4 -->
   <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
-  <script src="//cdn.jsdelivr.net/npm/docsify/lib/plugins/search.min.js"></script>
   <script src="//cdn.jsdelivr.net/npm/docsify-copy-code"></script>
   <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-bash.min.js"></script>
   <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-json.min.js"></script>
   <script src="//cdn.jsdelivr.net/npm/prismjs/components/prism-yaml.min.js"></script>
-  <script src="//cdn.jsdelivr.net/npm/docsify-select@1.0.0/dist/docsify-select.js"></script>
-  <script src="//cdn.jsdelivr.net/npm/docsify-i18n@1.0.0/dist/docsify-i18n.min.js"></script>
 
   <!-- Swagger UI -->
   <script src="//cdn.jsdelivr.net/npm/swagger-ui-dist@5.1.0/swagger-ui-bundle.js"></script>
@@ -138,72 +77,45 @@
   <!-- <script src="assets/language-switcher.js"></script> -->
   <!-- <script src="assets/translation-status.js"></script> -->
 
-  <script>
-    // Custom language switcher with flags
-    window.$docsify.plugins = window.$docsify.plugins || [];
-    window.$docsify.plugins.push(function (hook) {
-      hook.doneEach(function () {
-        const select = document.querySelector('.language-select');
-        if (select) {
-          select.innerHTML = Object.entries(languages)
-            .map(([code, { name, flag }]) => `
-              <option value="${code}" ${code === window.$docsify.language ? 'selected' : ''}>
-                <span class="flag-icon flag-icon-${flag}"></span> ${name}
-              </option>
-            `)
-            .join('');
-        }
-      });
-    });
-  </script>
 
-  <!-- Language prefix enforcement and switcher path update (modified to allow root path) -->
+
+  <!-- Dark Mode Toggle Functionality -->
   <script>
     document.addEventListener('DOMContentLoaded', function () {
-      const langs = ['en', 'es', 'de', 'ja', 'ko'];
-      
-      // Get hash without leading #/
-      let hash = location.hash.replace(/^#\//, '');
-      
-      // Special handling for root URL or coverpage
-      if (!hash || hash === '' || hash === '/' || hash === 'README') {
-        // Don't redirect - allow docsify to handle coverpage
-        // Just set up the current language in Docsify
-        const currentLang = localStorage.getItem('language') || 'en';
-        window.$docsify.language = currentLang;
-        console.log("Root path detected, keeping it for coverpage display");
-        return;
+      const darkModeToggle = document.getElementById('dark-mode-toggle');
+      const sunIcon = document.getElementById('sun-icon');
+      const moonIcon = document.getElementById('moon-icon');
+      const html = document.documentElement;
+
+      function updateIcons() {
+        if (html.classList.contains('dark')) {
+          sunIcon.classList.remove('hidden');
+          moonIcon.classList.add('hidden');
+        } else {
+          sunIcon.classList.add('hidden');
+          moonIcon.classList.remove('hidden');
+        }
       }
-      
-      // Special case for _coverpage - keep it in the URL to show coverpage
-      if (hash === '_coverpage') {
-        location.hash = '#/';
-        location.reload();
-        return;
+
+      // Set initial state
+      if (localStorage.getItem('darkMode') === 'true' ||
+          (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches && !localStorage.getItem('darkMode'))) {
+        html.classList.add('dark');
+      } else {
+        html.classList.remove('dark');
       }
-      
-      // For other pages without language prefix, add the language prefix
-      if (
-        hash &&
-        !langs.some(l => hash === l + '/' || hash.startsWith(l + '/'))
-      ) {
-        // Get stored language or default to English
-        const lang = localStorage.getItem('language') || 'en';
-        location.hash = '#/' + lang + '/' + hash;
-        location.reload();
-      }
-      
-      // Update path on language switch
-      const select = document.querySelector('.language-select');
-      if (select) {
-        select.addEventListener('change', function (e) {
-          const lang = e.target.value;
-          let path = location.hash.replace(/^#\//, '');
-          path = path.replace(/^(en|es|de|ja|ko)\//, '');
-          location.hash = `#/${lang}/${path}`;
-          location.reload();
-        });
-      }
+      updateIcons();
+
+      // Toggle dark mode
+      darkModeToggle.addEventListener('click', () => {
+        html.classList.toggle('dark');
+        if (html.classList.contains('dark')) {
+          localStorage.setItem('darkMode', 'true');
+        } else {
+          localStorage.setItem('darkMode', 'false');
+        }
+        updateIcons();
+      });
     });
   </script>
 </body>

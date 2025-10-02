@@ -12,7 +12,9 @@ function createApiEndpoint(method, path, baseUrl, requestBody = null) {
             <span class="api-base-url">${baseUrl}</span>
             <span class="api-url-path">${path}</span>
           </div>
-          <button class="api-try-btn" onclick="sendApiRequest('${id}', '${method}', '${baseUrl}', '${path}', ${requestBody ? `'${requestBodyId}'` : 'null'})">Try it</button>
+          <button class="api-try-btn" onclick="sendApiRequest('${id}', '${method}', '${baseUrl}', '${path}', ${
+    requestBody ? `'${requestBodyId}'` : 'null'
+  })">Try it</button>
         </div>`;
 
   if (requestBody) {
@@ -49,8 +51,8 @@ async function sendApiRequest(id, method, baseUrl, path, bodyElementId) {
       method: method,
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      }
+        Accept: 'application/json',
+      },
     };
 
     if (bodyElementId) {
@@ -148,7 +150,9 @@ function connectToContainerLogs(containerId, outputElementId) {
     };
 
     logWebSocket.onerror = function (error) {
-      outputElement.innerHTML = `<em class="log-error">Error connecting to logs: ${error.message || 'Failed to connect to log service'}</em>
+      outputElement.innerHTML = `<em class="log-error">Error connecting to logs: ${
+        error.message || 'Failed to connect to log service'
+      }</em>
 
         Troubleshooting Steps:
         1. Check if log-streamer is running:
@@ -184,13 +188,13 @@ function simulateContainerLogs(containerId, outputElementId) {
 
   const logData = {
     flowise: [
-      'INFO: Flowise server started on port 3000',
+      'INFO: Flowise server started on port 3500',
       'INFO: Connected to database',
       'DEBUG: Loading predefined workflows',
       'INFO: Workflow "Basic Conversation" loaded',
       'INFO: API endpoints initialized',
       'DEBUG: Running health check on LLM connections',
-      'INFO: All systems operational'
+      'INFO: All systems operational',
     ],
     ollama: [
       'INFO: Ollama server listening on :11434',
@@ -198,29 +202,29 @@ function simulateContainerLogs(containerId, outputElementId) {
       'DEBUG: CUDA device initialized',
       'INFO: Ready for inference',
       'DEBUG: Temperature set to 0.7',
-      'DEBUG: Context window: 4096 tokens'
+      'DEBUG: Context window: 4096 tokens',
     ],
     redis: [
       '1:M 15 Oct 2023 08:10:01.338 * Running mode=standalone, port=6379',
       '1:M 15 Oct 2023 08:10:01.338 # Server initialized',
       '1:M 15 Oct 2023 08:10:01.338 * Ready to accept connections',
       '1:M 15 Oct 2023 08:15:22.569 * 100 changes in 300 seconds. Saving...',
-      '1:M 15 Oct 2023 08:15:22.570 * Background saving started by pid 14'
+      '1:M 15 Oct 2023 08:15:22.570 * Background saving started by pid 14',
     ],
     prometheus: [
       'level=info ts=2023-10-15T08:10:02.771Z caller=main.go:495 msg="Starting Prometheus"',
       'level=info ts=2023-10-15T08:10:02.775Z caller=web.go:559 component=web msg="Start listening for connections" address=0.0.0.0:9090',
       'level=info ts=2023-10-15T08:10:02.780Z caller=head.go:541 component=tsdb msg="Replaying WAL"',
       'level=info ts=2023-10-15T08:10:02.780Z caller=head.go:587 component=tsdb msg="WAL segment loaded" segment=0 maxSegment=0',
-      'level=info ts=2023-10-15T08:10:02.780Z caller=head.go:593 component=tsdb msg="WAL replay completed" duration=355.088µs'
+      'level=info ts=2023-10-15T08:10:02.780Z caller=head.go:593 component=tsdb msg="WAL replay completed" duration=355.088µs',
     ],
     grafana: [
       'logger=settings t=2023-10-15T08:10:03+0000 level=info msg="Starting Grafana" version=10.1.0',
       'logger=sqlstore t=2023-10-15T08:10:03+0000 level=info msg="Connecting to DB" dbtype=sqlite3',
       'logger=migrations t=2023-10-15T08:10:03+0000 level=info msg="Starting DB migrations",',
       'logger=server t=2023-10-15T08:10:03+0000 level=info msg="HTTP Server Listen" address=0.0.0.0:3001 protocol=http',
-      'logger=http.server t=2023-10-15T08:10:03+0000 level=info msg="Initializing HTTP Server" address=0.0.0.0:3001 protocol=http'
-    ]
+      'logger=http.server t=2023-10-15T08:10:03+0000 level=info msg="Initializing HTTP Server" address=0.0.0.0:3001 protocol=http',
+    ],
   };
 
   if (!logData[containerId]) {
@@ -263,32 +267,35 @@ function simulateContainerLogs(containerId, outputElementId) {
 const apiPlugin = function (hook, vm) {
   hook.afterEach(function (html) {
     // Replace custom API blocks
-    return html.replace(/<pre data-lang="api-(\w+)-([^"]+)">([\s\S]+?)<\/pre>/g, function (match, method, service, content) {
-      const lines = content.trim().split('\n');
-      const path = lines[0].trim();
+    return html.replace(
+      /<pre data-lang="api-(\w+)-([^"]+)">([\s\S]+?)<\/pre>/g,
+      function (match, method, service, content) {
+        const lines = content.trim().split('\n');
+        const path = lines[0].trim();
 
-      // Get base URL for the service
-      const baseUrl = serviceBaseUrls[service] || `http://localhost`;
+        // Get base URL for the service
+        const baseUrl = serviceBaseUrls[service] || `http://localhost`;
 
-      // Check for request body
-      let requestBody = null;
-      if (lines.length > 1) {
-        try {
-          requestBody = JSON.parse(lines.slice(1).join('\n'));
-        } catch (e) {
-          console.error('Failed to parse request body JSON:', e);
+        // Check for request body
+        let requestBody = null;
+        if (lines.length > 1) {
+          try {
+            requestBody = JSON.parse(lines.slice(1).join('\n'));
+          } catch (e) {
+            console.error('Failed to parse request body JSON:', e);
+          }
         }
-      }
 
-      return createApiEndpoint(method.toUpperCase(), path, baseUrl, requestBody);
-    });
+        return createApiEndpoint(method.toUpperCase(), path, baseUrl, requestBody);
+      }
+    );
   });
 };
 
 // Add logs plugin to Docsify
 const logsPlugin = function (hook, vm) {
   hook.doneEach(function () {
-    document.querySelectorAll('pre code.lang-container-logs, pre code.lang-terminal').forEach(function(codeBlock) {
+    document.querySelectorAll('pre code.lang-container-logs, pre code.lang-terminal').forEach(function (codeBlock) {
       // Decode HTML entities
       let services = codeBlock.textContent.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
       const serviceList = services.trim().split('\n');
@@ -297,9 +304,13 @@ const logsPlugin = function (hook, vm) {
         <div class="logs-container">
           <div class="logs-header">
             <select class="logs-select" onchange="switchContainerLogs(this.value, '${containerId}')">
-              ${serviceList.map(service => `
+              ${serviceList
+                .map(
+                  (service) => `
                 <option value="${service.trim()}">${service.trim()}</option>
-              `).join('')}
+              `
+                )
+                .join('')}
             </select>
             <button class="logs-clear" onclick="clearLogs('${containerId}')">Clear</button>
           </div>
@@ -362,22 +373,8 @@ if (window.$docsify) {
   window.$docsify.plugins.push(swaggerPlugin);
 }
 
-// Set default language for dynamic content loading
+// Simplified function - no language detection needed
 const getCurrentLanguage = () => {
-  // Try to get from Docsify config, hash, or localStorage
-  if (window.$docsify && window.$docsify.language) return window.$docsify.language;
-  const hash = window.location.hash;
-  if (hash.startsWith('#/')) {
-    const path = hash.substring(2);
-    const match = path.match(/^([a-z]{2})\//);
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-  const storedLang = localStorage.getItem('language');
-  if (storedLang && ['en', 'es', 'de', 'ja', 'ko'].includes(storedLang)) {
-    return storedLang;
-  }
   return 'en';
 };
 

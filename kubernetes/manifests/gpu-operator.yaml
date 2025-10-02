@@ -1,0 +1,35 @@
+# This file is used as a placeholder
+# The actual GPU operator is installed via Helm in the deploy script
+# 
+# To manually install:
+# helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+# helm repo update
+# helm upgrade --install gpu-operator nvidia/gpu-operator \
+#   --namespace gpu-operator \
+#   --create-namespace \
+#   --set operator.defaultRuntime=containerd \
+#   --set driver.enabled=true \
+#   --set toolkit.enabled=true \
+#   --wait --timeout 10m
+#
+# Configuration for GPU operator with EKS
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gpu-operator-config
+  namespace: gpu-operator
+data:
+  config: |
+    # GPU Operator configuration for EKS
+    # Using containerd as the runtime
+    defaultRuntime: containerd
+    driver:
+      enabled: true
+    toolkit:
+      enabled: true
+    devicePlugin:
+      enabled: true
+    dcgmExporter:
+      enabled: true
+      serviceMonitor:
+        enabled: true

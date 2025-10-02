@@ -38,6 +38,10 @@ docker/fast-whisper/voice-input.sh
 temp_venv/
 voice_input.sh
 voice_input_vosk.sh
+.venv/
+docker/*/venv
+docker/**/**/venv
+docker/*/*/venv
 
 # Python cache files
 __pycache__/
@@ -47,3 +51,25 @@ docker/fast-whisper/app/__pycache__/
 
 # Model files
 docker/fast-whisper/models/
+
+# Commit guide file
+commits.mdc
+
+# Claude (local agent definitions and personal notes)
+.claude/
+
+.playwright-mcp/
+customer-package/
+ue56_upgrade_instructions.html
+UneeQ-logo.png
+
+# Miniprem-monitor
+miniprem-monitor/architecture.md
+miniprem-monitor/design-system.md
+miniprem-monitor/WEBSOCKET_ENHANCEMENTS.md
+
+personal_notes/
+
+.deployment_id
+terraform.tfvars.bak
+kubernetes/values/my-renny-values.yml

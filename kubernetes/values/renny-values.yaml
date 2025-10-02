@@ -1,0 +1,178 @@
+# Renny Helm values
+image: "facemeproduction/renny:5.6speechanim"
+
+# GPU time-slicing configuration
+# Controls how many Renny pods share a single physical GPU
+gpuTimeSlicing:
+  enabled: true
+  replicasPerGpu: 2  # How many Renny pods can run on one GPU (time-slicing multiplier)
+
+  # ConfigMap configuration for GPU operator
+  configMap:
+    name: renny-time-slicing-config
+    namespace: gpu-operator
+
+deployment:
+  nodeType: renny
+  totalReplicas: 4  # Total number of Renny pods to deploy
+  # Note: totalReplicas should be a multiple of gpuTimeSlicing.replicasPerGpu
+  # Example: 4 total pods ÷ 2 pods per GPU = 2 physical GPUs needed
+
+renderer:
+  # Required for secret template
+  a2f:
+    url: "http://localhost:52000"  # A2F service URL for internal speech processing
+
+  cp:
+    flowiseApiKey: ""        # Optional
+
+  launchDarkly:
+    key: ""                  # Optional
+
+  dhop:
+    apiKey: "your-dhop-api-key-here"
+    tenantId: "your-dhop-tenant-id-here"
+    url: wss://api.enterprise.uneeq.io:443/signalling-service
+  
+  tts:
+    veritoneApiKey: ""       # Optional
+    azureRegion: "eastus"    # Azure region where your Speech service is deployed
+    azureSpeechKey: "your-azure-speech-key-here"       # Plain text API key
+    elevenlabsApiKey: "your-elevenlabs-api-key-here"     # Plain text  
+    gcpCredentials: ""       # Plain text GCP service account JSON
+  
+  unrealEngine:
+    config: ""  # Base64 encoded UneeQ's Unreal Engine SDK licence file
+    # Command line arguments for Unreal Engine (from docker-compose.default.yml)
+    args:
+      - "/Game/Live_Levels/BlankScene"
+      - "-RenderOffScreen"
+      - "-ResX=1920" 
+      - "-ResY=1080"
+      - "-NoTextureStreaming"
+  
+  # Health check configuration (from docker-compose.default.yml)
+  health:
+    url: "http://0.0.0.0:8081/health"
+  
+  # Sleep timer configuration
+  sleepTimer:
+    seconds: 5.0
+  
+  # Reconnection settings
+  reconnect:
+    backoffRate: 1.5
+    intervalSeconds: 5.0
+
+
+logLevel: "4"
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: "7Gi"
+    cpu: "3600m"
+  requests:
+    nvidia.com/gpu: 1
+    memory: "7Gi"
+    cpu: "3600m"
+
+nodeSelector:
+  uneeq.io/node-type: renny
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+# Pod affinity to spread across nodes
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - renny
+        topologyKey: kubernetes.io/hostname
+
+# Service configuration
+service:
+  type: ClusterIP
+  ports:
+    health: 8081
+    webrtc: 8888
+    pixelstream: 8080
+
+# Health check configuration
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# HPA configuration for autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+# Network Policy (optional - uncomment to enable)
+# networkPolicy:
+#   enabled: true
+#   ingress:
+#     - from:
+#       - podSelector:
+#           matchLabels:
+#             app: ingress-controller
+#       ports:
+#       - protocol: TCP
+#         port: 8080
+#       - protocol: UDP
+#         port: 8888
+
+# Additional environment variables
+env:
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "all"
+  - name: NEW_SPEECH_OVERRIDE
+    value: "1"
+  - name: A2F_ADDRESS
+    value: "http://localhost:52000"
+  - name: A2F_AUDIO_DELAY_TIME_MS
+    value: "240"
+  - name: A2F_AUDIO_SAMPLE_RATE
+    value: "16000"

@@ -1,0 +1,52 @@
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/tfplan
+terraform/terraform.tfvars
+terraform/*.backup
+scripts/terraform.tfstate
+
+# Helm
+*.tgz
+renny-chart.tgz
+charts/
+
+# Note: Now using single values files (no longer generating -deployed.yaml)
+
+# Kubernetes
+kubeconfig
+*.kubeconfig
+
+# Credentials and secrets
+*.pem
+*.key
+*.crt
+*.p12
+secrets/
+credentials/
+# Personal values files with sensitive data
+values/my-*.yaml
+values/my-*.yml
+values/*-personal.yaml
+values/*-personal.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/

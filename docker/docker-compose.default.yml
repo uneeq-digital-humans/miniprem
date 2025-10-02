@@ -1,48 +1,17 @@
 name: uneeq-miniprem
 
 services:
-  # === FIRST TIER: Audio2Face services ===
-  audio2face_with_emotion:
-    container_name: audio2face_with_emotion
-    environment:
-      LOG_JSON: false
-    image: facemeproduction/audio2face_with_emotion:local-dev
-    ports:
-      - 50000:50000
-    runtime: nvidia
-    privileged: true
-    volumes:
-      - a2f_model_cache:/tmp/a2f_pipeline:rw
+  # Renny uses internal speech processing (NEW_SPEECH_OVERRIDE=1)
 
-    restart: unless-stopped
-
-  audio2face_controller:
-    container_name: audio2face_controller
-    command: /opt/nvidia/anim_controller/service/ac_a2x_config.yaml
-    entrypoint: ./service/launch_service.py
-    environment:
-      LOG_JSON: false
-    image: facemeproduction/audio2face_anim_controller:local-dev
-    ports:
-      - 52000:52000
-      - 52100:52100
-    volumes:
-      - ./a2f-config.yml:/opt/nvidia/anim_controller/service/ac_a2x_config.yaml
-
-    depends_on:
-      audio2face_with_emotion:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # === SECOND TIER: Renny (comes last) ===
+  # === MAIN SERVICE: Renny with internal speech processing ===
   renny:
     container_name: renny
     command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
     env_file:
       - docker-compose.env
-    extra_hosts:
-      - audio2face-gateway:127.0.0.1
-    image: "facemeproduction/renny:0.632-47d09"
+    environment:
+      - NEW_SPEECH_OVERRIDE=1
+    image: "facemeproduction/renny:5.6speechanim"
     network_mode: "host"
     runtime: nvidia
     privileged: true
@@ -56,17 +25,13 @@ services:
       start_interval: 15s
       start_period: 10s
       retries: 3
-    depends_on:
-      audio2face_with_emotion:
-        condition: service_healthy
-      audio2face_controller:
-        condition: service_started
     restart: unless-stopped
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    security_opt:
+      - no-new-privileges:true
 
-volumes:
-  a2f_model_cache:
+# No volumes needed for default Renny-only installation

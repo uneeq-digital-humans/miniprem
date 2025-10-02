@@ -1,0 +1,66 @@
+# Renny EKS Deployment Configuration Example
+# Copy this file to terraform.tfvars and fill in your values
+
+# ============================================================================
+# NETWORK CONFIGURATION (PERMANENT DECISIONS)
+# ⚠️  These cannot be changed without destroying and rebuilding the cluster
+# ============================================================================
+
+# VPC CIDR block - choose a range that won't conflict with existing networks
+# Common options:
+#   10.17.0.0/16    - Recommended default (65,534 IPs)
+#   10.50.0.0/16    - Alternative if 10.17.x conflicts
+#   192.168.0.0/16  - Private network standard
+vpc_cidr = "10.17.0.0/16"
+
+# EKS service CIDR block - must not overlap with VPC CIDR
+# Automatically calculated based on VPC choice:
+#   If VPC is 10.17.0.0/16  → use 10.117.0.0/16
+#   If VPC is 10.50.0.0/16  → use 10.150.0.0/16  
+#   If VPC is 192.168.0.0/16 → use 10.117.0.0/16
+service_cidr = "10.117.0.0/16"
+
+# ============================================================================
+# COST CONFIGURATION (CAN BE CHANGED LATER)
+# ✅ These settings can be modified after deployment without cluster rebuild
+# ============================================================================
+
+# NAT Gateway high availability
+# true  = 3 NAT Gateways (~$135/month extra) - Recommended for production
+# false = 1 NAT Gateway (~$45/month) - Good for development/testing
+enable_nat_ha = true
+
+# ============================================================================
+# REQUIRED CREDENTIALS
+# ============================================================================
+
+# DHOP Configuration - obtain from UneeQ
+dhop_tenant_id = ""  # Your DHOP tenant ID
+dhop_api_key = ""    # Your DHOP API key (base64 encoded)
+
+# Docker Hub Credentials - required for UneeQ container access
+docker_username = ""  # Your Docker Hub username with access to UneeQ repos
+docker_password = ""  # Your Docker Hub password
+
+# ============================================================================
+# OPTIONAL OVERRIDES
+# ============================================================================
+
+# AWS region for deployment
+# aws_region = "us-east-1"
+
+# GPU instance type for Renny workloads
+# renny_instance_type = "g5.4xlarge"  # Renny nodes (8 vCPU, 32GB RAM, 1x NVIDIA A10G)
+
+# Renny scaling configuration
+# renny_min_size = 10      # Minimum nodes (always running)
+# renny_max_size = 20      # Maximum nodes (autoscaler limit)
+# renny_desired_size = 10  # Initial desired nodes
+
+
+# Kubernetes version
+# kubernetes_version = "1.31"
+
+# Project naming
+# project_name = "renny"
+# environment = "production"

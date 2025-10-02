@@ -1,16 +1,36 @@
-# MiniPrem Platform
+<div align="center">
 
-![MiniPrem Logo](docs/images/logo.png)
+![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
+
+# MiniPrem Platform
 
 > A comprehensive digital human platform with LLM integration, real-time facial animation, and monitoring capabilities.
 
+</div>
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+- [Accessing Services](#accessing-services)
+- [Managing MiniPrem](#managing-miniprem)
+- [Internal Speech Processing (NEW_SPEECH_OVERRIDE)](#internal-speech-processing-new_speech_override)
+- [Docker Configuration](#docker-configuration)
+- [Kubernetes/EKS Deployment](#kuberneteseks-deployment)
+- [Additional Documentation](#additional-documentation)
+- [License](#license)
+- [Copyright](#copyright)
+
 ## Overview
 
-MiniPrem is an integrated platform that combines a digital human interface (Renny) with LLM capabilities (vLLM), workflow automation (Flowise), and comprehensive monitoring tools (Prometheus + Grafana). This setup allows you to deploy and manage advanced AI interactions through a virtual human interface.
+MiniPrem is an integrated platform that combines a digital human interface (Renny) with advanced internal speech processing, LLM capabilities (vLLM), workflow automation (Flowise), and comprehensive monitoring tools (Prometheus + Grafana). This setup allows you to deploy and manage advanced AI interactions through a virtual human interface with simplified, more reliable speech generation.
 
 ## Features
 
-- **Digital Human Interface**: Powered by Renny, with real-time facial animation
+- **Digital Human Interface**: Powered by Renny, with internal speech processing and real-time facial animation
 - **LLM Integration**: vLLM running Gemma3 for natural language understanding
 - **LLM Integration**: vLLM running Mistral-7B-Instruct-v0.3 for natural language understanding
 - **Workflow Automation**: Flowise for building and managing AI workflows
@@ -18,6 +38,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 - **Queue Management**: Redis for reliable message processing
 - **RIME AI**: High-quality text-to-speech via a simple API
 - **Whisper**: OpenAI's speech recognition for accurate audio transcription
+- **Internal Speech Processing**: Advanced speech system with NEW_SPEECH_OVERRIDE for enhanced performance
 
 ## Quick Start
 
@@ -44,7 +65,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
    ./install_miniprem.sh
    ```
 
-   The installer will prompt you to select either a **Default Install** (Renny + Audio2Face only) or a **Full Install** (all services: Renny, Audio2Face, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
+   The installer will prompt you to select either a **Default Install** (Renny only) or a **Full Install** (all services: Renny, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
 
    You can re-run the installer at any time to upgrade from Default to Full, or to change your selection.
 
@@ -184,8 +205,7 @@ Use the included `miniprem.sh` script to manage the platform:
 The services started will depend on your installation type (Default or Full) as specified during installation. The installation type is saved in the `.miniprem_install_type` file. To switch between installation types, simply run the installer again and select a different option.
 
 ### Default Install Services
-* Renny (Digital Human)
-* Audio2Face (Facial Animation)
+* Renny (Digital Human with Internal Speech Processing)
 
 ### Full Install Services
 * All services in Default Install, plus:
@@ -197,259 +217,142 @@ The services started will depend on your installation type (Default or Full) as 
 * RIME (Text-to-Speech API)
 * Log Streamer (Container Log Viewer)
 
+## Internal Speech Processing (NEW_SPEECH_OVERRIDE)
+
+MiniPrem v5.6mha introduces an advanced internal speech processing system, providing improved reliability and performance.
+
+### Key Benefits:
+- **🚀 Enhanced Performance**: Speech and facial animation processing occurs internally within Renny
+- **🔧 Improved Reliability**: Eliminates network dependencies between speech and animation services
+- **💰 Cost Reduction**: Fewer containers and resources required
+- **🛠️ Simplified Management**: Single service handles both speech processing and facial animation
+
+### Configuration:
+The internal speech system is enabled via the `NEW_SPEECH_OVERRIDE=1` environment variable, which:
+- Activates Renny's built-in speech processing engine
+- Handles text-to-speech conversion internally
+- Generates synchronized facial animations automatically
+- Provides fallback to Azure Speech Services if needed
+
+This represents a significant architectural improvement, moving from a multi-service approach to a streamlined, integrated solution.
+
 ## Docker Configuration
 
 MiniPrem uses two main Docker Compose files:
 
-* `docker/docker-compose.default.yml` - Used for Default Install (Renny + Audio2Face only)
+* `docker/docker-compose.default.yml` - Used for Default Install (Renny only)
 * `docker/docker-compose.yml` - Used for Full Install (all services)
 
 The appropriate file is automatically selected based on your installation type.
 
-## Docker Basics
-
-This section covers essential Docker commands that will help you manage and monitor your MiniPrem installation.
-
-### Checking Docker Status
-
-Verify that Docker is running:
-```bash
-docker info
-```
-
-### Managing Containers
-
-List all running containers:
-```bash
-docker ps
-```
-
-List all containers (including stopped ones):
-```bash
-docker ps -a
-```
-
-View container logs:
-```bash
-docker logs <container_name>
-```
-
-For example, to view Flowise logs:
-```bash
-docker logs flowise
-```
-
-### Managing Images
-
-List all Docker images:
-```bash
-docker images
-```
-
-Remove unused images:
-```bash
-docker image prune
-```
-
-### Container Health Checks
-
-Check container health:
-```bash
-docker inspect --format='{{.State.Health.Status}}' <container_name>
-```
-
-For example, to check Flowise health:
-```bash
-docker inspect --format='{{.State.Health.Status}}' flowise
-```
-
-### Resource Usage
-
-View container resource usage:
-```bash
-docker stats
-```
-
-### Common Issues
-
-If you encounter issues:
-
-1. Check container status:
-   ```bash
-   docker ps -a
-   ```
-
-2. View container logs:
-   ```bash
-   docker logs <container_name>
-   ```
-
-3. Restart a specific container:
-   ```bash
-   docker restart <container_name>
-   ```
-
-4. Check container health:
-   ```bash
-   docker inspect <container_name>
-   ```
-
-### Useful Tips
-
-- Use `docker-compose` commands in the project directory to manage all services together:
-  ```bash
-  docker-compose ps    # View all services
-  docker-compose logs  # View all logs
-  ```
-
-- To view real-time logs with timestamps:
-  ```bash
-  docker logs -f --timestamps <container_name>
-  ```
-
-- To clean up unused resources:
-  ```bash
-  docker system prune
-  ```
-
-Remember that all MiniPrem services are managed through Docker, so these commands will help you monitor and troubleshoot your installation effectively.
+For Docker management commands and tips, see the [Docker documentation](https://docs.docker.com/) or run `docker --help`.
 
 ## Troubleshooting
 
-### Docker Authentication Issues
+For comprehensive troubleshooting guidance, see:
+- [Troubleshooting Guide](docs/troubleshooting.md) - Common issues and solutions
+- **Docker Issues**: `docker logs <container_name>` to view service logs
+- **GPU Issues**: Run `nvidia-smi` to verify GPU availability
+- **Configuration Issues**: Check `docker/configuration.dat` for correct UneeQ credentials
 
-If you encounter Docker authentication errors when pulling images:
-
-1. Ensure you have the correct Docker credentials
-2. Contact UneeQ for assistance with accessing their private image repository
-3. Run `docker login quay.io` with the credentials provided by UneeQ
-
-### Service Connectivity Issues
-
-If services cannot connect to each other:
-
-1. Check that all containers are running with `docker ps`
-2. Verify network connectivity with `docker network inspect uneeq-miniprem_default`
-3. Check container logs with `docker logs <container_name>`
-
-### LLM Performance Issues
-
-If the vLLM LLM is slow or unresponsive:
-
-1. Verify GPU availability with `nvidia-smi`
-2. Check vLLM logs with `docker logs vllm`
-3. Ensure the Gemma3 model was properly downloaded
-
-### Cloud Service Connection Issues
-
-If you cannot connect to UneeQ platform services:
-
-1. Verify your network connection
-2. Ensure your API keys are correctly entered
-3. Check for any IP restrictions on the UneeQ platform
-4. Contact UneeQ support for assistance
-
-### If the Digital Human starts but does not respond
-Verify the contents (cat, nano, vim) of docker/configuration.dat:
-```
-{
-  "Server": "prod-global",
-  "TenantId": "3f3122-5555-5555-o5o5o-99aEXAMPLE7823",
-  "JWSSecret": "MM99EXAMPLEXi3N/CZ3r3h32EXAMPLEq9iydXFKwuNNUwW0g9vmDRBxQ2c3kO0C9M/"
-}
-```
-The **TenantID** is available from the UneeQ admin portal. 
-The **JWSSecret** is the API Key.
-
-The TenantID is available from the UneeQ admin portal. 
-The JWSSecret is their API Key.
-
-Verify the Tenant ID by acccessing a customer account on the UneeQ Admin Portal. Before clicking on any tenant name, click the pencil/edit icon to the right of a tenant.
-
-The JWSSecret is the API key which you can verify on the same admin page, in the Security section.
-
-### If the Digital Human does not start
-(Audio2Face troubleshooting)
-Nvidia / Audio2Face Troubleshooting
-
-When starting MiniPrem, if you see an error related audio2face: 
-
-`Container audio2face_with_emotion  Error`
-
-There could be an issue with either the GPU card or driver.
-
-Check Card and Driver Status by verifying card is physically installed:
-
-`lspci | grep -i nvidia`
-
-You should see a NVIDIA card listed if it is physically installed, regardless of the driver status.
-
-To check if drivers are installed:
-
-```
-dpkg -l | grep nvidia-driver
-lsmod | grep nvidia
-```
-If no output from either command, then no NVIDIA modules are loaded. 
-
-
-If it does appear the drivers are loaded, verify they are running properly:
-`nvidia-smi`
-
-A typical nvidia-smi output should look like this:
-```
-+-----------------------------------------------------------------------------+| NVIDIA-SMI 545.XX.XX    Driver Version: 545.XX.XX    CUDA Version: 12.X     |
-+-----------------------------------------------------------------------------+
-| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
-| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
-|                               |                      |               MIG M. |
-|===============================+======================+======================|
-|   0  NVIDIA GeForce ...  Off | 00000000:01:00.0  On |                  N/A |
-| 30%   45C    P8    16W / 200W|    456MiB /  8192MiB |      2%      Default |
-|                               |                      |                  N/A |
-+-----------------------------------------------------------------------------+
+**Quick Diagnostic Commands:**
+```bash
+./miniprem.sh status  # Check service status
+docker ps -a          # View all containers
+nvidia-smi            # Verify GPU
 ```
 
-Key things to look for:
-- Driver Version (top line)
-- GPU Name
-
-If you see a `command not found` error, it usually means the NVIDIA drivers aren't installed properly. 
-
-If you see "NVIDIA-SMI has failed" error, it usually means either:
-- The drivers aren't properly loaded
-- There's a conflict with Secure Boot
-- The drivers aren't compatible with your current kernel
-
-
-### To (Re)Install Nvidia Drivers
-Update Ubuntu Linux first and then install latest available NVIDIA driver.
-
-`sudo apt update
-sudo apt install nvidia-driver`
-
-Before rebooting, verify loading the NVIDIA drivers manually:
-`sudo modprobe nvidia`
-
-
-If you see this specific message: 
-
-`ERROR: could not insert 'nvidia': Key was rejected by service`
-
-The system is rejecting the NVIDIA module, likely because Secure Boot is enabled in the UEFI settings. To fix this issue, restart the computer and press DEL, F12, or the appropriate key during startup to access the BIOS settings. Find and disable the Secure Boot option in the BIOS menu. While NVIDIA drivers from official Ubuntu repositories are typically digitally signed, kernel updates sometimes prevent GPU drivers from loading properly
-
-
-
-Once Secure Boot is disabled, you should be able to verify again if NVIDIA drivers are loaded once Ubuntu is booted:
-`lsmod | grep nvidia`
-
-If no output, no NVIDIA modules are loaded and you may need to reinstall the NVIDIA driver again.
+For persistent issues, contact UneeQ support with service logs.
 
 
 
 
 
 
+
+## Kubernetes/EKS Deployment
+
+### 🚀 Production-Ready Kubernetes Deployment
+
+MiniPrem includes a complete **one-click EKS deployment solution** for production environments with:
+
+- **✅ Auto-scaling GPU clusters** (10-20 Renny instances)
+- **✅ NVIDIA GPU Operator** with automatic driver management  
+- **✅ High availability** across multiple availability zones
+- **✅ Cost optimization** with GPU time-slicing and auto-scaling
+- **✅ Production monitoring** with CloudWatch integration
+
+**📍 Location**: [`kubernetes/`](kubernetes/) directory contains the complete EKS deployment
+
+**⚡ Quick Start**:
+```bash
+cd kubernetes
+./scripts/deploy.sh  # Complete deployment in ~30-45 minutes
+```
+
+### NVIDIA Driver Management (Kubernetes/EKS)
+
+#### Driver Version Selection
+
+The EKS deployment automatically handles NVIDIA GPU Operator installation. You'll be prompted to choose:
+
+1. **🚀 Driver 580+** (Recommended Default)
+   - ✅ Latest NVIDIA driver features and optimizations
+   - ✅ **REQUIRED for NVIDIA 5xxx series GPUs** (RTX 5090, etc.)
+   - ✅ Enhanced performance improvements
+   - ✅ Full graphics and compute capabilities
+   - ✅ CUDA 12.8+ support
+   - ✅ Production-ready and stable
+
+2. **📋 Driver 575+** (Alternative for Older GPUs)
+   - ✅ Verified and tested configuration
+   - ✅ Maximum stability for legacy hardware
+   - ✅ Enhanced graphics capabilities
+   - ✅ `compute,utility,graphics` driver capabilities
+   - ✅ Vulkan API support for Unreal Engine 5.6+
+
+#### Upgrading NVIDIA Drivers
+
+⚠️ **Important**: Due to a Helm limitation with comma-separated values, use values files instead of `--set`:
+
+```yaml
+# gpu-upgrade.yaml
+driver:
+  version: "575.57.08"
+  env:
+    - name: NVIDIA_DRIVER_CAPABILITIES
+      value: "compute,utility,graphics"
+```
+
+```bash
+helm upgrade gpu-operator nvidia/gpu-operator -n gpu-operator -f gpu-upgrade.yaml
+kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -w
+```
+
+#### GPU Status Monitoring
+
+```bash
+# Check GPU availability across cluster
+kubectl get nodes -L nvidia.com/gpu,uneeq.io/node-type
+
+# Monitor GPU operator installation
+kubectl get pods -n gpu-operator
+
+# Test GPU functionality
+kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o name | head -1) -- nvidia-smi
+```
+
+### 📖 Complete Documentation
+
+For detailed Kubernetes deployment instructions, troubleshooting, and advanced configuration:
+
+**➡️ [Kubernetes Deployment Guide](kubernetes/README.md)**
+
+- Prerequisites and tool installation
+- AWS credentials and VPC setup  
+- GPU driver troubleshooting
+- Known issues and solutions
+- Production monitoring with CloudWatch
 
 ## Additional Documentation
 
@@ -460,3 +363,23 @@ For more detailed information, refer to the following guides:
 - [Renny Integration](docs/guides/renny.md)
 - [vLLM Integration](docs/guides/vllm.md)
 - [vLLM Official Documentation](https://vllm.readthedocs.io/en/latest/)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+
+![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

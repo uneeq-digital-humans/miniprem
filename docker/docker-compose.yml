@@ -1,8 +1,7 @@
 name: uneeq-miniprem
 
-include:
-  - ./docker-compose.a2f.yml # a2f services
-  
+# Renny uses internal speech processing (NEW_SPEECH_OVERRIDE=1)
+
 services:
   # === FIRST TIER: Memory-intensive model loading services ===
   vllm:
@@ -265,9 +264,9 @@ services:
     command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
     env_file:
       - docker-compose.env
-    extra_hosts:
-      - "audio2face-gateway:127.0.0.1"
-    image: "facemeproduction/renny:0.632-47d09"
+    environment:
+      - NEW_SPEECH_OVERRIDE=1
+    image: "facemeproduction/renny:5.6speechanim"
     network_mode: host
     runtime: nvidia
     privileged: true
@@ -279,11 +278,6 @@ services:
       start_interval: 15s
       start_period: 10s
       retries: 3
-    depends_on:
-      audio2face_with_emotion:
-        condition: service_healthy
-      audio2face_controller:
-        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -386,4 +380,3 @@ volumes:
   grafana_data:
   vllm_data:
   whisper_data:
-  a2f_model_cache:
