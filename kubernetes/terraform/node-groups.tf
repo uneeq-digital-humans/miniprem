@@ -50,6 +50,14 @@ resource "aws_launch_template" "renny_gpu" {
       }
     )
   }
+
+  # Add tags to the launch template itself for easier cleanup
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${local.cluster_name}-renny-gpu-lt"
+    }
+  )
 }
 
 # Managed node group for Renny (GPU) using Ubuntu launch template
@@ -136,6 +144,14 @@ resource "aws_launch_template" "control" {
       }
     )
   }
+
+  # Add tags to the launch template itself for easier cleanup
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${local.cluster_name}-control-lt"
+    }
+  )
 }
 
 
