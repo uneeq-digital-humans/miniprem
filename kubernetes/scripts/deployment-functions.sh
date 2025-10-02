@@ -156,15 +156,16 @@ load_terraform_config() {
 save_deployment_id() {
     local id="$1"
     echo "$id" > "$PROJECT_DIR/$DEPLOYMENT_ID_FILE"
-    
+
     # Also update terraform.tfvars
     cd "$TERRAFORM_DIR"
     if grep -q "^deployment_id[[:space:]]*=" terraform.tfvars; then
         # Update existing line
         sed -i.bak "s/^deployment_id[[:space:]]*=.*/deployment_id = \"$id\"/" terraform.tfvars
     else
-        # Add new line
-        echo "\ndeployment_id = \"$id\"" >> terraform.tfvars
+        # Add new line with proper newline
+        echo "" >> terraform.tfvars
+        echo "deployment_id = \"$id\"" >> terraform.tfvars
     fi
 }
 
