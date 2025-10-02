@@ -19,9 +19,20 @@
 
 ## Getting Started
 
-New to MiniPrem? Start here:
+New to MiniPrem? Choose your deployment option:
 
-- **[Getting Started Guide](guides/getting-started.md)** - Installation and initial setup
+### Deployment Options
+
+MiniPrem supports two deployment architectures to match your needs:
+
+| Deployment | Best For | Setup Time | Scale | Cost |
+|-----------|----------|------------|-------|------|
+| **[Docker (Local)](guides/getting-started.md)** | Development, demos, testing | 5-10 minutes | 1-5 instances | $100-500/mo |
+| **[Kubernetes/EKS](guides/kubernetes.md)** | Production, enterprise | 30-45 minutes | 10-20+ instances | $9,000+/mo |
+
+**Start Here:**
+- **[Getting Started Guide](guides/getting-started.md)** - Docker installation and initial setup
+- **[Kubernetes/EKS Deployment](guides/kubernetes.md)** - Production-ready infrastructure with auto-scaling
 - **[Services Overview](guides/services.md)** - Understanding MiniPrem architecture
 
 ## Guides
