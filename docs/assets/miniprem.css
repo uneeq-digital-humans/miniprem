@@ -16,7 +16,7 @@
   --uneeq-dark-navy: #0B0941;  /* Primary dark from digitalhumans.com */
   --uneeq-accent-purple: #5F56D9; /* Accent purple from digitalhumans.com */
   --uneeq-dark-bg: #0e0b33;    /* Dark background from digitalhumans.com */
-  --uneeq-dark: #2C3E50;       /* Secondary dark navy */
+  --uneeq-dark: #2a3039;       /* UPDATED: Darker navy for better contrast */
   --uneeq-dark-light: #34495E; /* Lighter navy */
   --uneeq-light: #FFFFFF;      /* Clean white */
   --uneeq-light-gray: #F8F9FA; /* Very light gray */
@@ -28,24 +28,24 @@
   --error-color: #DC3545;
   --info-color: var(--uneeq-primary);
 
-  /* Dark Mode Colors - Desaturated for Better Eye Comfort */
-  --dark-bg-primary: #0e0b33;
-  --dark-bg-secondary: #1a1747;
-  --dark-text-primary: #F8F9FA; /* Off-white instead of pure white */
-  --dark-text-secondary: #B0B7C3;
-  --dark-border: #2a2550;
+  /* Dark Mode Colors - UPDATED: Heavily Desaturated for Eye Comfort */
+  --dark-bg-primary: #1a1925;       /* UPDATED: Reduced saturation 60% → 15% */
+  --dark-bg-secondary: #22212e;     /* UPDATED: Reduced saturation 49% → 15% */
+  --dark-text-primary: #e8e9ed;     /* UPDATED: Off-white, less bright */
+  --dark-text-secondary: #a8aab5;   /* UPDATED: Improved secondary text */
+  --dark-border: #2f2d3d;           /* UPDATED: Subtle border color */
 
-  /* Desaturated Purple/Navy for Dark Mode (20 points less saturation) */
-  --uneeq-accent-purple-dark: #6B64D6; /* Slightly lighter and less saturated */
-  --uneeq-dark-navy-dark: #1A1555; /* Lighter version of dark navy */
+  /* Desaturated Purple/Pink for Dark Mode - UPDATED */
+  --uneeq-accent-purple-dark: #9d95e8;  /* UPDATED: Less intense purple */
+  --uneeq-primary-dark: #d9769d;        /* UPDATED: Less intense pink for links */
 
   /* Theme colors for Docsify */
   --theme-color: var(--uneeq-primary);
   --theme-color-dark: var(--uneeq-secondary);
 
-  /* Light mode content colors */
+  /* Light mode content colors - UPDATED */
   --content-background: #f8f9fa;
-  --content-text: #2C3E50;
+  --content-text: #1a1d23;           /* UPDATED: Much darker for better readability */
   --content-border: #e2e8f0;
 
   /* Sidebar colors */
@@ -767,8 +767,17 @@ pre, code {
   border-bottom-color: var(--uneeq-accent-purple);
 }
 
+/* Dark mode links - UPDATED: Less intense pink for better readability */
+.dark .markdown-section a {
+  color: var(--uneeq-primary-dark);
+}
+
+.dark .markdown-section a:hover {
+  color: #e89bb8;  /* Slightly lighter on hover */
+}
+
 .dark .step-container {
-  background: linear-gradient(135deg, var(--dark-bg-secondary) 0%, #1a1747 100%);
+  background: linear-gradient(135deg, var(--dark-bg-secondary) 0%, var(--dark-bg-primary) 100%);
   border-left-color: var(--uneeq-accent-purple);
 }
 
