@@ -1,6 +1,7 @@
 <!-- _coverpage.md -->
 
-![UneeQ Logo](images/uneeq-favicon.png)
+<img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png" alt="UneeQ Logo" class="logo-light-mode" />
+<img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+Rev+White.png" alt="UneeQ Logo" class="logo-dark-mode" />
 
 # MiniPrem <small>1.0</small>
 
