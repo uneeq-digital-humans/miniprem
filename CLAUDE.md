@@ -203,7 +203,7 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 ### Docker GPU Requirements
 - NVIDIA GPU with Docker GPU runtime
 - Ubuntu 22.04 recommended
-- NVIDIA drivers 545.xx+ 
+- NVIDIA drivers 580+ (latest recommended)
 - CUDA 12.4+ support
 
 ### Kubernetes GPU Management

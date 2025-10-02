@@ -8,7 +8,7 @@
 MIN_GPU_MEMORY=16000
 
 # Define required minimum NVIDIA driver version
-MIN_NVIDIA_DRIVER_VERSION=535
+MIN_NVIDIA_DRIVER_VERSION=580
 
 # Define required minimum CUDA version
 MIN_CUDA_VERSION=12.0

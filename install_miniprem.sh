@@ -831,10 +831,7 @@ start_miniprem() {
             warning "Failed to start RIME services"
         fi
     fi
-    
-    # Audio2Face services removed - Renny now uses internal speech processing
-    info "Audio2Face services are no longer required - Renny uses internal speech processing"
-    
+
     # Start Renny with internal speech processing (required for both installation types)
     info "Starting Renny digital human service with internal speech processing..."
     $DOCKER_CMD $COMPOSE_FILES up -d renny

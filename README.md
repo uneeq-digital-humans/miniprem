@@ -219,12 +219,12 @@ The services started will depend on your installation type (Default or Full) as 
 
 ## Internal Speech Processing (NEW_SPEECH_OVERRIDE)
 
-MiniPrem v5.6mha introduces an advanced internal speech processing system that replaces the previous Audio2Face integration, providing improved reliability and performance.
+MiniPrem v5.6mha introduces an advanced internal speech processing system, providing improved reliability and performance.
 
 ### Key Benefits:
 - **🚀 Enhanced Performance**: Speech and facial animation processing occurs internally within Renny
 - **🔧 Improved Reliability**: Eliminates network dependencies between speech and animation services
-- **💰 Cost Reduction**: Fewer containers and resources required (no Audio2Face services)
+- **💰 Cost Reduction**: Fewer containers and resources required
 - **🛠️ Simplified Management**: Single service handles both speech processing and facial animation
 
 ### Configuration:
@@ -296,19 +296,20 @@ cd kubernetes
 
 The EKS deployment automatically handles NVIDIA GPU Operator installation. You'll be prompted to choose:
 
-1. **📋 Driver 575+** (Production Tested)
+1. **🚀 Driver 580+** (Recommended Default)
+   - ✅ Latest NVIDIA driver features and optimizations
+   - ✅ **REQUIRED for NVIDIA 5xxx series GPUs** (RTX 5090, etc.)
+   - ✅ Enhanced performance improvements
+   - ✅ Full graphics and compute capabilities
+   - ✅ CUDA 12.8+ support
+   - ✅ Production-ready and stable
+
+2. **📋 Driver 575+** (Alternative for Older GPUs)
    - ✅ Verified and tested configuration
-   - ✅ Maximum stability and compatibility
+   - ✅ Maximum stability for legacy hardware
    - ✅ Enhanced graphics capabilities
    - ✅ `compute,utility,graphics` driver capabilities
    - ✅ Vulkan API support for Unreal Engine 5.6+
-
-2. **🚀 Driver 580+** (Latest Release)
-   - ✅ Latest NVIDIA driver features
-   - ✅ **REQUIRED for NVIDIA 5xxx series GPUs** (RTX 5090, etc.)
-   - ✅ Enhanced performance optimizations
-   - ✅ Full graphics and compute capabilities
-   - ⚠️ Newest release - monitor for stability
 
 #### Upgrading NVIDIA Drivers
 

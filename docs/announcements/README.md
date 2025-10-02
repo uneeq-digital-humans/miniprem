@@ -7,14 +7,14 @@ Welcome to the MiniPrem announcements section. Here you'll find the latest updat
 ### [MiniPrem v5.6mha Migration Complete](ue56-upgrade.md)
 *January 2025*
 
-Comprehensive migration to MiniPrem version 5.6mha with Audio2Face removal completed and enhanced internal speech processing.
+Comprehensive migration to MiniPrem version 5.6mha with enhanced internal speech processing.
 
 **Key achievements:**
 - ✅ NVIDIA driver 580+ support implemented
 - ✅ Internal speech processing system active
-- ✅ Audio2Face components successfully removed
 - ✅ NEW_SPEECH_OVERRIDE environment variable configured
 - ✅ Simplified architecture with improved reliability
+- ✅ Streamlined service deployment
 
 [**Read the full upgrade guide →**](ue56-upgrade.md)
 

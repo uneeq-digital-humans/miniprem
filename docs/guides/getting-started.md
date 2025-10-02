@@ -28,7 +28,7 @@ Before you begin, ensure you have the following:
 
 - **Software Requirements**:
   - Ubuntu 24.04 LTS or newer
-  - NVIDIA drivers (minimum version 550.xx)
+  - NVIDIA drivers (version 580+ recommended)
   - Docker and Docker Compose
   - NVIDIA Container Toolkit
 

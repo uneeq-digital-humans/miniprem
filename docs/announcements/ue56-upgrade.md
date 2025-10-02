@@ -2,14 +2,14 @@
 
 > **Version 5.6mha • September 2025**
 
-🎉 **Congratulations!** Your MiniPrem installation has been successfully upgraded to version 5.6mha with Audio2Face removal completed.
+🎉 **Congratulations!** Your MiniPrem installation has been successfully upgraded to version 5.6mha.
 
 <div class="alert-box alert-success">
 <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
 </svg>
 <div>
-<strong>Upgrade Complete:</strong> Your system now features enhanced internal speech processing, improved reliability, and simplified architecture without Audio2Face dependencies.
+<strong>Upgrade Complete:</strong> Your system now features enhanced internal speech processing, improved reliability, and simplified architecture.
 </div>
 </div>
 
@@ -141,35 +141,7 @@ NEW_SPEECH_OVERRIDE=1
 
 ---
 
-## <div class="step-container"><div class="step-number">4</div><div class="step-content">Audio2Face Removal Complete</div></div>
-
-✅ **Audio2Face components have been successfully removed from your MiniPrem installation.**
-
-### What Changed:
-
-<div class="alert-box alert-success">
-<svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-</svg>
-<div>
-<strong>Improvements:</strong><br>
-• <strong>Simplified Architecture</strong>: No more Audio2Face dependencies<br>
-• <strong>Enhanced Reliability</strong>: Internal speech processing reduces failure points<br>
-• <strong>Better Performance</strong>: Optimized speech-to-animation pipeline<br>
-• <strong>Cost Reduction</strong>: Fewer containers and resources required
-</div>
-</div>
-
-### NEW_SPEECH_OVERRIDE Benefits:
-
-- **🚀 Faster Processing**: Speech and animation generation happens internally
-- **🔧 Improved Reliability**: No network dependencies between services
-- **💰 Cost Effective**: Reduced infrastructure requirements
-- **🛠️ Easier Management**: Fewer services to monitor and maintain
-
----
-
-## <div class="step-container"><div class="step-number">5</div><div class="step-content">Restart Your Services</div></div>
+## <div class="step-container"><div class="step-number">4</div><div class="step-content">Restart Your Services</div></div>
 
 Apply the changes by restarting your MiniPrem services.
 
@@ -199,12 +171,11 @@ Your MiniPrem installation is now running version 5.6mha with:
 ### ✅ Key Improvements:
 - **NVIDIA Driver 580+**: Enhanced graphics and rendering capabilities
 - **Internal Speech Processing**: Simplified and more reliable speech generation
-- **Audio2Face Removal**: Cleaner architecture with fewer dependencies
 - **NEW_SPEECH_OVERRIDE**: Advanced speech processing enabled
 
 ### 🚀 Performance Benefits:
-- **Faster startup times** (fewer containers to initialize)
-- **Improved reliability** (fewer service interdependencies)
+- **Faster startup times** (optimized container initialization)
+- **Improved reliability** (streamlined service architecture)
 - **Reduced resource usage** (optimized processing pipeline)
 - **Simplified troubleshooting** (consolidated speech processing)
 

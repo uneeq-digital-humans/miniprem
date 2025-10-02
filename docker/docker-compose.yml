@@ -1,7 +1,7 @@
 name: uneeq-miniprem
 
-# Audio2Face services removed - using Renny internal speech processing
-  
+# Renny uses internal speech processing (NEW_SPEECH_OVERRIDE=1)
+
 services:
   # === FIRST TIER: Memory-intensive model loading services ===
   vllm:

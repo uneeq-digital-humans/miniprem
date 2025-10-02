@@ -1,7 +1,7 @@
 name: uneeq-miniprem
 
 services:
-  # Audio2Face services removed - Renny now uses internal speech processing
+  # Renny uses internal speech processing (NEW_SPEECH_OVERRIDE=1)
 
   # === MAIN SERVICE: Renny with internal speech processing ===
   renny:

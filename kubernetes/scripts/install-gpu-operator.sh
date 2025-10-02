@@ -66,7 +66,7 @@ fi
 echo ""
 echo "🎮 Installing NVIDIA GPU Operator..."
 echo "This will:"
-echo "  - Install NVIDIA driver 570+ on all GPU nodes"
+echo "  - Install NVIDIA driver 580+ on all GPU nodes"
 echo "  - Configure containerd with NVIDIA runtime"
 echo "  - Enable GPU device plugin and monitoring"
 echo ""

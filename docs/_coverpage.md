@@ -1,6 +1,6 @@
 <!-- _coverpage.md -->
 
-![logo](images/logo.png)
+![UneeQ Logo](images/uneeq-favicon.png)
 
 # MiniPrem <small>1.0</small>
 
