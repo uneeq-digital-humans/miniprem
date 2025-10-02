@@ -62,7 +62,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 2. Run the installation script:
 
    ```bash
-   ./install_miniprem.sh
+   ./docker/scripts/install_miniprem.sh
    ```
 
    The installer will prompt you to select either a **Default Install** (Renny only) or a **Full Install** (all services: Renny, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
@@ -81,7 +81,7 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
    You can also provide these values directly as command-line arguments:
 
    ```bash
-   ./install_miniprem.sh --platform-address <address> --platform-key <key> --tenant-id <id> --azure-region <region> --azure-speech-key <key> --renny-image <image>
+   ./docker/scripts/install_miniprem.sh --platform-address <address> --platform-key <key> --tenant-id <id> --azure-region <region> --azure-speech-key <key> --renny-image <image>
    ```
 
 4. The installation process will:

@@ -1,11 +1,11 @@
 #!/bin/bash
 
-source scripts/docker.sh
-source scripts/logging.sh
-source scripts/audio.sh
-source scripts/hash.sh
-source scripts/environment.sh
-source scripts/prerequisites.sh
+source ../../scripts/docker.sh
+source ../../scripts/logging.sh
+source ../../scripts/audio.sh
+source ../../scripts/hash.sh
+source ../../scripts/environment.sh
+source ../../scripts/prerequisites.sh
 
 # Enable debugging
 #set -x
@@ -68,10 +68,10 @@ prompt_for_install_type() {
     read -p "Enter choice [1-2]: " install_choice
     if [[ "$install_choice" == "1" ]]; then
         INSTALL_TYPE="default"
-        echo "default" > .miniprem_install_type
+        echo "default" > ../../.miniprem_install_type
     elif [[ "$install_choice" == "2" ]]; then
         INSTALL_TYPE="full"
-        echo "full" > .miniprem_install_type
+        echo "full" > ../../.miniprem_install_type
     else
         echo "Invalid choice, exiting."
         exit 1
@@ -87,7 +87,7 @@ configure_eleven_labs() {
     read -p "Enter choice [1-2]: " eleven_choice
     if [[ "$eleven_choice" == "1" ]]; then
         USE_ELEVEN_LABS="yes"
-        echo "yes" > .miniprem_eleven_labs
+        echo "yes" > ../../.miniprem_eleven_labs
         # Prompt for Eleven Labs API key
         read -p "Enter your Eleven Labs API key: " ELEVEN_LABS_API_KEY
         if [ -z "$ELEVEN_LABS_API_KEY" ]; then
@@ -104,7 +104,7 @@ configure_eleven_labs() {
         fi
     else
         USE_ELEVEN_LABS="no"
-        echo "no" > .miniprem_eleven_labs
+        echo "no" > ../../.miniprem_eleven_labs
         # Clear any existing Eleven Labs environment variables
         update_env_variable "ELEVEN_LABS_API_KEY" "\"\""
         update_env_variable "ELEVEN_LABS_MODEL_ID" "\"\""
@@ -285,23 +285,23 @@ select_tts_provider() {
     case "$tts_choice" in
         1)
             TTS_PROVIDER="azure"
-            echo "azure" > .miniprem_tts_provider
+            echo "azure" > ../../.miniprem_tts_provider
             info "Azure TTS selected"
             ;;
         2)
             TTS_PROVIDER="elevenlabs"
-            echo "elevenlabs" > .miniprem_tts_provider
+            echo "elevenlabs" > ../../.miniprem_tts_provider
             info "Eleven Labs TTS selected"
             ;;
         3)
             TTS_PROVIDER="rime"
-            echo "rime" > .miniprem_tts_provider
+            echo "rime" > ../../.miniprem_tts_provider
             info "RIME TTS selected"
             ;;
         *)
             warning "Invalid choice, defaulting to Azure TTS"
             TTS_PROVIDER="azure"
-            echo "azure" > .miniprem_tts_provider
+            echo "azure" > ../../.miniprem_tts_provider
             ;;
     esac
 }
@@ -445,8 +445,8 @@ setup_rime_credentials() {
 
 # Function to update docker-compose.yml based on the selected TTS provider
 update_docker_compose_for_tts() {
-    local compose_file="docker/docker-compose.yml"
-    
+    local compose_file="../docker-compose.yml"
+
     # Only proceed if docker-compose.yml exists
     if [ ! -f "$compose_file" ]; then
         warning "docker-compose.yml not found, skipping TTS configuration"
@@ -472,9 +472,9 @@ update_docker_compose_for_tts() {
 
 # Function to update docker-compose.yml based on the selected STT backend
 update_docker_compose_for_stt() {
-    local compose_file="docker/docker-compose.yml"
+    local compose_file="../docker-compose.yml"
     local stt_choice=$1
-    
+
     # Only proceed if docker-compose.yml exists
     if [ ! -f "$compose_file" ]; then
         warning "docker-compose.yml not found, skipping STT configuration"
@@ -502,7 +502,7 @@ update_docker_compose_for_stt() {
 
 # Function to get required variables from the env file based on selected provider
 get_required_env_vars_from_example() {
-    local example_file="docker/docker-compose.env.example"
+    local example_file="../docker-compose.env.example"
     local all_vars=""
     
     # Get variables based on the selected TTS provider
@@ -529,7 +529,7 @@ get_required_env_vars_from_example() {
 
 # Function to check and prompt for required env variables dynamically based on selected provider
 check_and_prompt_required_env_vars() {
-    local env_file="docker/docker-compose.env"
+    local env_file="../docker-compose.env"
     local required_vars=( $(get_required_env_vars_from_example) )
     
     for var in "${required_vars[@]}"; do
@@ -559,7 +559,7 @@ check_and_prompt_required_env_vars() {
 
 # Function to update environment variables in docker-compose.env
 update_env_file() {
-    local env_file="docker/docker-compose.env"
+    local env_file="../docker-compose.env"
     
     # Only update variables if they have values
     if [ -n "$PLATFORM_KEY" ]; then
@@ -610,8 +610,8 @@ update_env_file() {
 
 # Function to ensure docker-compose.env exists by copying from example if needed
 ensure_env_file_exists() {
-    local env_file="docker/docker-compose.env"
-    local example_file="docker/docker-compose.env.example"
+    local env_file="../docker-compose.env"
+    local example_file="../docker-compose.env.example"
     
     # Use stat for more reliable file existence checking
     if ! stat "$env_file" > /dev/null 2>&1; then
@@ -712,15 +712,16 @@ build_log_streamer() {
     local current_dir=$(pwd)
 
     # Check if the log-streamer directory exists in various possible locations
-    if [ -d "docker/log-streamer" ]; then
-        cd docker
+    if [ -d "../log-streamer" ]; then
+        cd ..
     elif [ "$(basename $(pwd))" = "docker" ] && [ -d "log-streamer" ]; then
         # Already in docker directory
         :
-    elif [ -d "../docker/log-streamer" ]; then
-        cd ../docker
+    elif [ -d "../../log-streamer" ]; then
+        cd ../..
+        cd docker
     else
-        fatal "Log streamer directory not found. Expected at docker/log-streamer"
+        fatal "Log streamer directory not found. Expected at ../log-streamer"
     fi
 
     info "Building log streamer Docker image..."
@@ -787,9 +788,9 @@ start_miniprem() {
         # Only start vLLM for full installation
         # First, ensure vLLM volume directory exists and has correct permissions
         info "Preparing vLLM volume directory..."
-        if [ ! -d "docker/vllm_data" ]; then
-            mkdir -p docker/vllm_data
-            chmod 777 docker/vllm_data
+        if [ ! -d "../vllm_data" ]; then
+            mkdir -p ../vllm_data
+            chmod 777 ../vllm_data
         fi
 
         # First, start just vLLM since it needs significant GPU memory
@@ -983,10 +984,15 @@ setup_flowise_chatflow() {
 
     # Save current directory
     local current_dir=$(pwd)
-    
+
     # Determine the project root directory
     local project_root=""
-    if [[ "$(basename "$current_dir")" == "docker" ]]; then
+    if [[ "$(basename "$current_dir")" == "scripts" ]]; then
+        # We're in the docker/scripts directory, so project root is two levels up
+        project_root="$(dirname "$(dirname "$current_dir")")"
+        # Create logs directory in project root
+        mkdir -p "$project_root/logs"
+    elif [[ "$(basename "$current_dir")" == "docker" ]]; then
         # We're in the docker directory, so project root is one level up
         project_root="$(dirname "$current_dir")"
         # Create logs directory in project root
@@ -1049,7 +1055,12 @@ setup_flowise_chatflow() {
     
     # Determine location of setup script based on current directory
     local setup_script=""
-    if [[ "$(basename "$current_dir")" == "docker" ]]; then
+    if [[ "$(basename "$current_dir")" == "scripts" ]]; then
+        # We're in the docker/scripts directory
+        if [ -f "../../setup-chatflow-post-deployment.sh" ]; then
+            setup_script="../../setup-chatflow-post-deployment.sh"
+        fi
+    elif [[ "$(basename "$current_dir")" == "docker" ]]; then
         # We're in the docker directory
         if [ -f "../setup-chatflow-post-deployment.sh" ]; then
             setup_script="../setup-chatflow-post-deployment.sh"
@@ -1119,12 +1130,12 @@ check_environment() {
     
     # First, stop any existing miniprem containers
     info "Stopping any existing Miniprem containers..."
-    
-    if [ -f "./miniprem.sh" ]; then
-        ./miniprem.sh stop >/dev/null 2>&1
+
+    if [ -f "../../miniprem.sh" ]; then
+        ../../miniprem.sh stop >/dev/null 2>&1
         success "$CHECKMARK Existing Miniprem containers stopped using miniprem.sh"
-    elif [ -d "./docker" ]; then
-        (cd docker && $DOCKER_CMD down) >/dev/null 2>&1
+    elif [ -d ".." ]; then
+        (cd .. && $DOCKER_CMD down) >/dev/null 2>&1
         success "$CHECKMARK Existing Miniprem containers stopped using docker compose"
     else
         info "No existing Miniprem containers found"
@@ -1207,9 +1218,9 @@ check_environment() {
 # Function to check for duplicate installations of MiniPrem
 check_duplicate_installations() {
     log_section "Checking for Duplicate Installations"
-    
+
     # Create a marker file if it doesn't exist yet
-    local marker_file=".miniprem_installation_marker"
+    local marker_file="../../.miniprem_installation_marker"
     if [ ! -f "$marker_file" ]; then
         touch "$marker_file"
         info "Created installation marker file: $marker_file"
@@ -1329,20 +1340,20 @@ build_fast_whisper_image() {
     DOCKER_CMD="sudo docker"
 
     info "Building fast-whisper image from Dockerfile..."
-    
+
     # Check if required directories exist
-    if [ ! -d "docker/fast-whisper" ]; then
-        fatal "Fast Whisper directory not found at docker/fast-whisper"
+    if [ ! -d "../fast-whisper" ]; then
+        fatal "Fast Whisper directory not found at ../fast-whisper"
     fi
-    
-    if [ ! -f "docker/fast-whisper/Dockerfile" ]; then
-        fatal "Fast Whisper Dockerfile not found at docker/fast-whisper/Dockerfile"
+
+    if [ ! -f "../fast-whisper/Dockerfile" ]; then
+        fatal "Fast Whisper Dockerfile not found at ../fast-whisper/Dockerfile"
     fi
-    
+
     # Create the requirements.txt file if it doesn't exist
-    if [ ! -f "docker/fast-whisper/requirements.txt" ]; then
+    if [ ! -f "../fast-whisper/requirements.txt" ]; then
         echo "Creating requirements.txt for fast-whisper..."
-        cat > docker/fast-whisper/requirements.txt << EOF
+        cat > ../fast-whisper/requirements.txt << EOF
 faster-whisper==0.10.0
 fastapi==0.103.1
 uvicorn==0.23.2
@@ -1354,23 +1365,23 @@ python-dotenv==1.0.0
 torch>=2.0.0
 EOF
     fi
-    
+
     # Create start.sh if it doesn't exist
-    if [ ! -f "docker/fast-whisper/start.sh" ]; then
+    if [ ! -f "../fast-whisper/start.sh" ]; then
         echo "Creating start.sh for fast-whisper..."
-        cat > docker/fast-whisper/start.sh << EOF
+        cat > ../fast-whisper/start.sh << EOF
 #!/bin/bash
 cd /app/app
 python3 -m uvicorn main:app --host 0.0.0.0 --port 9000
 EOF
-        chmod +x docker/fast-whisper/start.sh
+        chmod +x ../fast-whisper/start.sh
     fi
-    
+
     # Create app directory and main.py if they don't exist
-    mkdir -p docker/fast-whisper/app
-    if [ ! -f "docker/fast-whisper/app/main.py" ]; then
+    mkdir -p ../fast-whisper/app
+    if [ ! -f "../fast-whisper/app/main.py" ]; then
         echo "Creating main.py for fast-whisper..."
-        cat > docker/fast-whisper/app/main.py << EOF
+        cat > ../fast-whisper/app/main.py << EOF
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
@@ -1451,9 +1462,9 @@ if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=9000)
 EOF
     fi
-    
+
     # Build the Docker image
-    (cd docker && $DOCKER_CMD build -t fast-whisper-optimized -f fast-whisper/Dockerfile ./fast-whisper)
+    (cd .. && $DOCKER_CMD build -t fast-whisper-optimized -f fast-whisper/Dockerfile ./fast-whisper)
     
     if [ $? -ne 0 ]; then
         fatal "Failed to build fast-whisper Docker image"
@@ -1503,11 +1514,11 @@ main() {
         setup_rime_credentials
     fi
 
-    # In all docker compose commands, use the correct compose files (with docker/ prefix, run from project root)
+    # In all docker compose commands, use the correct compose files (run from docker/scripts/ directory)
     if [ "$INSTALL_TYPE" = "default" ]; then
-        COMPOSE_FILES="-f docker/docker-compose.default.yml"
+        COMPOSE_FILES="-f ../docker-compose.default.yml"
     else
-        COMPOSE_FILES="-f docker/docker-compose.yml"
+        COMPOSE_FILES="-f ../docker-compose.yml"
     fi
 
     # Update docker-compose.yml based on TTS provider
@@ -1660,8 +1671,8 @@ main() {
     if [ -z "$PLATFORM_ADDRESS" ]; then
         PLATFORM_ADDRESS="wss://api.enterprise.uneeq.io/signalling-service/v1/ws/renderer"
         # Also update it in the env file
-        if grep -q "^DHOP_ADDRESS=" "docker/docker-compose.env"; then
-            sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=$PLATFORM_ADDRESS|" "docker/docker-compose.env"
+        if grep -q "^DHOP_ADDRESS=" "../docker-compose.env"; then
+            sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=$PLATFORM_ADDRESS|" "../docker-compose.env"
         fi
     fi
 

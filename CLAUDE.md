@@ -10,9 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./miniprem.sh start|stop|status|restart|logs|setup
 
 # Initial installation (interactive)
-./install_miniprem.sh
+./docker/scripts/install_miniprem.sh
 
-# Setup chatflow after deployment  
+# Setup chatflow after deployment
 ./setup-chatflow-post-deployment.sh
 ```
 
@@ -132,7 +132,7 @@ miniprem-2025/
 ## Development Workflow
 
 ### Docker Development (Local)
-1. Run `./install_miniprem.sh` for interactive setup
+1. Run `./docker/scripts/install_miniprem.sh` for interactive setup
 2. Use `./miniprem.sh start` to launch services
 3. Access services at configured ports (Flowise: 3000, Grafana: 3001, etc.)
 4. Monitor with `./miniprem.sh logs`

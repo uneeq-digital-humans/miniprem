@@ -45,7 +45,7 @@ cd miniprem-2025
 ### 2. Run the Installation Script
 
 ```bash
-./install_miniprem.sh
+./docker/scripts/install_miniprem.sh
 ```
 
 The installer will prompt you to select either a **Default Install** (Renny with internal speech processing) or a **Full Install** (all services: Renny, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
