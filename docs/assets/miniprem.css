@@ -149,6 +149,25 @@ body {
   max-height: 75px;
 }
 
+/* Light/Dark Mode Logo Visibility */
+/* Show dark logo in light mode, hide in dark mode */
+.logo-light-mode {
+  display: inline-block;
+}
+
+.dark .logo-light-mode {
+  display: none;
+}
+
+/* Hide white logo in light mode, show in dark mode */
+.logo-dark-mode {
+  display: none;
+}
+
+.dark .logo-dark-mode {
+  display: inline-block;
+}
+
 /* Links - Light Mode: Pink */
 .markdown-section a {
   color: var(--uneeq-primary);
