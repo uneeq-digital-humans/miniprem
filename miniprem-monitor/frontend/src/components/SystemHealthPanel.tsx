@@ -114,7 +114,7 @@ export const SystemHealthPanel: React.FC<SystemHealthPanelProps> = ({ className 
     const k8sRequestId = sendCommand('kubernetes', 'health');
 
     // Track pending requests
-    setPendingRequests(prev => new Set([...prev, dockerRequestId, k8sRequestId]));
+    setPendingRequests(prev => new Set([...Array.from(prev), dockerRequestId, k8sRequestId]));
   }, [isConnected, sendCommand]);
 
   useEffect(() => {

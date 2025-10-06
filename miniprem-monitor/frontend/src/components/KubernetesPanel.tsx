@@ -90,7 +90,7 @@ export function KubernetesPanel({
   };
 
   const getUniqueNamespaces = () => {
-    const namespaces = [...new Set(pods.map(pod => pod.namespace))];
+    const namespaces = Array.from(new Set(pods.map(pod => pod.namespace)));
     // If no pods available, provide common default namespaces
     if (namespaces.length === 0) {
       return ['all', 'default', 'kube-system', 'uneeq-renderer'];

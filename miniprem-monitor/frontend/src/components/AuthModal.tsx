@@ -35,7 +35,7 @@ export function AuthModal({
     }
   };
 
-  const handleKeyDown = (e: React.KeyEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && !isLoading) {
       onClose();
     }

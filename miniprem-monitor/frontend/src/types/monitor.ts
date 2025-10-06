@@ -35,7 +35,7 @@ export interface SystemMetrics {
 
 export interface CommandRequest {
   type: 'command' | 'subscribe' | 'unsubscribe';
-  target: 'docker' | 'kubernetes';
+  target: 'docker' | 'kubernetes' | 'system' | 'services' | 'connections';
   command: string;
   params?: Record<string, string>;
   requestId: string;
