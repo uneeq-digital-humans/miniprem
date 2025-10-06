@@ -98,12 +98,12 @@ Once installation is complete, you can access the following services:
 
 | Service | URL | Default Credentials |
 |---------|-----|---------------------|
+| **MiniPrem Monitor** | **http://localhost:3001** | N/A |
 | Flowise | http://localhost:3000 | user / password |
-| Grafana | http://localhost:3001 | admin / admin |
+| Grafana | http://localhost:3002 | admin / admin |
 | Prometheus | http://localhost:9090 | N/A |
 | vLLM API | http://localhost:8000 | N/A |
 | Renny Health | http://localhost:8081/health | N/A |
-| MiniPrem Monitor | http://localhost:3001 | N/A |
 | RIME API | http://localhost:8100 | Requires API Key |
 
 ### Using Flowise
@@ -129,9 +129,21 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
+### MiniPrem Monitor (Container & Kubernetes Monitoring)
+
+**Primary monitoring dashboard for Docker containers and Kubernetes pods.**
+
+1. Access MiniPrem Monitor at http://localhost:3001
+2. View real-time container status and resource usage
+3. Stream logs from any running container or pod
+4. Monitor both local Docker services and remote Kubernetes clusters
+5. Switch between configured kubectl contexts for multi-cluster monitoring
+
+For detailed documentation, see [MiniPrem Monitor README](miniprem-monitor/README.md).
+
 ### Monitoring with Grafana
 
-1. Access Grafana at http://localhost:3001
+1. Access Grafana at http://localhost:3002
 2. Log in with the default credentials (admin / admin)
 3. Navigate to Dashboards to view the pre-configured Flowise monitoring dashboard
 4. Create custom dashboards as needed to monitor specific metrics
@@ -205,17 +217,52 @@ Use the included `miniprem.sh` script to manage the platform:
 The services started will depend on your installation type (Default or Full) as specified during installation. The installation type is saved in the `.miniprem_install_type` file. To switch between installation types, simply run the installer again and select a different option.
 
 ### Default Install Services
+* MiniPrem Monitor (Container/Kubernetes Monitoring)
 * Renny (Digital Human with Internal Speech Processing)
 
 ### Full Install Services
 * All services in Default Install, plus:
-* Flowise (Workflow Automation) 
+* Flowise (Workflow Automation)
 * vLLM (LLM Inference)
 * Prometheus (Metrics Collection)
 * Grafana (Monitoring Dashboard)
 * Redis (Queue Management)
 * RIME (Text-to-Speech API)
-* Log Streamer (Container Log Viewer)
+
+## Monitoring Deployment Scenarios
+
+MiniPrem Monitor can be deployed in multiple configurations depending on your use case:
+
+### Scenario 1: Full MiniPrem Stack (Default)
+**Use Case:** Complete digital human platform with integrated monitoring
+**Command:** `./miniprem.sh start` (after running full installation)
+**Services:** Renny + vLLM + Flowise + Grafana + Prometheus + Redis + MiniPrem Monitor
+**Access:** http://localhost:3001
+
+This is the standard deployment for running the complete MiniPrem platform locally with all AI services and monitoring capabilities.
+
+### Scenario 2: Standalone Monitor (Kubernetes Monitoring)
+**Use Case:** Monitor production Kubernetes/EKS cluster alongside local Docker containers
+**Command:**
+```bash
+cd docker
+docker-compose -f docker-compose.monitor.yml up -d
+```
+**Services:** MiniPrem Monitor only
+**Access:** http://localhost:3001
+**Prerequisites:** kubectl configured with cluster access
+
+This deployment is ideal for platform operations teams who need to monitor remote Kubernetes clusters while also tracking local development containers. The monitor automatically detects configured kubectl contexts and allows switching between clusters.
+
+### Scenario 3: Minimal Stack (Renny + Monitor)
+**Use Case:** Resource-constrained environments with basic digital human functionality
+**Command:** `./miniprem.sh start` (after running default installation)
+**Services:** Renny + MiniPrem Monitor
+**Access:** http://localhost:3001
+
+This minimal deployment provides the Renny digital human interface with container monitoring, without the full AI/LLM stack.
+
+**For detailed monitoring documentation, including architecture, troubleshooting, and advanced configuration, see [MiniPrem Monitor README](miniprem-monitor/README.md).**
 
 ## Internal Speech Processing (NEW_SPEECH_OVERRIDE)
 

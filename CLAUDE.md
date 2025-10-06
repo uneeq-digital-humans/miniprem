@@ -77,16 +77,18 @@ npm run test:mobile            # Mobile responsive tests
 MiniPrem is a multi-deployment digital human platform with two main architectures:
 
 ### Docker Architecture (Local Development)
+- **MiniPrem Monitor**: Real-time container and Kubernetes monitoring dashboard (port 3001)
 - **Renny**: Digital human renderer with internal speech processing (UneeQ integration)
 - **vLLM**: LLM inference server (Gemma3/Mistral models)
 - **Flowise**: Workflow automation and LLM integration
-- **Grafana/Prometheus**: Monitoring and metrics
+- **Grafana/Prometheus**: Monitoring and metrics (Grafana on port 3002)
 - **Redis**: Message queuing
 - **RIME**: Text-to-speech API service
 
 **Installation Types:**
-- `default`: Renny with internal speech processing (basic setup)
-- `full`: All services including monitoring and AI stack
+- `default`: Renny + MiniPrem Monitor (basic setup with monitoring)
+- `full`: All services including AI stack, metrics, and monitoring
+- `monitor-only`: Standalone MiniPrem Monitor for Kubernetes cluster monitoring
 
 ### Kubernetes Architecture (Production)
 - **EKS Cluster**: Production-ready with auto-scaling
@@ -98,10 +100,12 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ## Key Configuration Files
 
 ### Docker Configuration
-- `docker/docker-compose.yml`: Full install services
-- `docker/docker-compose.default.yml`: Default install services  
+- `docker/docker-compose.yml`: Full install services (all services including monitor)
+- `docker/docker-compose.default.yml`: Default install services (Renny + monitor)
+- `docker/docker-compose.monitor.yml`: Standalone monitor for Kubernetes monitoring
 - `docker/configuration.dat`: UneeQ platform credentials (JSON format)
 - `.miniprem_install_type`: Current installation type (default/full)
+- `miniprem-monitor/`: Complete monitoring application (Next.js + FastAPI in single Docker image)
 
 ### Kubernetes Configuration
 - `kubernetes/terraform/terraform.tfvars`: Infrastructure settings (region, credentials, scaling)
@@ -119,7 +123,13 @@ miniprem-2025/
 ├── docker/                 # Docker-based local deployment
 │   ├── docker-compose.yml  # Full services stack
 │   ├── docker-compose.default.yml  # Basic services
+│   ├── docker-compose.monitor.yml  # Standalone monitor
 │   └── configuration.dat   # UneeQ credentials
+├── miniprem-monitor/       # Monitoring application
+│   ├── backend/           # FastAPI backend
+│   ├── frontend/          # Next.js frontend
+│   ├── Dockerfile         # Multi-stage build
+│   └── docker-entrypoint.sh
 ├── kubernetes/             # Production EKS deployment
 │   ├── terraform/          # Infrastructure as Code
 │   ├── scripts/           # Deployment automation
@@ -129,13 +139,37 @@ miniprem-2025/
 └── docs/                  # Documentation
 ```
 
+## Port Mappings
+
+### Docker Services (Local)
+| Service | Port | Description |
+|---------|------|-------------|
+| **MiniPrem Monitor** | **3001** | Primary monitoring dashboard (frontend + backend) |
+| Flowise | 3000 | Workflow automation UI |
+| Grafana | 3002 | Metrics dashboard (moved from 3001) |
+| Prometheus | 9090 | Metrics collection |
+| vLLM API | 8000 | LLM inference API |
+| Renny Health | 8081 | Digital human health check |
+| RIME API | 8100 | Text-to-speech API |
+| Redis | 6379 | Message queue |
+| Whisper | 9000 | Speech-to-text API |
+
+**Note:** MiniPrem Monitor uses host network mode for direct Docker socket access. The backend runs internally on port 8000, but this is not exposed externally when using host networking.
+
 ## Development Workflow
 
 ### Docker Development (Local)
 1. Run `./docker/scripts/install_miniprem.sh` for interactive setup
 2. Use `./miniprem.sh start` to launch services
-3. Access services at configured ports (Flowise: 3000, Grafana: 3001, etc.)
-4. Monitor with `./miniprem.sh logs`
+3. Access services at configured ports (Monitor: 3001, Flowise: 3000, Grafana: 3002, etc.)
+4. Monitor with MiniPrem Monitor at http://localhost:3001 or `./miniprem.sh logs`
+
+**Standalone Monitor Deployment (Kubernetes monitoring):**
+```bash
+cd docker
+docker-compose -f docker-compose.monitor.yml up -d
+# Access at http://localhost:3001
+```
 
 ### Kubernetes Development (Production)
 1. Configure AWS credentials and `terraform.tfvars`
