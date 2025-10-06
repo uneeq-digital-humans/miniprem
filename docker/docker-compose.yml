@@ -40,6 +40,35 @@ services:
       - no-new-privileges:true
 
   # === SECOND TIER: Other Services ===
+  miniprem-monitor:
+    build:
+      context: ../miniprem-monitor
+      dockerfile: Dockerfile
+    container_name: miniprem-monitor
+    network_mode: host  # Direct access to Docker daemon and localhost services
+    volumes:
+      # Docker socket for container monitoring (required)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Kubernetes config for cluster monitoring (optional)
+      - ~/.kube:/root/.kube:ro
+    restart: unless-stopped
+    environment:
+      - MONITOR_MODE=full_stack
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
   redis:
     image: redis:latest
     container_name: redis
@@ -98,7 +127,7 @@ services:
     image: grafana/grafana:10.2.0
     container_name: grafana
     ports:
-      - "3001:3000"
+      - "3002:3000"  # Changed from 3001 to 3002 (MiniPrem Monitor now uses 3001)
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources

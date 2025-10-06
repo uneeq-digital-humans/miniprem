@@ -3,6 +3,36 @@ name: uneeq-miniprem
 services:
   # Renny uses internal speech processing (NEW_SPEECH_OVERRIDE=1)
 
+  # === MONITORING SERVICE ===
+  miniprem-monitor:
+    build:
+      context: ../miniprem-monitor
+      dockerfile: Dockerfile
+    container_name: miniprem-monitor
+    network_mode: host  # Direct access to Docker daemon and localhost services
+    volumes:
+      # Docker socket for container monitoring (required)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Kubernetes config for cluster monitoring (optional)
+      - ~/.kube:/root/.kube:ro
+    restart: unless-stopped
+    environment:
+      - MONITOR_MODE=default
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
   # === MAIN SERVICE: Renny with internal speech processing ===
   renny:
     container_name: renny
