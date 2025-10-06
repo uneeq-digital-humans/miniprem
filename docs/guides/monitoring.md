@@ -11,10 +11,13 @@ MiniPrem includes two powerful monitoring tools:
 
 ## Accessing Monitoring Tools
 
-| Tool | URL | Default Credentials |
-|------|-----|---------------------|
-| Grafana | http://localhost:3001 | admin / admin |
-| Prometheus | http://localhost:9090 | N/A |
+| Tool | URL | Default Credentials | Purpose |
+|------|-----|---------------------|---------|
+| **MiniPrem Monitor** | http://localhost:3001 | N/A | Container/Pod logs & monitoring |
+| Grafana | http://localhost:3002 | admin / admin | Metrics visualization |
+| Prometheus | http://localhost:9090 | N/A | Metrics collection |
+
+**Note**: MiniPrem Monitor (port 3001) provides real-time container/pod monitoring and log streaming. For historical metrics and dashboards, use Grafana (port 3002).
 
 ## Grafana Dashboards
 
@@ -30,7 +33,7 @@ The MiniPrem installation includes a pre-configured dashboard for monitoring Flo
 
 ### Viewing Dashboards
 
-1. Log in to Grafana at http://localhost:3001
+1. Log in to Grafana at http://localhost:3002
 2. Click on "Dashboards" in the left sidebar
 3. Select "Flowise Dashboard" from the list
 
