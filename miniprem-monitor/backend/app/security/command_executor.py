@@ -799,6 +799,61 @@ class CommandExecutor:
                 'timestamp': datetime.utcnow().isoformat()
             }
 
+    async def _execute_docker_container_action(self, command: str, params: Dict[str, str]) -> Dict[str, Any]:
+        """Execute Docker container start/stop using SDK"""
+        try:
+            client = self.system_monitor._get_docker_client()
+            if client is None:
+                return {
+                    'success': False,
+                    'error': 'Cannot connect to Docker',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            container_name = params.get('container')
+            if not container_name:
+                return {
+                    'success': False,
+                    'error': 'Missing container parameter',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            # Get the container
+            container = client.containers.get(container_name)
+
+            # Execute the action
+            if command == 'start':
+                container.start()
+                action_msg = 'started'
+            elif command == 'stop':
+                container.stop()
+                action_msg = 'stopped'
+            else:
+                return {
+                    'success': False,
+                    'error': f'Unsupported container action: {command}',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            return {
+                'success': True,
+                'data': {
+                    'container_action': f'{command}_{container_name}',
+                    'container': container_name,
+                    'action': command,
+                    'message': f'Container {container_name} {action_msg} successfully'
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Docker container action error: {str(e)}")
+            return {
+                'success': False,
+                'error': f"Container {command} failed: {str(e)}",
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
     async def _execute_docker_service_command(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
         """Execute Docker service control commands"""
         try:
