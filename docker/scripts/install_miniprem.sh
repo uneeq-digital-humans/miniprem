@@ -708,50 +708,6 @@ check_all_values_provided() {
     fi
 }
 
-# Function to build the log streamer service
-build_log_streamer() {
-    log_section "Building Log Streamer Service"
-
-    # Save current directory
-    local current_dir=$(pwd)
-
-    # Check if the log-streamer directory exists
-    if [ ! -d "$PROJECT_ROOT/docker/log-streamer" ]; then
-        fatal "Log streamer directory not found at $PROJECT_ROOT/docker/log-streamer"
-    fi
-
-    cd "$PROJECT_ROOT/docker"
-
-    info "Building log streamer Docker image..."
-
-    # Check if we need to go into the log-streamer directory
-    if [ -d "log-streamer" ]; then
-        cd log-streamer
-    fi
-
-    # Check if package.json exists
-    if [ ! -f "package.json" ]; then
-        cd "$current_dir"  # Return to original directory before exiting
-        fatal "package.json not found in log-streamer directory"
-    fi
-
-    # Check if Dockerfile exists
-    if [ ! -f "Dockerfile" ]; then
-        cd "$current_dir"  # Return to original directory before exiting
-        fatal "Dockerfile not found in log-streamer directory"
-    fi
-
-    # Go back to the docker directory if we're in log-streamer
-    if [ "$(basename $(pwd))" = "log-streamer" ]; then
-        cd ..
-    fi
-
-    success "$CHECKMARK Log streamer service is ready to be built by docker-compose"
-
-    # Return to original directory
-    cd "$current_dir"
-}
-
 start_miniprem() {
     log_section "Starting Miniprem"
 
@@ -818,7 +774,7 @@ start_miniprem() {
         
         $DOCKER_CMD $COMPOSE_FILES up -d \
             redis grafana prometheus \
-            $tts_services flowise $whisper_service log-streamer
+            $tts_services flowise $whisper_service
         if [ $? -ne 0 ]; then
             fatal "Failed to start support services"
         fi
@@ -1670,9 +1626,6 @@ main() {
             exit 1
         fi
     fi
-
-    # Build the log streamer service
-    build_log_streamer
 
     # pull the images down with TTS provider information
     pull_docker_with_tts_provider

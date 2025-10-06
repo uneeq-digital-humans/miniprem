@@ -36,6 +36,11 @@ class CommandExecutor:
             'timeout': 30,
             'requires_params': ['container']
         },
+        'logs:stream': {
+            'cmd': ['docker', 'logs', '--follow', '--tail', '100', '--timestamps'],
+            'timeout': None,  # No timeout for streaming
+            'requires_params': ['container']
+        },
         'start': {
             'cmd': ['docker', 'start'],
             'timeout': 30,

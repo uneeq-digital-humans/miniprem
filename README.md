@@ -103,7 +103,7 @@ Once installation is complete, you can access the following services:
 | Prometheus | http://localhost:9090 | N/A |
 | vLLM API | http://localhost:8000 | N/A |
 | Renny Health | http://localhost:8081/health | N/A |
-| Log Viewer | http://localhost:8082 | N/A |
+| MiniPrem Monitor | http://localhost:3001 | N/A |
 | RIME API | http://localhost:8100 | Requires API Key |
 
 ### Using Flowise

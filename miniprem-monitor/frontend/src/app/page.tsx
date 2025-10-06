@@ -54,6 +54,8 @@ export default function MonitoringDashboard() {
     title: '',
     logs: '',
     loading: false,
+    streaming: false,
+    containerName: '',
   });
 
   // WebSocket message handler
@@ -61,6 +63,39 @@ export default function MonitoringDashboard() {
     console.log('WebSocket message:', response);
 
     if (response.success && response.data) {
+      // Handle log streaming messages
+      if (response.requestId.includes(':log')) {
+        // Streaming log line received
+        if (response.data.log_line) {
+          setLogViewer(prev => ({
+            ...prev,
+            logs: prev.logs ? `${prev.logs}\n${response.data.log_line}` : response.data.log_line,
+            loading: false,
+          }));
+        }
+        return;
+      }
+
+      // Handle stream end messages
+      if (response.requestId.includes(':end')) {
+        setLogViewer(prev => ({
+          ...prev,
+          streaming: false,
+          loading: false,
+        }));
+        return;
+      }
+
+      // Handle stream start confirmation
+      if (response.data.streaming === true) {
+        setLogViewer(prev => ({
+          ...prev,
+          streaming: true,
+          loading: false,
+        }));
+        return;
+      }
+
       // Handle real-time push notifications
       if (response.requestId.startsWith('push:')) {
         const pushType = response.requestId.replace('push:', '');
@@ -357,15 +392,19 @@ export default function MonitoringDashboard() {
 
 
   // Log viewer handlers
-  const handleViewContainerLogs = useCallback((containerName: string) => {
+  const handleViewContainerLogs = useCallback((containerName: string, streaming: boolean = true) => {
     if (isConnected) {
       setLogViewer({
         isOpen: true,
         title: `Container: ${containerName}`,
         logs: '',
         loading: true,
+        streaming: streaming,
+        containerName: containerName,
       });
-      sendCommand('docker', 'logs', { container: containerName });
+      // Use streaming logs by default for real-time updates
+      const command = streaming ? 'logs:stream' : 'logs';
+      sendCommand('docker', command, { container: containerName, lines: '100' });
     }
   }, [isConnected, sendCommand]);
 
@@ -382,7 +421,9 @@ export default function MonitoringDashboard() {
   }, [isConnected, sendCommand]);
 
   const handleCloseLogViewer = useCallback(() => {
-    setLogViewer(prev => ({ ...prev, isOpen: false }));
+    // If streaming, we need to close the connection by disconnecting and reconnecting
+    // or by sending a stop command (not implemented yet, streams will auto-close on component unmount)
+    setLogViewer(prev => ({ ...prev, isOpen: false, streaming: false }));
   }, []);
 
 

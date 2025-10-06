@@ -201,6 +201,11 @@ class ConnectionManager:
     async def _handle_command(self, websocket: WebSocket, connection_id: str, request: CommandRequest):
         """Execute a single command and return result"""
         try:
+            # Check if this is a streaming command
+            if request.command == "logs:stream" and request.target == "docker":
+                await self._handle_log_stream(websocket, connection_id, request)
+                return
+
             result = await self.command_executor.execute_command(
                 request.target,
                 request.command,
@@ -221,6 +226,100 @@ class ConnectionManager:
         except Exception as e:
             logger.error(f"Command execution error: {str(e)}")
             await self._send_error(websocket, connection_id, "Command execution failed", request.requestId)
+
+    async def _handle_log_stream(self, websocket: WebSocket, connection_id: str, request: CommandRequest):
+        """Handle real-time log streaming for a Docker container"""
+        try:
+            container_name = request.params.get('container')
+            if not container_name:
+                await self._send_error(websocket, connection_id, "Container name required", request.requestId)
+                return
+
+            # Validate container name (basic security check)
+            if not re.match(r'^[a-zA-Z0-9][a-zA-Z0-9_.-]*$', container_name):
+                await self._send_error(websocket, connection_id, "Invalid container name", request.requestId)
+                return
+
+            logger.info(f"Starting log stream for container {container_name} (connection: {connection_id})")
+
+            # Send initial confirmation
+            response = CommandResponse(
+                requestId=request.requestId,
+                success=True,
+                data={"streaming": True, "container": container_name}
+            )
+            await websocket.send_text(response.json())
+
+            # Start streaming logs
+            lines = request.params.get('lines', 100)
+            try:
+                lines = int(lines)
+            except (TypeError, ValueError):
+                lines = 100
+
+            # Build command
+            cmd = ['docker', 'logs', '--follow', '--tail', str(lines), '--timestamps', container_name]
+
+            # Start subprocess
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            # Store process for cleanup
+            if not hasattr(self, '_streaming_processes'):
+                self._streaming_processes = {}
+            stream_key = f"{connection_id}:{container_name}"
+            self._streaming_processes[stream_key] = process
+
+            try:
+                # Stream logs line by line
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        # Process ended
+                        break
+
+                    decoded_line = line.decode('utf-8', errors='replace').rstrip('\n\r')
+                    if decoded_line:
+                        # Send log line to client
+                        log_response = CommandResponse(
+                            requestId=f"{request.requestId}:log",
+                            success=True,
+                            data={"log_line": decoded_line, "container": container_name}
+                        )
+                        await websocket.send_text(log_response.json())
+
+                # Stream ended normally
+                end_response = CommandResponse(
+                    requestId=f"{request.requestId}:end",
+                    success=True,
+                    data={"streaming": False, "container": container_name, "reason": "completed"}
+                )
+                await websocket.send_text(end_response.json())
+
+            except (WebSocketDisconnect, ConnectionResetError):
+                logger.info(f"Log stream cancelled for {container_name} (connection: {connection_id})")
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    process.kill()
+            finally:
+                # Cleanup
+                if stream_key in self._streaming_processes:
+                    del self._streaming_processes[stream_key]
+                if process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        process.kill()
+
+        except Exception as e:
+            logger.error(f"Error in log stream for {container_name}: {str(e)}")
+            await self._send_error(websocket, connection_id, f"Log streaming failed: {str(e)}", request.requestId)
 
     async def _handle_subscription(self, websocket: WebSocket, connection_id: str, request: CommandRequest):
         """Handle subscription to periodic updates"""

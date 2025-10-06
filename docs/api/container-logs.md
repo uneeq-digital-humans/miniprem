@@ -1,45 +1,57 @@
 # Container Logs
 
-View real-time logs from containers running in the MiniPrem stack. This feature allows you to monitor services directly from the documentation.
+View real-time logs from Docker containers and Kubernetes pods in the MiniPrem stack using the integrated MiniPrem Monitor.
 
-## Available Containers
+## Accessing Logs
 
-Select a container from the dropdown to view its logs:
+The MiniPrem Monitor provides a centralized monitoring dashboard with real-time log streaming capabilities:
 
-```container-logs
-flowise
-vllm
-redis
-prometheus
-grafana
-renny
-log-streamer
-```
+1. **Access MiniPrem Monitor** at `http://localhost:3001`
+2. **Docker Containers**: Click the "View Logs" button (eye icon) next to any container
+3. **Kubernetes Pods**: Click the "View Logs" button next to any pod (if Kubernetes monitoring is enabled)
+
+## Features
+
+- **Real-Time Streaming**: Logs are streamed live as they are generated
+- **Syntax Highlighting**: Automatic color coding for log levels (ERROR, WARN, INFO, DEBUG)
+- **Auto-Scroll**: Automatically scrolls to show latest logs (can be toggled)
+- **Download Logs**: Save logs to a text file for offline analysis
+- **Historical Logs**: View last 100 lines of logs by default
+- **WebSocket Connection**: Efficient real-time updates via WebSocket
 
 ## How It Works
 
-This feature connects to the Log Streamer service running on port 8082, which provides a WebSocket interface to the Docker logs. When you select a container, a WebSocket connection is established to:
+The MiniPrem Monitor uses a FastAPI backend with WebSocket support to stream Docker container logs in real-time:
 
-```
-ws://localhost:8082/logs/{container-name}
-```
+1. Frontend connects to `ws://localhost:8000/ws`
+2. Sends a log streaming command: `{"type": "command", "target": "docker", "command": "logs:stream", "params": {"container": "container-name"}}`
+3. Backend executes `docker logs --follow --tail 100 --timestamps container-name`
+4. Log lines are streamed to the browser as they are generated
+5. Connection is maintained until the log viewer is closed
 
-The log streamer service then connects to Docker and streams logs in real-time to your browser.
+## Security
+
+- **Command Validation**: Only whitelisted Docker commands are allowed
+- **Input Sanitization**: Container names are validated against regex patterns
+- **Authentication**: Supports sudo authentication for Docker access when required
+- **Rate Limiting**: WebSocket connections are rate-limited to prevent abuse
 
 ## Troubleshooting
 
-If you don't see logs appearing:
+If logs don't appear:
 
-1. Make sure the log-streamer service is running:
+1. **Check MiniPrem Monitor** is running:
    ```bash
-   docker ps | grep log-streamer
+   docker ps | grep miniprem-monitor
    ```
 
-2. Check the log-streamer service logs:
+2. **Check Docker access**:
    ```bash
-   docker logs log-streamer
+   docker ps
    ```
 
-3. Ensure your browser supports WebSockets and has access to localhost:8082
+3. **Verify WebSocket connection** in browser developer tools (Network tab)
 
-4. If logs still don't appear, the service will automatically fall back to simulated logs for demonstration purposes.
+4. **Check browser console** for any connection errors
+
+For more details on the monitoring system, see the [MiniPrem Monitor README](../../miniprem-monitor/README.md).

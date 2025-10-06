@@ -490,3 +490,108 @@ class DockerMonitor:
             raise
         except Exception as e:
             raise DockerCommandError(f"Failed to get logs for container {container_name}: {str(e)}")
+
+    async def stream_container_logs(
+        self,
+        container_name: str,
+        lines: int = 100
+    ):
+        """
+        Stream logs from a specific Docker container in real-time.
+
+        This is an async generator that yields log lines as they are produced
+        by the container, similar to `docker logs --follow`.
+
+        Args:
+            container_name: Name or ID of the container
+            lines: Number of historical log lines to include initially
+
+        Yields:
+            str: Individual log lines as they are produced
+
+        Raises:
+            DockerCommandError: If container name is invalid or command fails
+        """
+        if not await self._check_docker_availability():
+            raise DockerCommandError("Docker is not available")
+
+        if not self._validate_container_name(container_name):
+            raise DockerCommandError(f"Invalid container name: {container_name}")
+
+        if not isinstance(lines, int) or lines < 1 or lines > 10000:
+            raise DockerCommandError("Lines parameter must be between 1 and 10000")
+
+        try:
+            # Ensure privilege detection is complete
+            if not self._privilege_detected:
+                await self.command_executor.detect_privileges()
+                self._privilege_detected = True
+
+            # Build command for streaming logs
+            command = [
+                "docker", "logs",
+                "--follow",
+                "--tail", str(lines),
+                container_name
+            ]
+
+            # Use sudo if required
+            requires_sudo = (
+                self.command_executor.privilege_status.docker_requires_sudo
+                and self.command_executor.auth_manager.is_authenticated()
+            )
+
+            if requires_sudo:
+                command = ["sudo", "-S"] + command
+
+            logger.info(f"Starting log stream for container {container_name}")
+
+            # Start the subprocess
+            process = await asyncio.create_subprocess_exec(
+                *command,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.PIPE if requires_sudo else None
+            )
+
+            # Send sudo password if needed
+            if requires_sudo and process.stdin:
+                password = self.command_executor.auth_manager.get_password()
+                process.stdin.write(f"{password}\n".encode())
+                await process.stdin.drain()
+
+            # Stream output line by line
+            try:
+                while True:
+                    line = await process.stdout.readline()
+                    if not line:
+                        # Process ended
+                        break
+
+                    decoded_line = line.decode('utf-8', errors='replace').rstrip('\n\r')
+                    if decoded_line:
+                        yield decoded_line
+
+            except asyncio.CancelledError:
+                # Clean up on cancellation
+                logger.info(f"Log stream cancelled for container {container_name}")
+                process.terminate()
+                try:
+                    await asyncio.wait_for(process.wait(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    process.kill()
+                raise
+
+            finally:
+                # Ensure process is terminated
+                if process.returncode is None:
+                    process.terminate()
+                    try:
+                        await asyncio.wait_for(process.wait(), timeout=5.0)
+                    except asyncio.TimeoutError:
+                        process.kill()
+
+        except DockerCommandError:
+            raise
+        except Exception as e:
+            raise DockerCommandError(f"Failed to stream logs for container {container_name}: {str(e)}")
