@@ -49,11 +49,21 @@ export interface CommandResponse {
     pods?: PodStatus[];
     logs?: string;
     nodes?: any[];
+    contexts?: KubernetesContext[];
+    switched_to?: string;
+    container_action?: string;
     alert?: string;
     subscribed?: string;
     unsubscribed?: string;
     metrics?: SystemMetrics;
-    system?: SystemInfo['system'];
+    system?: SystemInfo['system'] & {
+      docker?: SystemInfo['docker'];
+      kubernetes?: SystemInfo['kubernetes'];
+    };
+    // Log streaming fields
+    log_line?: string;
+    container?: string;
+    streaming?: boolean;
     // Real-time update fields
     type?: 'real_time_update';
     update_type?: string;

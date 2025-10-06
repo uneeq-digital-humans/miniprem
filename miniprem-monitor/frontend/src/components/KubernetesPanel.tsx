@@ -13,7 +13,7 @@ export interface ClusterStatus {
   environment: 'local' | 'eks' | 'gke' | 'aks';
   region?: string;
   status: 'connected' | 'connecting' | 'error';
-  lastSync?: Date;
+  lastSync?: string;
   latency?: number;
   podCount?: number;
   nodeCount?: number;

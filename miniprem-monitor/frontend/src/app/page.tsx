@@ -66,10 +66,11 @@ export default function MonitoringDashboard() {
       // Handle log streaming messages
       if (response.requestId.includes(':log')) {
         // Streaming log line received
-        if (response.data.log_line) {
+        const logLine = response.data?.log_line;
+        if (logLine) {
           setLogViewer(prev => ({
             ...prev,
-            logs: prev.logs ? `${prev.logs}\n${response.data.log_line}` : response.data.log_line,
+            logs: prev.logs ? `${prev.logs}\n${logLine}` : logLine,
             loading: false,
           }));
         }
@@ -286,10 +287,13 @@ export default function MonitoringDashboard() {
 
           // Create cluster status
           setClusterStatus({
-            isConnected: true,
-            currentContext: current.context,
-            availableClusters: clusters.length,
-            lastSync: new Date().toLocaleTimeString()
+            name: current.name,
+            context: current.context,
+            namespace: current.namespace || 'default',
+            environment: current.environment || 'eks',
+            status: 'connected',
+            lastSync: new Date().toLocaleTimeString(),
+            podCount: current.podCount
           });
         }
 
@@ -308,25 +312,13 @@ export default function MonitoringDashboard() {
         }
 
         setKubernetesError(errorMessage);
-        setClusterStatus({
-          isConnected: false,
-          currentContext: null,
-          availableClusters: 0,
-          lastSync: new Date().toLocaleTimeString(),
-          error: errorMessage
-        });
+        setClusterStatus(null);
       }
     } catch (error) {
       const errorMessage = 'Failed to connect to monitoring service. Please check if the backend is running.';
       console.error('Error fetching Kubernetes clusters:', error);
       setKubernetesError(errorMessage);
-      setClusterStatus({
-        isConnected: false,
-        currentContext: null,
-        availableClusters: 0,
-        lastSync: new Date().toLocaleTimeString(),
-        error: errorMessage
-      });
+      setClusterStatus(null);
     }
   }, [pods]);
 
@@ -441,7 +433,7 @@ export default function MonitoringDashboard() {
           namespace: cluster.namespace,
           environment: cluster.environment,
           status: 'connected',
-          lastSync: new Date(),
+          lastSync: new Date().toLocaleTimeString(),
           podCount: cluster.podCount
         });
 
