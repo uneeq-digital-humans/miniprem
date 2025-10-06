@@ -9,6 +9,9 @@ import { ClusterInfo } from '../components/ClusterSelector';
 import { LogViewer } from '../components/LogViewer';
 import { ConnectionStatus } from '../components/ConnectionStatus';
 import { DarkModeToggle } from '../components/DarkModeToggle';
+import { AwsSsoModal } from '../components/AwsSsoModal';
+import { AuthModal } from '../components/AuthModal';
+import { Terminal } from '../components/Terminal';
 import {
   SystemMetrics,
   ContainerStatus,
@@ -57,6 +60,20 @@ export default function MonitoringDashboard() {
     streaming: false,
     containerName: '',
   });
+
+  // AWS SSO Modal state
+  const [showAwsSsoModal, setShowAwsSsoModal] = useState(false);
+  const [awsSsoError, setAwsSsoError] = useState('');
+  const [awsSsoLoading, setAwsSsoLoading] = useState(false);
+
+  // Docker Auth Modal state
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authChallenge, setAuthChallenge] = useState<any>(null);
+  const [authError, setAuthError] = useState('');
+  const [authLoading, setAuthLoading] = useState(false);
+
+  // Terminal state
+  const [showTerminal, setShowTerminal] = useState(false);
 
   // WebSocket message handler
   const handleWebSocketMessage = useCallback((response: CommandResponse) => {
@@ -407,6 +424,8 @@ export default function MonitoringDashboard() {
         title: `Pod: ${podName} (${namespace})`,
         logs: '',
         loading: true,
+        streaming: false,
+        containerName: podName,
       });
       sendCommand('kubernetes', 'logs', { pod: podName, namespace });
     }
@@ -600,6 +619,86 @@ Available Clusters: ${availableClusters.length}`;
     }
   }, [isConnected, sendCommand, fetchKubernetesClusters]);
 
+  // AWS SSO Login Handler
+  const handleAwsSsoLogin = useCallback(async (profile: string) => {
+    setAwsSsoLoading(true);
+    setAwsSsoError('');
+
+    try {
+      const response = await fetch('/api/aws/sso/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setShowAwsSsoModal(false);
+        setAwsSsoError('');
+        // Refresh Kubernetes data after successful login
+        if (isConnected) {
+          setPodsLoading(true);
+          sendCommand('kubernetes', 'pods');
+          fetchKubernetesClusters();
+        }
+      } else {
+        setAwsSsoError(data.error || 'AWS SSO login failed');
+        throw new Error(data.error);
+      }
+    } catch (error: any) {
+      setAwsSsoError(error.message || 'AWS SSO login failed');
+      throw error;
+    } finally {
+      setAwsSsoLoading(false);
+    }
+  }, [isConnected, sendCommand, fetchKubernetesClusters]);
+
+  // Docker Password Authentication Handler
+  const handlePasswordSubmit = useCallback(async (password: string) => {
+    setAuthLoading(true);
+    setAuthError('');
+
+    try {
+      // TODO: Implement Docker authentication endpoint
+      // For now, just close the modal
+      console.log('Docker password submitted');
+      setShowAuthModal(false);
+      setAuthChallenge(null);
+    } catch (error: any) {
+      setAuthError(error.message || 'Authentication failed');
+      if (authChallenge) {
+        setAuthChallenge({
+          ...authChallenge,
+          retryCount: authChallenge.retryCount - 1
+        });
+      }
+    } finally {
+      setAuthLoading(false);
+    }
+  }, [authChallenge]);
+
+  // Check for AWS SSO errors in Kubernetes error messages
+  const checkForAwsSsoError = useCallback((errorMessage: string) => {
+    const awsSsoPatterns = [
+      'SSO session',
+      'expired or is otherwise invalid',
+      'aws sso login',
+      'getting credentials: exec: executable aws failed'
+    ];
+
+    return awsSsoPatterns.some(pattern =>
+      errorMessage.toLowerCase().includes(pattern.toLowerCase())
+    );
+  }, []);
+
+  // Update Kubernetes error handling to detect AWS SSO issues
+  useEffect(() => {
+    if (kubernetesError && checkForAwsSsoError(kubernetesError)) {
+      setShowAwsSsoModal(true);
+    }
+  }, [kubernetesError, checkForAwsSsoError]);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors" data-testid="dashboard-root">
       {/* Header */}
@@ -635,6 +734,16 @@ Available Clusters: ${availableClusters.length}`;
                 isConnected={isConnected}
                 connectionId={connectionId}
               />
+              <button
+                onClick={() => setShowTerminal(true)}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors flex items-center space-x-2"
+                title="Open Terminal"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="hidden sm:inline">Terminal</span>
+              </button>
               <DarkModeToggle />
             </div>
           </div>
@@ -695,6 +804,40 @@ Available Clusters: ${availableClusters.length}`;
         title={logViewer.title}
         logs={logViewer.logs}
         loading={logViewer.loading}
+      />
+
+      {/* AWS SSO Modal */}
+      <AwsSsoModal
+        isOpen={showAwsSsoModal}
+        onClose={() => {
+          setShowAwsSsoModal(false);
+          setAwsSsoError('');
+        }}
+        onLogin={handleAwsSsoLogin}
+        profiles={['uneeq-admin', 'default']}
+        error={awsSsoError}
+      />
+
+      {/* Docker Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => {
+          setShowAuthModal(false);
+          setAuthChallenge(null);
+          setAuthError('');
+        }}
+        onSubmit={handlePasswordSubmit}
+        challenge={authChallenge}
+        isLoading={authLoading}
+        error={authError}
+      />
+
+      {/* Terminal Modal */}
+      <Terminal
+        isOpen={showTerminal}
+        onClose={() => setShowTerminal(false)}
+        title="MiniPrem Terminal"
+        websocketUrl="ws://localhost:8000/ws/terminal"
       />
     </div>
   );
