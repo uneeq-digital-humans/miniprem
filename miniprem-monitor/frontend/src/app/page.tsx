@@ -273,7 +273,8 @@ export default function MonitoringDashboard() {
   // Kubernetes cluster management functions
   const fetchKubernetesClusters = useCallback(async () => {
     try {
-      const response = await fetch('/api/kubernetes/contexts');
+      // Add cache-busting parameter
+      const response = await fetch(`/api/kubernetes/contexts?t=${Date.now()}`);
       const data = await response.json();
 
       if (response.ok && data.success) {
@@ -292,6 +293,8 @@ export default function MonitoringDashboard() {
                         context.name.includes('aks') ? 'aks' as const :
                         'local' as const,
             status: context.current ? 'connected' as const : 'error' as const,
+            lastSync: context.current ? new Date() : undefined,
+            region: currentRegion,
             podCount: pods.filter(pod => pod.namespace === context.namespace).length
           }));
 
