@@ -94,6 +94,7 @@ docker-compose -f docker-compose.default.yml up -d
                        │
 ┌──────────────────────▼──────────────────────────────────┐
 │              MiniPrem Monitor Container                  │
+│                  (Host Network Mode)                     │
 │  ┌────────────────┐          ┌─────────────────────┐   │
 │  │ Next.js        │◄────────►│ FastAPI Backend     │   │
 │  │ Frontend :3001 │  Proxy   │ + WebSocket :8000   │   │
@@ -109,9 +110,31 @@ docker-compose -f docker-compose.default.yml up -d
         └───────────────────┘ └──────────────────┘ └──────────────────┘
 ```
 
+### Networking Architecture
+
+**Host Network Mode** - The monitor uses Docker's host networking (`network_mode: host`) for optimal performance and direct system access:
+
+**Why Host Networking?**
+- ✅ **Direct Docker Socket Access**: No network bridge overhead for container monitoring
+- ✅ **Kubernetes Context Access**: Seamless kubectl integration with host's kubeconfig
+- ✅ **Zero Port Mapping Overhead**: Services bind directly to host ports
+- ✅ **Simplified Configuration**: No complex port forwarding or NAT
+
+**Port Bindings:**
+- **Frontend**: Binds directly to host port **3001** (accessible at http://localhost:3001)
+- **Backend**: Binds directly to host port **8000** (internal API, not exposed externally)
+- **No Port Mapping Required**: With host networking, the `ports:` directive in docker-compose is ignored
+
+**Service Communication:**
+- Frontend proxies API requests to backend on localhost:8000
+- WebSocket connections established directly between browser and backend
+- All services share the host's network namespace
+
+**Security Features:**
 - **Single Container**: Frontend and backend run together via supervisord
-- **Host Network**: Direct access to Docker socket and localhost services
 - **Read-Only Socket**: Security-hardened with read-only Docker socket mount
+- **No New Privileges**: Container runs with `no-new-privileges:true` security option
+- **Command Whitelisting**: Only approved Docker/kubectl commands are executed
 
 ## Configuration
 
@@ -124,12 +147,14 @@ docker-compose -f docker-compose.default.yml up -d
 | `BACKEND_PORT` | Internal backend port | `8000` |
 | `FRONTEND_PORT` | External frontend port | `3001` |
 
-### Port Mappings
+### Port Bindings (Host Network Mode)
 
-| Service | Port | Description |
-|---------|------|-------------|
-| Frontend | 3001 | Main dashboard access point |
-| Backend | 8000 | Internal API (not exposed with host network) |
+| Service | Port | Access | Description |
+|---------|------|--------|-------------|
+| Frontend | 3001 | **Public** | Main dashboard - http://localhost:3001 |
+| Backend | 8000 | **Internal** | API & WebSocket (proxied by frontend) |
+
+**Note**: With host networking, services bind directly to host ports. No port mapping (e.g., `3001:3001`) is needed or used.
 
 ### Docker Socket
 
@@ -166,8 +191,12 @@ All container/pod names are validated against strict regex patterns to prevent i
 ### Read-Only Mounts
 Both Docker socket and kubectl config are mounted read-only where possible.
 
-### Network Isolation
-Uses `host` network mode for direct socket access while maintaining `no-new-privileges` security option.
+### Network Architecture
+Uses `host` network mode for optimal performance and direct system access:
+- Direct Docker socket access without bridge overhead
+- Seamless Kubernetes kubectl integration
+- Services bind directly to host ports (3001, 8000)
+- Maintains `no-new-privileges` security option
 
 ## Troubleshooting
 
@@ -328,7 +357,7 @@ This monitoring dashboard is part of the MiniPrem platform.
 
 <div align="center">
 
-**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+**© 2025 UneeQ. All rights reserved.**
 
 ![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
 

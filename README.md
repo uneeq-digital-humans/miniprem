@@ -96,15 +96,17 @@ MiniPrem is an integrated platform that combines a digital human interface (Renn
 
 Once installation is complete, you can access the following services:
 
-| Service | URL | Default Credentials |
-|---------|-----|---------------------|
-| **MiniPrem Monitor** | **http://localhost:3001** | N/A |
-| Flowise | http://localhost:3000 | user / password |
-| Grafana | http://localhost:3002 | admin / admin |
-| Prometheus | http://localhost:9090 | N/A |
-| vLLM API | http://localhost:8000 | N/A |
-| Renny Health | http://localhost:8081/health | N/A |
-| RIME API | http://localhost:8100 | Requires API Key |
+| Service | URL | Default Credentials | Notes |
+|---------|-----|---------------------|-------|
+| **MiniPrem Monitor** | **http://localhost:3001** | N/A | **Host network mode** - Direct port binding |
+| Flowise | http://localhost:3000 | user / password | Bridge network mode |
+| Grafana | http://localhost:3002 | admin / admin | Bridge network mode |
+| Prometheus | http://localhost:9090 | N/A | Bridge network mode |
+| vLLM API | http://localhost:8000 | N/A | Bridge network mode |
+| Renny Health | http://localhost:8081/health | N/A | Bridge network mode |
+| RIME API | http://localhost:8100 | Requires API Key | Bridge network mode |
+
+**Networking Note**: MiniPrem Monitor uses host networking for direct Docker socket and Kubernetes access. All other services use standard bridge networking.
 
 ### Using Flowise
 
@@ -133,13 +135,26 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 **Primary monitoring dashboard for Docker containers and Kubernetes pods.**
 
-1. Access MiniPrem Monitor at http://localhost:3001
-2. View real-time container status and resource usage
-3. Stream logs from any running container or pod
-4. Monitor both local Docker services and remote Kubernetes clusters
-5. Switch between configured kubectl contexts for multi-cluster monitoring
+**Quick Access:** http://localhost:3001
 
-For detailed documentation, see [MiniPrem Monitor README](miniprem-monitor/README.md).
+**Key Features:**
+- 📊 Real-time container status and resource usage
+- 📝 Live log streaming from any container or pod
+- 🔄 Monitor both local Docker and remote Kubernetes clusters
+- 🎯 Multi-cluster support with kubectl context switching
+- 🌐 Host networking for optimal performance and direct system access
+
+**Architecture:**
+- Uses Docker host networking (`network_mode: host`) for direct socket access
+- Frontend binds to port 3001, backend to port 8000 (internal)
+- Single container deployment with supervisord
+- Read-only Docker socket and kubeconfig mounts for security
+
+**📖 Complete Documentation:** [MiniPrem Monitor README](miniprem-monitor/README.md)
+- Architecture and networking details
+- Security features and command whitelisting
+- Troubleshooting guide
+- Development setup
 
 ### Monitoring with Grafana
 
@@ -421,7 +436,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 <div align="center">
 
-**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+**© 2025 UneeQ. All rights reserved.**
 
 ![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
 
