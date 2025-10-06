@@ -13,12 +13,20 @@ services:
       context: ../miniprem-monitor
       dockerfile: Dockerfile
     container_name: miniprem-monitor
-    network_mode: host  # Access localhost services and Docker daemon directly
+    # Network Mode:
+    # - Linux: Can use 'host' for optimal performance (direct port binding)
+    # - macOS/Windows: Must use bridge mode (host networking not supported)
+    # Using bridge mode for cross-platform compatibility
+    ports:
+      - "3001:3001"  # Frontend access
+      # Backend port 8000 not exposed (internal only, accessed via frontend proxy)
     volumes:
       # Docker socket for container monitoring (required)
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Kubernetes config for cluster monitoring (optional)
       - ~/.kube:/root/.kube:ro
+      # AWS credentials for EKS authentication (optional)
+      - ~/.aws:/root/.aws:ro
     restart: unless-stopped
     environment:
       - MONITOR_MODE=standalone

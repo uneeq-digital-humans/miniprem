@@ -70,7 +70,92 @@ npm run test:report            # View test results report
 npm run test:chromium          # Chrome-specific tests
 npm run test:firefox           # Firefox-specific tests
 npm run test:mobile            # Mobile responsive tests
+
+# MiniPrem Monitor Development
+cd docker/
+docker compose -f docker-compose.monitor.yml build --no-cache --pull miniprem-monitor
+docker compose -f docker-compose.monitor.yml up -d miniprem-monitor
+docker compose -f docker-compose.monitor.yml logs -f miniprem-monitor
+docker exec miniprem-monitor tail -50 /var/log/supervisor/backend.err.log  # Backend errors
+docker exec miniprem-monitor docker ps --format json  # Test Docker CLI access
+docker exec miniprem-monitor kubectl version --client  # Test kubectl access
 ```
+
+## MiniPrem Monitor - Current Working State
+
+**Status**: Docker container monitoring fully operational (January 2025)
+
+### What's Working ✅
+- Docker container listing via CLI (subprocess-based)
+- Real-time WebSocket updates for container status changes
+- System metrics: CPU, Memory, Disk, Network I/O
+- Container status indicators (running/stopped with color coding)
+- Filter tabs (All/Running/Stopped) with live counts
+- Start/Stop container control buttons
+
+### Technical Implementation Details
+- **Architecture**: CLI-based approach using subprocess (not Python SDKs)
+- **Reason for CLI**: Docker SDK urllib3>=2.0 conflicts with Kubernetes SDK urllib3<2.0
+- **CLI Tools**: docker-24.0.7 (static binary), kubectl-1.28.0 (static binary)
+- **Networking**: Bridge mode (macOS/Windows compatible, Linux can use host)
+- **Docker Socket**: `/var/run/docker.sock` mounted read-only
+- **Kubeconfig**: `~/.kube` mounted read-only for cluster access
+
+### Known Limitations ⚠️
+- Kubernetes EKS authentication requires active AWS SSO session
+- Run `aws sso login --profile uneeq-admin` on host before starting container
+- AWS CLI v2 installed and working (aws-cli/2.31.9)
+
+### Dockerfile CLI Installation Pattern
+```dockerfile
+# Install Docker CLI (static binary for cross-platform)
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then ARCH="x86_64"; elif [ "$ARCH" = "aarch64" ]; then ARCH="aarch64"; fi && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-24.0.7.tgz" -o docker.tgz && \
+    tar xzf docker.tgz && \
+    mv docker/docker /usr/local/bin/ && \
+    rm -rf docker docker.tgz && \
+    chmod +x /usr/local/bin/docker
+
+# Install kubectl (static binary)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/${ARCH}/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/
+
+# Install AWS CLI v2 (required for EKS authentication)
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then ARCH="x86_64"; elif [ "$ARCH" = "arm64" ]; then ARCH="aarch64"; fi && \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install && \
+    rm -rf aws awscliv2.zip
+```
+
+### Build Best Practices
+Always use `--no-cache --pull` for clean rebuilds:
+```bash
+docker compose -f docker-compose.monitor.yml build --no-cache --pull miniprem-monitor
+```
+
+### Prerequisites for EKS Monitoring
+Before starting the monitor container for EKS cluster access:
+```bash
+# Refresh AWS SSO session (required for EKS authentication)
+aws sso login --profile uneeq-admin
+
+# Start the monitor
+cd docker/
+docker compose -f docker-compose.monitor.yml up -d
+```
+
+### Next Development Steps
+1. ✅ ~~Install AWS CLI v2 in Dockerfile~~ - Completed
+2. ✅ ~~Mount AWS credentials in docker-compose~~ - Completed
+3. ✅ ~~Test Kubernetes authentication with EKS~~ - Completed (requires SSO login)
+4. ⏳ Implement AWS SSO login modal component (Tailwind)
+5. ⏳ Add Docker sudo password modal for privileged operations
+6. ⏳ Design terminal shell component with xterm.js + WebSocket PTY
 
 ## Architecture Overview
 

@@ -24,13 +24,44 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies and CLI tools
 RUN apt-get update && apt-get install -y \
     curl \
+    wget \
+    gnupg \
+    lsb-release \
+    ca-certificates \
+    apt-transport-https \
     supervisor \
     nodejs \
     npm \
+    sudo \
+    unzip \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Docker CLI (static binary for cross-platform compatibility)
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then ARCH="x86_64"; elif [ "$ARCH" = "aarch64" ]; then ARCH="aarch64"; fi && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-24.0.7.tgz" -o docker.tgz && \
+    tar xzf docker.tgz && \
+    mv docker/docker /usr/local/bin/ && \
+    rm -rf docker docker.tgz && \
+    chmod +x /usr/local/bin/docker
+
+# Install kubectl (static binary)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/${ARCH}/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/
+
+# Install AWS CLI v2 (required for EKS authentication)
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then ARCH="x86_64"; elif [ "$ARCH" = "arm64" ]; then ARCH="aarch64"; fi && \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install && \
+    rm -rf aws awscliv2.zip
 
 # Copy and install Python dependencies
 COPY backend/requirements.txt ./backend/
