@@ -1,9 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Terminal as XTerm } from '@xterm/xterm';
-import { FitAddon } from '@xterm/addon-fit';
-import { WebLinksAddon } from '@xterm/addon-web-links';
 import { X, Maximize2, Minimize2, RotateCcw, Copy, Download } from 'lucide-react';
 import clsx from 'clsx';
 import '@xterm/xterm/css/xterm.css';
@@ -24,18 +21,29 @@ export function Terminal({
   initialCommand
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
-  const xtermRef = useRef<XTerm | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
+  const xtermRef = useRef<any | null>(null);
+  const fitAddonRef = useRef<any | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    if (!isOpen || !terminalRef.current) return;
+    setMounted(true);
+  }, []);
 
-    // Initialize xterm.js
-    const term = new XTerm({
+  useEffect(() => {
+    if (!isOpen || !terminalRef.current || !mounted) return;
+
+    // Dynamically import xterm modules (client-side only)
+    const initTerminal = async () => {
+      const { Terminal: XTerm } = await import('@xterm/xterm');
+      const { FitAddon } = await import('@xterm/addon-fit');
+      const { WebLinksAddon } = await import('@xterm/addon-web-links');
+
+      // Initialize xterm.js
+      const term = new XTerm({
       cursorBlink: true,
       fontSize: 14,
       fontFamily: '"Fira Code", "Cascadia Code", "Courier New", monospace',
@@ -44,7 +52,6 @@ export function Terminal({
         foreground: '#d4d4d4',
         cursor: '#00A9CE',
         cursorAccent: '#1e1e1e',
-        selection: 'rgba(0, 169, 206, 0.3)',
         black: '#000000',
         red: '#cd3131',
         green: '#0dbc79',
@@ -76,9 +83,10 @@ export function Terminal({
     const webLinksAddon = new WebLinksAddon();
     term.loadAddon(webLinksAddon);
 
-    // Open terminal in container
-    term.open(terminalRef.current);
-    fitAddon.fit();
+      // Open terminal in container
+      if (!terminalRef.current) return;
+      term.open(terminalRef.current);
+      fitAddon.fit();
 
     xtermRef.current = term;
 
@@ -110,17 +118,20 @@ export function Terminal({
 
     window.addEventListener('resize', handleResize);
 
-    // Cleanup
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-      term.dispose();
+      // Cleanup
+      return () => {
+        window.removeEventListener('resize', handleResize);
+        if (wsRef.current) {
+          wsRef.current.close();
+        }
+        term.dispose();
+      };
     };
-  }, [isOpen, websocketUrl, initialCommand]);
 
-  const connectWebSocket = (term: XTerm, url: string) => {
+    initTerminal();
+  }, [isOpen, websocketUrl, initialCommand, mounted]);
+
+  const connectWebSocket = (term: any, url: string) => {
     try {
       const ws = new WebSocket(url);
       wsRef.current = ws;
@@ -163,7 +174,7 @@ export function Terminal({
       };
 
       // Handle terminal input
-      term.onData((data) => {
+      term.onData((data: string) => {
         if (data === '\r') { // Enter key
           const currentLine = (term as any)._core.buffer.active.getLine(
             (term as any)._core.buffer.active.cursorY
