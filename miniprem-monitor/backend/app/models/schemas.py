@@ -16,7 +16,7 @@ class CommandRequest(BaseModel):
     def validate_command(cls, v, values):
         target = values.get('target')
         allowed_commands = {
-            'docker': ['ps', 'stats', 'logs', 'health', 'start', 'stop', 'restart', 'status'],
+            'docker': ['ps', 'stats', 'logs', 'logs:stream', 'health', 'start', 'stop', 'restart', 'status'],
             'kubernetes': ['pods', 'nodes', 'logs', 'health', 'start', 'stop', 'restart', 'status', 'contexts', 'clusters', 'switch-context'],
             'system': ['metrics', 'info', 'health'],
             'services': ['availability', 'start', 'stop', 'restart'],
