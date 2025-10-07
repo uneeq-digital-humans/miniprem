@@ -14,6 +14,90 @@ source "$PROJECT_ROOT/scripts/prerequisites.sh"
 # Enable debugging
 #set -x
 
+# Enable error handling
+set -e
+set -o pipefail
+
+# Global variables for cleanup tracking
+CLEANUP_NEEDED=false
+CONTAINERS_STARTED=()
+INSTALLATION_MARKER_CREATED=false
+INSTALLATION_START_TIME=$(date +%s)
+
+# Cleanup handler - runs on script exit (success or failure)
+cleanup_on_error() {
+    local exit_code=$?
+
+    # Only run cleanup if script failed (non-zero exit)
+    if [ $exit_code -ne 0 ] && [ "$CLEANUP_NEEDED" = true ]; then
+        echo ""
+        echo "============================================"
+        echo "Installation failed! Running cleanup..."
+        echo "============================================"
+        echo ""
+
+        # Stop any containers that were started during this run
+        if [ ${#CONTAINERS_STARTED[@]} -gt 0 ]; then
+            echo "Stopping partially started containers..."
+            for container in "${CONTAINERS_STARTED[@]}"; do
+                if docker ps -q -f name="$container" > /dev/null 2>&1; then
+                    echo "  Stopping $container..."
+                    docker stop "$container" > /dev/null 2>&1 || true
+                fi
+            done
+        fi
+
+        # Remove installation marker if it was created recently (within last 5 minutes)
+        if [ "$INSTALLATION_MARKER_CREATED" = true ]; then
+            local current_time=$(date +%s)
+            local elapsed=$((current_time - INSTALLATION_START_TIME))
+
+            if [ $elapsed -lt 300 ]; then  # 5 minutes = 300 seconds
+                local marker_file="$PROJECT_ROOT/.miniprem_install_type"
+                if [ -f "$marker_file" ]; then
+                    echo "Removing installation marker (installation was incomplete)..."
+                    rm -f "$marker_file"
+                fi
+            fi
+        fi
+
+        echo ""
+        echo "============================================"
+        echo "Cleanup completed. System restored to pre-installation state."
+        echo ""
+        echo "Common issues and solutions:"
+        echo "  1. Docker not running: Start Docker Desktop and retry"
+        echo "  2. Insufficient disk space: Free up space and retry"
+        echo "  3. Port conflicts: Check if ports are in use with 'netstat -an | grep LISTEN'"
+        echo "  4. Permission issues: Ensure user is in 'docker' group"
+        echo ""
+        echo "For detailed logs, check: docker logs <container_name>"
+        echo "============================================"
+    fi
+
+    # Always restore terminal state
+    stty sane 2>/dev/null || true
+}
+
+# Register cleanup handler for EXIT signal
+trap cleanup_on_error EXIT
+
+# Function to mark cleanup as needed (call when starting containers)
+enable_cleanup() {
+    CLEANUP_NEEDED=true
+}
+
+# Function to register a started container for potential cleanup
+register_container() {
+    local container_name=$1
+    CONTAINERS_STARTED+=("$container_name")
+}
+
+# Function to mark installation marker as created
+mark_installation_marker_created() {
+    INSTALLATION_MARKER_CREATED=true
+}
+
 usage() {
     echo -e $WHITE
     cat <<EOF
@@ -36,8 +120,20 @@ validate_cloud_service() {
     local address=$1
     local port=$2
 
-    # Perform a curl request to the given address and port
-    response=$(curl -s -o /dev/null -w "%{http_code}" http://$address:$port)
+    # Input validation for address (hostname or IP)
+    if [[ ! "$address" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+        error "Invalid address format: $address"
+        fatal "Address must contain only alphanumeric characters, dots, and hyphens"
+    fi
+
+    # Input validation for port (must be numeric, 1-65535)
+    if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+        error "Invalid port number: $port"
+        fatal "Port must be a number between 1 and 65535"
+    fi
+
+    # Perform a curl request to the given address and port (using validated inputs)
+    response=$(curl -s -o /dev/null -w "%{http_code}" "http://$address:$port")
 
     # Check if the response code is 200 (OK)
     if [ "$response" -eq 200 ]; then
@@ -73,9 +169,11 @@ prompt_for_install_type() {
     if [[ "$install_choice" == "1" ]]; then
         INSTALL_TYPE="default"
         echo "default" > "$PROJECT_ROOT/.miniprem_install_type"
+        mark_installation_marker_created
     elif [[ "$install_choice" == "2" ]]; then
         INSTALL_TYPE="full"
         echo "full" > "$PROJECT_ROOT/.miniprem_install_type"
+        mark_installation_marker_created
     else
         echo "Invalid choice, exiting."
         exit 1
@@ -616,20 +714,27 @@ update_env_file() {
 ensure_env_file_exists() {
     local env_file="$PROJECT_ROOT/docker/docker-compose.env"
     local example_file="$PROJECT_ROOT/docker/docker-compose.env.example"
-    
+
     # Use stat for more reliable file existence checking
     if ! stat "$env_file" > /dev/null 2>&1; then
         # Example file must exist
         if [ -f "$example_file" ]; then
             info "Environment file not found, creating from example."
-            cp "$example_file" "$env_file"
-            
-            # Verify copy was successful
-            if [ $? -eq 0 ] && [ -f "$env_file" ]; then
-                success "$CHECKMARK Created $env_file from $example_file."
-            else
-                error "Failed to copy example file to $env_file. Check permissions."
+
+            # Attempt to copy with error handling
+            if ! cp "$example_file" "$env_file"; then
+                error "Failed to copy $example_file to $env_file"
+                fatal "Check disk space and permissions in $PROJECT_ROOT/docker/"
             fi
+
+            # Verify the copied file is readable and non-empty
+            if [ ! -r "$env_file" ] || [ ! -s "$env_file" ]; then
+                error "Created $env_file is not readable or empty"
+                rm -f "$env_file"  # Clean up invalid file
+                fatal "File creation verification failed. Check permissions and disk space."
+            fi
+
+            success "$CHECKMARK Created $env_file from $example_file"
         else
             fatal "Example environment file $example_file not found."
         fi
@@ -711,8 +816,11 @@ check_all_values_provided() {
 start_miniprem() {
     log_section "Starting Miniprem"
 
+    # Enable cleanup tracking before starting any services
+    enable_cleanup
+
     DOCKER_CMD="sudo docker compose"
-    
+
     if [ "$INSTALL_TYPE" = "full" ]; then
         # Stop any local Redis instances that might be running
         info "Checking for local Redis instances..."
@@ -744,7 +852,20 @@ start_miniprem() {
         info "Preparing vLLM volume directory..."
         if [ ! -d "$PROJECT_ROOT/docker/vllm_data" ]; then
             mkdir -p "$PROJECT_ROOT/docker/vllm_data"
-            chmod 777 "$PROJECT_ROOT/docker/vllm_data"
+
+            # Set secure permissions: rwxr-xr-x (755)
+            # Owner: full access, Group/Others: read and execute only
+            chmod 755 "$PROJECT_ROOT/docker/vllm_data"
+
+            # Verify permissions were set correctly (cross-platform compatible)
+            if command -v stat >/dev/null 2>&1; then
+                local actual_perms=$(stat -f '%A' "$PROJECT_ROOT/docker/vllm_data" 2>/dev/null || stat -c '%a' "$PROJECT_ROOT/docker/vllm_data" 2>/dev/null)
+                if [ "$actual_perms" != "755" ]; then
+                    warning "Failed to set secure permissions on vLLM data directory (got $actual_perms instead of 755)"
+                fi
+            fi
+
+            info "vLLM data directory created with secure permissions (755)"
         fi
 
         # First, start just vLLM since it needs significant GPU memory
@@ -1160,108 +1281,74 @@ check_duplicate_installations() {
         touch "$marker_file"
         info "Created installation marker file: $marker_file"
     fi
-    
+
     # Get the absolute path of the current directory
-    local current_dir=$(pwd)
-    
-    info "Searching for duplicate MiniPrem installations..."
-    
-    # Search for all directories containing "miniprem" (case insensitive) from root
-    # Exclude certain system paths to avoid excessive searching and permission errors
-    local miniprem_dirs=$(sudo find / -type d -iname "*miniprem*" \
-        -not -path "*/\.*" \
-        -not -path "*/proc/*" \
-        -not -path "*/sys/*" \
-        -not -path "*/dev/*" \
-        -not -path "*/run/*" \
-        -not -path "*/tmp/*" \
-        -not -path "*/var/tmp/*" \
-        2>/dev/null | sort)
-    local dir_count=$(echo "$miniprem_dirs" | grep -v "^$" | wc -l)
-    
-    # Search for marker files that could indicate other installations
-    local marker_files=$(sudo find / -type f -name ".miniprem_installation_marker" \
-        -not -path "*/\.*/*" \
-        -not -path "*/proc/*" \
-        -not -path "*/sys/*" \
-        -not -path "*/dev/*" \
-        -not -path "*/run/*" \
-        -not -path "*/tmp/*" \
-        -not -path "*/var/tmp/*" \
-        2>/dev/null | sort)
-    local marker_count=$(echo "$marker_files" | grep -v "^$" | wc -l)
-    
-    # Don't count the current directory as a duplicate
-    if [ "$dir_count" -gt 0 ]; then
-        local real_count=0
-        echo "$miniprem_dirs" | while read dir; do
-            if [ -n "$dir" ] && [ "$dir" != "$current_dir" ] && [ "$(realpath "$dir")" != "$(realpath "$current_dir")" ]; then
-                real_count=$((real_count+1))
+    local current_dir="$PROJECT_ROOT"
+
+    info "Searching for duplicate MiniPrem installations in common locations..."
+
+    # Define likely installation locations (much faster, safer search)
+    local search_paths=(
+        "$HOME"
+        "/opt"
+        "/usr/local"
+        "/var/lib"
+    )
+
+    # Search only likely locations with depth limit
+    local miniprem_dirs=""
+    for search_path in "${search_paths[@]}"; do
+        if [ -d "$search_path" ]; then
+            # maxdepth 4: prevents deep recursion, finds most installations
+            # timeout 30s: prevents hanging on network mounts
+            local found=$(timeout 30s find "$search_path" -maxdepth 4 -type d -iname "*miniprem*" \
+                -not -path "*/\.git/*" \
+                -not -path "*/node_modules/*" \
+                -not -path "$PROJECT_ROOT" \
+                -not -path "$PROJECT_ROOT/*" \
+                2>/dev/null || true)
+
+            if [ -n "$found" ]; then
+                miniprem_dirs="$miniprem_dirs"$'\n'"$found"
             fi
-        done
-        dir_count=$real_count
-    fi
-    
-    # Don't count the current marker file as a duplicate
-    if [ "$marker_count" -gt 0 ]; then
-        local real_count=0
-        echo "$marker_files" | while read file; do
-            if [ -n "$file" ] && [ "$file" != "$current_dir/$marker_file" ] && [ "$(dirname "$(realpath "$file")")" != "$(realpath "$current_dir")" ]; then
-                real_count=$((real_count+1))
-            fi
-        done
-        marker_count=$real_count
-    fi
-    
-    if [ "$dir_count" -gt 0 ] || [ "$marker_count" -gt 0 ]; then
+        fi
+    done
+
+    # Remove leading/trailing newlines and get count
+    miniprem_dirs=$(echo "$miniprem_dirs" | sed '/^$/d')
+    local dir_count=$(echo "$miniprem_dirs" | grep -c "^" 2>/dev/null || echo 0)
+
+    if [ "$dir_count" -gt 0 ] && [ -n "$miniprem_dirs" ]; then
         local box_width=75  # Fixed width for the box
         local border=$(printf "%${box_width}s" | tr ' ' '-')
-        
+
         echo -e "\n+${border}+"
         printf "| %-${box_width}s |\n" "⚠️  MULTIPLE MINIPREM INSTALLATIONS DETECTED"
         echo "+${border}+"
-        
+
         printf "| %-${box_width}s |\n" "Found $dir_count other directories with 'miniprem' in their name:"
-        
-        if [ "$dir_count" -gt 0 ]; then
-            echo "$miniprem_dirs" | while read dir; do
-                if [ -n "$dir" ] && [ "$dir" != "$current_dir" ] && [ "$(realpath "$dir")" != "$(realpath "$current_dir")" ]; then
-                    # Truncate path if too long
-                    local display_path="$dir"
-                    if [ ${#display_path} -gt $((box_width-4)) ]; then
-                        display_path="...${display_path:$((${#display_path}-$box_width+7))}"
-                    fi
-                    printf "| %-${box_width}s |\n" "  - $display_path"
+
+        echo "$miniprem_dirs" | while read -r dir; do
+            if [ -n "$dir" ]; then
+                # Truncate path if too long
+                local display_path="$dir"
+                if [ ${#display_path} -gt $((box_width-4)) ]; then
+                    display_path="...${display_path:$((${#display_path}-$box_width+7))}"
                 fi
-            done
-        fi
-        
-        printf "| %-${box_width}s |\n" ""
-        printf "| %-${box_width}s |\n" "Found $marker_count other MiniPrem marker files:"
-        
-        if [ "$marker_count" -gt 0 ]; then
-            echo "$marker_files" | while read file; do
-                if [ -n "$file" ] && [ "$file" != "$current_dir/$marker_file" ] && [ "$(dirname "$(realpath "$file")")" != "$(realpath "$current_dir")" ]; then
-                    # Truncate path if too long
-                    local display_path="$file"
-                    if [ ${#display_path} -gt $((box_width-4)) ]; then
-                        display_path="...${display_path:$((${#display_path}-$box_width+7))}"
-                    fi
-                    printf "| %-${box_width}s |\n" "  - $display_path"
-                fi
-            done
-        fi
-        
+                printf "| %-${box_width}s |\n" "  - $display_path"
+            fi
+        done
+
         printf "| %-${box_width}s |\n" ""
         printf "| %-${box_width}s |\n" "Having multiple installations may cause conflicts and unexpected behavior."
         printf "| %-${box_width}s |\n" "It's recommended to use only one installation of MiniPrem."
         echo "+${border}+"
-        
+
         read -p "Do you want to continue with this installation? (y/N): " continue_install
         if [[ ! "$continue_install" =~ ^[Yy]$ ]]; then
             fatal "Installation aborted due to multiple MiniPrem installations detected."
         fi
-        
+
         warning "Continuing with installation despite duplicate installations detected."
     else
         success "$CHECKMARK No duplicate MiniPrem installations detected."
