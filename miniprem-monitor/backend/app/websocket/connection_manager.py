@@ -269,11 +269,11 @@ class ConnectionManager:
             # Build command
             cmd = ['docker', 'logs', '--follow', '--tail', str(lines), '--timestamps', container_name]
 
-            # Start subprocess
+            # Start subprocess - merge stderr into stdout
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.STDOUT  # Merge stderr into stdout
             )
 
             # Store process for cleanup
