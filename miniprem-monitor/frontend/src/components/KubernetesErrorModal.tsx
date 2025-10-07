@@ -3,7 +3,7 @@ import { X, AlertTriangle, Info, RefreshCw, Settings2, ExternalLink } from 'luci
 import clsx from 'clsx';
 
 export interface KubernetesError {
-  type: 'auth_required' | 'no_clusters' | 'connection_failed' | 'context_invalid' | 'permission_denied';
+  type: 'auth_required' | 'no_clusters' | 'connection_failed' | 'context_invalid' | 'permission_denied' | 'aws_sso_expired';
   title: string;
   message: string;
   details?: string;
@@ -25,12 +25,13 @@ interface KubernetesErrorModalProps {
   retrying?: boolean;
 }
 
-const ERROR_CONFIGS: Record<KubernetesError['type'], { icon: React.ComponentType; colorClass: string }> = {
+const ERROR_CONFIGS: Record<KubernetesError['type'], { icon: React.ComponentType<{ className?: string }>; colorClass: string }> = {
   auth_required: { icon: AlertTriangle, colorClass: 'text-status-warning' },
   no_clusters: { icon: Info, colorClass: 'text-blue-500' },
   connection_failed: { icon: AlertTriangle, colorClass: 'text-status-error' },
   context_invalid: { icon: AlertTriangle, colorClass: 'text-status-warning' },
   permission_denied: { icon: AlertTriangle, colorClass: 'text-status-error' },
+  aws_sso_expired: { icon: AlertTriangle, colorClass: 'text-status-warning' },
 };
 
 export function KubernetesErrorModal({
@@ -288,6 +289,30 @@ export const KUBERNETES_ERRORS: Record<string, KubernetesError> = {
       'Check if your service account has been deleted',
       'Verify RBAC permissions for your user',
       'Try switching to a different context'
+    ]
+  },
+
+  AWS_SSO_EXPIRED: {
+    type: 'aws_sso_expired',
+    title: 'AWS SSO Session Expired',
+    message: 'Your AWS SSO session has expired and needs to be refreshed.',
+    details: 'EKS cluster authentication requires an active AWS SSO session.',
+    suggestions: [
+      'Click "Login with AWS SSO" to open the AWS SSO login page',
+      'Sign in with your AWS credentials',
+      'The session will be valid for 8 hours'
+    ],
+    commands: [
+      {
+        label: 'Login with AWS SSO (uneeq-admin profile)',
+        command: 'aws sso login --profile uneeq-admin',
+        description: 'Opens AWS SSO in your default browser'
+      },
+      {
+        label: 'Check current AWS identity',
+        command: 'aws sts get-caller-identity --profile uneeq-admin',
+        description: 'Verify your AWS credentials after login'
+      }
     ]
   }
 };

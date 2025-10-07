@@ -14,6 +14,7 @@ from .services.system_monitor import SystemMonitor
 from .services.kubernetes_monitor import KubernetesMonitor
 from .services.docker_manager import DockerManager
 from .services.aws_region_manager import AwsRegionManager
+from .services.terminal_manager import terminal_manager, TerminalManager
 from .security.command_executor import CommandExecutor
 from .models.schemas import (
     DockerServiceRequest, DockerServiceResponse, ServiceControlRequest,
@@ -718,6 +719,89 @@ async def get_current_aws_profile():
         )
 
 
+@app.post("/api/aws/sso/login")
+async def aws_sso_login(profile: str = "uneeq-admin"):
+    """
+    Initiate AWS SSO login for the specified profile.
+
+    This opens the AWS SSO login page in the user's default browser.
+    The session is cached for 8 hours after successful authentication.
+
+    Args:
+        profile: AWS profile name to use for SSO login (default: "uneeq-admin")
+
+    Returns:
+        Dictionary with operation status and instructions
+    """
+    try:
+        logger.info(f"Initiating AWS SSO login for profile: {profile}")
+
+        # Execute AWS SSO login command
+        process = await asyncio.create_subprocess_exec(
+            'aws', 'sso', 'login', '--profile', profile,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await asyncio.wait_for(
+            process.communicate(),
+            timeout=60.0  # 60 second timeout for SSO login
+        )
+
+        if process.returncode == 0:
+            logger.info(f"AWS SSO login successful for profile: {profile}")
+            return {
+                "success": True,
+                "profile": profile,
+                "message": "AWS SSO login successful. Session cached for 8 hours.",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        else:
+            error_output = stderr.decode() if stderr else "Unknown error"
+            logger.error(f"AWS SSO login failed: {error_output}")
+
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "success": False,
+                    "error": error_output,
+                    "error_type": "aws_sso_login_error",
+                    "profile": profile,
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+
+    except asyncio.TimeoutError:
+        error_msg = "AWS SSO login timed out after 60 seconds"
+        logger.error(error_msg)
+
+        return JSONResponse(
+            status_code=504,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": "aws_sso_timeout",
+                "profile": profile,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error during AWS SSO login: {error_msg}")
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": "aws_sso_error",
+                "profile": profile,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
 async def _send_initial_system_status(websocket: WebSocket, connection_id: str):
     """
     Send initial system status immediately after connection to prevent 'not available' states.
@@ -898,6 +982,132 @@ async def websocket_endpoint(websocket: WebSocket):
             await connection_manager.stop_change_detection()
 
         logger.debug(f"WebSocket connection {connection_id} cleanup completed")
+
+
+@app.websocket("/ws/terminal")
+async def terminal_websocket_endpoint(websocket: WebSocket):
+    """WebSocket endpoint for interactive terminal (PTY)"""
+    session_id = str(uuid.uuid4())
+    terminal_session = None
+
+    try:
+        # Accept WebSocket connection
+        await websocket.accept()
+        logger.info(f"Terminal WebSocket connection established: {session_id}")
+
+        # Send welcome message
+        await websocket.send_json({
+            "type": "connection",
+            "session_id": session_id,
+            "message": "Terminal session starting...",
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
+        # Define output callback for terminal
+        async def send_output(data: bytes):
+            """Send terminal output to WebSocket client"""
+            try:
+                await websocket.send_json({
+                    "type": "output",
+                    "content": data.decode('utf-8', errors='replace')
+                })
+            except Exception as e:
+                logger.error(f"Error sending terminal output for {session_id}: {e}")
+
+        # Create terminal session
+        terminal_session = await terminal_manager.create_session(
+            session_id,
+            send_output
+        )
+
+        # Send success message
+        await websocket.send_json({
+            "type": "ready",
+            "session_id": session_id,
+            "message": "Terminal ready",
+            "timestamp": datetime.utcnow().isoformat()
+        })
+
+        # Handle incoming messages (user input)
+        while True:
+            try:
+                # Receive message from client
+                data = await websocket.receive()
+
+                if 'text' in data:
+                    message = json.loads(data['text'])
+                    msg_type = message.get('type')
+
+                    if msg_type == 'input':
+                        # User input - send to terminal
+                        input_data = message.get('data', '')
+                        if input_data:
+                            await terminal_session.write(input_data.encode('utf-8'))
+
+                    elif msg_type == 'resize':
+                        # Terminal resize
+                        rows = message.get('rows', 24)
+                        cols = message.get('cols', 80)
+                        await terminal_session.resize(rows, cols)
+                        logger.debug(f"Terminal {session_id} resized to {rows}x{cols}")
+
+                    elif msg_type == 'ping':
+                        # Keepalive ping
+                        await websocket.send_json({
+                            "type": "pong",
+                            "timestamp": datetime.utcnow().isoformat()
+                        })
+
+                elif 'bytes' in data:
+                    # Binary data from client
+                    await terminal_session.write(data['bytes'])
+
+            except WebSocketDisconnect:
+                logger.info(f"Terminal WebSocket {session_id} disconnected by client")
+                break
+            except Exception as e:
+                logger.error(f"Error in terminal WebSocket loop for {session_id}: {e}")
+                await websocket.send_json({
+                    "type": "error",
+                    "message": str(e),
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                break
+
+    except WebSocketDisconnect:
+        logger.info(f"Terminal WebSocket {session_id} disconnected during setup")
+    except Exception as e:
+        logger.error(f"Error in terminal WebSocket endpoint for {session_id}: {e}")
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Terminal error: {str(e)}",
+                "timestamp": datetime.utcnow().isoformat()
+            })
+        except:
+            pass
+    finally:
+        # Cleanup terminal session
+        if terminal_session:
+            await terminal_manager.remove_session(session_id)
+        logger.debug(f"Terminal session {session_id} cleanup completed")
+
+
+# Application lifecycle events
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on application startup"""
+    logger.info("Starting MiniPrem Monitor backend services...")
+    await terminal_manager.start()
+    logger.info("All backend services started successfully")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup services on application shutdown"""
+    logger.info("Shutting down MiniPrem Monitor backend services...")
+    await terminal_manager.stop()
+    logger.info("All backend services stopped successfully")
 
 
 # Error handlers

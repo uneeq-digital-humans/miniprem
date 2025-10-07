@@ -185,9 +185,12 @@ class CommandExecutor:
         if target == 'docker':
             if command == 'health':
                 return await self._execute_docker_health_command(params)
+            elif command in ['logs', 'logs:stream']:
+                # Handle container logs
+                return await self._execute_docker_logs_command(command, params)
             elif command in ['start', 'stop'] and params and 'container' in params:
                 # Handle per-container start/stop operations
-                cmd_config = self.DOCKER_COMMANDS.get(command)
+                return await self._execute_docker_container_action(command, params)
             elif command in ['start', 'stop', 'restart', 'status'] and (not params or 'container' not in params):
                 # Handle global Docker service operations (legacy)
                 return await self._execute_docker_service_command(command, params)
@@ -796,6 +799,126 @@ class CommandExecutor:
             return {
                 'success': False,
                 'error': f"Kubernetes command failed: {str(e)}",
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+    async def _execute_docker_container_action(self, command: str, params: Dict[str, str]) -> Dict[str, Any]:
+        """Execute Docker container start/stop using SDK"""
+        try:
+            client = self.system_monitor._get_docker_client()
+            if client is None:
+                return {
+                    'success': False,
+                    'error': 'Cannot connect to Docker',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            container_name = params.get('container')
+            if not container_name:
+                return {
+                    'success': False,
+                    'error': 'Missing container parameter',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            # Get the container
+            container = client.containers.get(container_name)
+
+            # Execute the action
+            if command == 'start':
+                container.start()
+                action_msg = 'started'
+            elif command == 'stop':
+                container.stop()
+                action_msg = 'stopped'
+            else:
+                return {
+                    'success': False,
+                    'error': f'Unsupported container action: {command}',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            return {
+                'success': True,
+                'data': {
+                    'container_action': f'{command}_{container_name}',
+                    'container': container_name,
+                    'action': command,
+                    'message': f'Container {container_name} {action_msg} successfully'
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+        except Exception as e:
+            logger.error(f"Docker container action error: {str(e)}")
+            return {
+                'success': False,
+                'error': f"Container {command} failed: {str(e)}",
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+    async def _execute_docker_logs_command(self, command: str, params: Dict[str, str]) -> Dict[str, Any]:
+        """Execute Docker logs command"""
+        try:
+            container_name = params.get('container')
+            if not container_name:
+                return {
+                    'success': False,
+                    'error': 'Missing container parameter',
+                    'timestamp': datetime.utcnow().isoformat()
+                }
+
+            lines = params.get('lines', '100')
+            streaming = command == 'logs:stream'
+
+            logger.info(f"Fetching logs for container '{container_name}' (lines={lines}, streaming={streaming})")
+
+            # Build docker logs command
+            cmd = ['docker', 'logs']
+            if streaming:
+                cmd.extend(['--follow', '--tail', lines])
+            else:
+                cmd.extend(['--tail', lines])
+            cmd.append(container_name)
+
+            # Execute command
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT
+            )
+
+            stdout, _ = await asyncio.wait_for(
+                process.communicate(),
+                timeout=5.0
+            )
+
+            logs_output = stdout.decode('utf-8', errors='replace')
+
+            logger.info(f"Retrieved {len(logs_output)} bytes of logs for '{container_name}'")
+
+            return {
+                'success': True,
+                'data': {
+                    'logs': logs_output,
+                    'container': container_name,
+                    'lines': lines
+                },
+                'timestamp': datetime.utcnow().isoformat()
+            }
+
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout fetching logs for container '{container_name}'")
+            return {
+                'success': False,
+                'error': f"Timeout fetching logs for container '{container_name}'",
+                'timestamp': datetime.utcnow().isoformat()
+            }
+        except Exception as e:
+            logger.error(f"Docker logs error: {str(e)}")
+            return {
+                'success': False,
+                'error': f"Failed to fetch logs: {str(e)}",
                 'timestamp': datetime.utcnow().isoformat()
             }
 

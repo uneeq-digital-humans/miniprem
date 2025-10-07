@@ -773,17 +773,26 @@ start_miniprem() {
         fi
         
         $DOCKER_CMD $COMPOSE_FILES up -d \
-            redis grafana prometheus \
+            miniprem-monitor redis grafana prometheus \
             $tts_services flowise $whisper_service
         if [ $? -ne 0 ]; then
             fatal "Failed to start support services"
         fi
-    elif [ "$TTS_PROVIDER" = "rime" ]; then
-        # If using RIME in default install, start the RIME services
-        info "Starting RIME services..."
-        $DOCKER_CMD $COMPOSE_FILES up -d rime-model rime-api
+    else
+        # Default install: start monitor for container monitoring
+        info "Starting MiniPrem Monitor for container monitoring..."
+        $DOCKER_CMD $COMPOSE_FILES up -d miniprem-monitor
         if [ $? -ne 0 ]; then
-            warning "Failed to start RIME services"
+            warning "Failed to start MiniPrem Monitor"
+        fi
+
+        # If using RIME in default install, start the RIME services
+        if [ "$TTS_PROVIDER" = "rime" ]; then
+            info "Starting RIME services..."
+            $DOCKER_CMD $COMPOSE_FILES up -d rime-model rime-api
+            if [ $? -ne 0 ]; then
+                warning "Failed to start RIME services"
+            fi
         fi
     fi
 
@@ -793,7 +802,7 @@ start_miniprem() {
     if [ $? -ne 0 ]; then
         fatal "Failed to start Renny service"
     fi
-    
+
     success "$CHECKMARK MiniPrem services started successfully"
 }
 
@@ -1640,9 +1649,13 @@ main() {
 
     success "$CHECKMARK Installation and configuration complete."
     info "Miniprem is now running. You can access:"
-    info "- Flowise at http://localhost:3000"
+    info "- MiniPrem Monitor at http://localhost:3001 (container/Kubernetes monitoring)"
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        info "- Flowise at http://localhost:3000 (workflow automation)"
+        info "- Grafana at http://localhost:3002 (metrics dashboard)"
+    fi
     info "- Renny service health at http://localhost:8081/health"
-    info "- Documentation with logs viewer at http://localhost:3000/docs/ (if you've set up the documentation server)"
+    info ""
     info "To stop the services, use: cd docker && docker compose down"
 }
 

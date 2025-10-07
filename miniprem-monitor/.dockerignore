@@ -1,0 +1,42 @@
+# Node modules
+frontend/node_modules
+frontend/.next
+frontend/out
+frontend/.env*.local
+frontend/package-lock.json
+
+# Python
+backend/venv
+backend/__pycache__
+backend/**/__pycache__
+backend/**/*.pyc
+backend/.pytest_cache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Logs
+*.log
+logs/
+
+# Test files
+frontend/tests
+backend/tests
+frontend/playwright-report
+frontend/test-results
+
+# Documentation (not needed in image)
+*.md
+!README.md

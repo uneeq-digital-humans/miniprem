@@ -400,7 +400,7 @@ For issues related to this monitoring backend:
 
 <div align="center">
 
-**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+**© 2025 UneeQ. All rights reserved.**
 
 ![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
 

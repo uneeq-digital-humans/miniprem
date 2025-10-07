@@ -4,7 +4,6 @@ import { Activity, Cpu, HardDrive, MemoryStick, Clock, AlertTriangle, CheckCircl
 import clsx from 'clsx';
 import { HealthResponse, HealthSystemInfo, HealthApiError, StatusType } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
-import { MetricsCard } from './MetricsCard';
 
 /**
  * Configuration options for the HealthDashboard component
@@ -415,37 +414,57 @@ export const HealthDashboard: React.FC<HealthDashboardProps> = ({
 
           {/* Metrics Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <MetricsCard
-              title="CPU Usage"
-              value={`${data.system_info.cpu_percent}%`}
-              icon={<Cpu className="w-5 h-5" />}
-              color={getPercentageColor(data.system_info.cpu_percent)}
-              subtitle={`${data.system_info.cpu_count} cores`}
-            />
+            <div className="bg-white rounded-lg border p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">CPU Usage</p>
+                  <p className={`text-2xl font-bold ${getPercentageColor(data.system_info.cpu_percent)}`}>
+                    {data.system_info.cpu_percent}%
+                  </p>
+                  <p className="text-xs text-gray-500">{data.system_info.cpu_count} cores</p>
+                </div>
+                <Cpu className="w-8 h-8 text-gray-400" />
+              </div>
+            </div>
 
-            <MetricsCard
-              title="Memory Usage"
-              value={`${data.system_info.memory_percent}%`}
-              icon={<MemoryStick className="w-5 h-5" />}
-              color={getPercentageColor(data.system_info.memory_percent)}
-              subtitle={`${formatBytes(data.system_info.memory_available)} available`}
-            />
+            <div className="bg-white rounded-lg border p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Memory Usage</p>
+                  <p className={`text-2xl font-bold ${getPercentageColor(data.system_info.memory_percent)}`}>
+                    {data.system_info.memory_percent}%
+                  </p>
+                  <p className="text-xs text-gray-500">{formatBytes(data.system_info.memory_available)} available</p>
+                </div>
+                <MemoryStick className="w-8 h-8 text-gray-400" />
+              </div>
+            </div>
 
-            <MetricsCard
-              title="Disk Usage"
-              value={`${data.system_info.disk_percent}%`}
-              icon={<HardDrive className="w-5 h-5" />}
-              color={getPercentageColor(data.system_info.disk_percent)}
-              subtitle={`${formatBytes(data.system_info.disk_free)} free`}
-            />
+            <div className="bg-white rounded-lg border p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Disk Usage</p>
+                  <p className={`text-2xl font-bold ${getPercentageColor(data.system_info.disk_percent)}`}>
+                    {data.system_info.disk_percent}%
+                  </p>
+                  <p className="text-xs text-gray-500">{formatBytes(data.system_info.disk_free)} free</p>
+                </div>
+                <HardDrive className="w-8 h-8 text-gray-400" />
+              </div>
+            </div>
 
-            <MetricsCard
-              title="Uptime"
-              value={formatUptime(data.system_info.uptime_seconds)}
-              icon={<Clock className="w-5 h-5" />}
-              color="text-gray-700"
-              subtitle={`Since ${format(new Date(data.system_info.boot_time), 'MMM dd, HH:mm')}`}
-            />
+            <div className="bg-white rounded-lg border p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-gray-600">Uptime</p>
+                  <p className="text-2xl font-bold text-gray-700">
+                    {formatUptime(data.system_info.uptime_seconds)}
+                  </p>
+                  <p className="text-xs text-gray-500">Since {format(new Date(data.system_info.boot_time), 'MMM dd, HH:mm')}</p>
+                </div>
+                <Clock className="w-8 h-8 text-gray-400" />
+              </div>
+            </div>
           </div>
 
           {/* Detailed System Information */}

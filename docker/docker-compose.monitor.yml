@@ -1,0 +1,46 @@
+version: '3.8'
+
+# Standalone MiniPrem Monitor for Kubernetes/Docker monitoring
+# Use this when you have an EKS/AKS cluster and want to monitor it
+# along with local Docker containers
+#
+# Usage: docker-compose -f docker-compose.monitor.yml up -d
+# Access: http://localhost:3001
+
+services:
+  miniprem-monitor:
+    build:
+      context: ../miniprem-monitor
+      dockerfile: Dockerfile
+    container_name: miniprem-monitor
+    # Network Mode:
+    # - Linux: Can use 'host' for optimal performance (direct port binding)
+    # - macOS/Windows: Must use bridge mode (host networking not supported)
+    # Using bridge mode for cross-platform compatibility
+    ports:
+      - "3001:3001"  # Frontend access
+      # Backend port 8000 not exposed (internal only, accessed via frontend proxy)
+    volumes:
+      # Docker socket for container monitoring (required)
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Kubernetes config for cluster monitoring (optional)
+      - ~/.kube:/root/.kube:ro
+      # AWS credentials for EKS authentication (optional)
+      - ~/.aws:/root/.aws:ro
+    restart: unless-stopped
+    environment:
+      - MONITOR_MODE=standalone
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true

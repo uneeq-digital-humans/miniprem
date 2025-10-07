@@ -70,23 +70,110 @@ npm run test:report            # View test results report
 npm run test:chromium          # Chrome-specific tests
 npm run test:firefox           # Firefox-specific tests
 npm run test:mobile            # Mobile responsive tests
+
+# MiniPrem Monitor Development
+cd docker/
+docker compose -f docker-compose.monitor.yml build --no-cache --pull miniprem-monitor
+docker compose -f docker-compose.monitor.yml up -d miniprem-monitor
+docker compose -f docker-compose.monitor.yml logs -f miniprem-monitor
+docker exec miniprem-monitor tail -50 /var/log/supervisor/backend.err.log  # Backend errors
+docker exec miniprem-monitor docker ps --format json  # Test Docker CLI access
+docker exec miniprem-monitor kubectl version --client  # Test kubectl access
 ```
+
+## MiniPrem Monitor - Current Working State
+
+**Status**: Docker container monitoring fully operational (January 2025)
+
+### What's Working ✅
+- Docker container listing via CLI (subprocess-based)
+- Real-time WebSocket updates for container status changes
+- System metrics: CPU, Memory, Disk, Network I/O
+- Container status indicators (running/stopped with color coding)
+- Filter tabs (All/Running/Stopped) with live counts
+- Start/Stop container control buttons
+
+### Technical Implementation Details
+- **Architecture**: CLI-based approach using subprocess (not Python SDKs)
+- **Reason for CLI**: Docker SDK urllib3>=2.0 conflicts with Kubernetes SDK urllib3<2.0
+- **CLI Tools**: docker-24.0.7 (static binary), kubectl-1.28.0 (static binary)
+- **Networking**: Bridge mode (macOS/Windows compatible, Linux can use host)
+- **Docker Socket**: `/var/run/docker.sock` mounted read-only
+- **Kubeconfig**: `~/.kube` mounted read-only for cluster access
+
+### Known Limitations ⚠️
+- Kubernetes EKS authentication requires active AWS SSO session
+- Run `aws sso login --profile uneeq-admin` on host before starting container
+- AWS CLI v2 installed and working (aws-cli/2.31.9)
+
+### Dockerfile CLI Installation Pattern
+```dockerfile
+# Install Docker CLI (static binary for cross-platform)
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "x86_64" ]; then ARCH="x86_64"; elif [ "$ARCH" = "aarch64" ]; then ARCH="aarch64"; fi && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-24.0.7.tgz" -o docker.tgz && \
+    tar xzf docker.tgz && \
+    mv docker/docker /usr/local/bin/ && \
+    rm -rf docker docker.tgz && \
+    chmod +x /usr/local/bin/docker
+
+# Install kubectl (static binary)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -LO "https://dl.k8s.io/release/v1.28.0/bin/linux/${ARCH}/kubectl" && \
+    chmod +x kubectl && \
+    mv kubectl /usr/local/bin/
+
+# Install AWS CLI v2 (required for EKS authentication)
+RUN ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "amd64" ]; then ARCH="x86_64"; elif [ "$ARCH" = "arm64" ]; then ARCH="aarch64"; fi && \
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o "awscliv2.zip" && \
+    unzip awscliv2.zip && \
+    ./aws/install && \
+    rm -rf aws awscliv2.zip
+```
+
+### Build Best Practices
+Always use `--no-cache --pull` for clean rebuilds:
+```bash
+docker compose -f docker-compose.monitor.yml build --no-cache --pull miniprem-monitor
+```
+
+### Prerequisites for EKS Monitoring
+Before starting the monitor container for EKS cluster access:
+```bash
+# Refresh AWS SSO session (required for EKS authentication)
+aws sso login --profile uneeq-admin
+
+# Start the monitor
+cd docker/
+docker compose -f docker-compose.monitor.yml up -d
+```
+
+### Next Development Steps
+1. ✅ ~~Install AWS CLI v2 in Dockerfile~~ - Completed
+2. ✅ ~~Mount AWS credentials in docker-compose~~ - Completed
+3. ✅ ~~Test Kubernetes authentication with EKS~~ - Completed (requires SSO login)
+4. ⏳ Implement AWS SSO login modal component (Tailwind)
+5. ⏳ Add Docker sudo password modal for privileged operations
+6. ⏳ Design terminal shell component with xterm.js + WebSocket PTY
 
 ## Architecture Overview
 
 MiniPrem is a multi-deployment digital human platform with two main architectures:
 
 ### Docker Architecture (Local Development)
+- **MiniPrem Monitor**: Real-time container and Kubernetes monitoring dashboard (port 3001)
 - **Renny**: Digital human renderer with internal speech processing (UneeQ integration)
 - **vLLM**: LLM inference server (Gemma3/Mistral models)
 - **Flowise**: Workflow automation and LLM integration
-- **Grafana/Prometheus**: Monitoring and metrics
+- **Grafana/Prometheus**: Monitoring and metrics (Grafana on port 3002)
 - **Redis**: Message queuing
 - **RIME**: Text-to-speech API service
 
 **Installation Types:**
-- `default`: Renny with internal speech processing (basic setup)
-- `full`: All services including monitoring and AI stack
+- `default`: Renny + MiniPrem Monitor (basic setup with monitoring)
+- `full`: All services including AI stack, metrics, and monitoring
+- `monitor-only`: Standalone MiniPrem Monitor for Kubernetes cluster monitoring
 
 ### Kubernetes Architecture (Production)
 - **EKS Cluster**: Production-ready with auto-scaling
@@ -98,10 +185,12 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ## Key Configuration Files
 
 ### Docker Configuration
-- `docker/docker-compose.yml`: Full install services
-- `docker/docker-compose.default.yml`: Default install services  
+- `docker/docker-compose.yml`: Full install services (all services including monitor)
+- `docker/docker-compose.default.yml`: Default install services (Renny + monitor)
+- `docker/docker-compose.monitor.yml`: Standalone monitor for Kubernetes monitoring
 - `docker/configuration.dat`: UneeQ platform credentials (JSON format)
 - `.miniprem_install_type`: Current installation type (default/full)
+- `miniprem-monitor/`: Complete monitoring application (Next.js + FastAPI in single Docker image)
 
 ### Kubernetes Configuration
 - `kubernetes/terraform/terraform.tfvars`: Infrastructure settings (region, credentials, scaling)
@@ -119,7 +208,13 @@ miniprem-2025/
 ├── docker/                 # Docker-based local deployment
 │   ├── docker-compose.yml  # Full services stack
 │   ├── docker-compose.default.yml  # Basic services
+│   ├── docker-compose.monitor.yml  # Standalone monitor
 │   └── configuration.dat   # UneeQ credentials
+├── miniprem-monitor/       # Monitoring application
+│   ├── backend/           # FastAPI backend
+│   ├── frontend/          # Next.js frontend
+│   ├── Dockerfile         # Multi-stage build
+│   └── docker-entrypoint.sh
 ├── kubernetes/             # Production EKS deployment
 │   ├── terraform/          # Infrastructure as Code
 │   ├── scripts/           # Deployment automation
@@ -129,13 +224,37 @@ miniprem-2025/
 └── docs/                  # Documentation
 ```
 
+## Port Mappings
+
+### Docker Services (Local)
+| Service | Port | Description |
+|---------|------|-------------|
+| **MiniPrem Monitor** | **3001** | Primary monitoring dashboard (frontend + backend) |
+| Flowise | 3000 | Workflow automation UI |
+| Grafana | 3002 | Metrics dashboard (moved from 3001) |
+| Prometheus | 9090 | Metrics collection |
+| vLLM API | 8000 | LLM inference API |
+| Renny Health | 8081 | Digital human health check |
+| RIME API | 8100 | Text-to-speech API |
+| Redis | 6379 | Message queue |
+| Whisper | 9000 | Speech-to-text API |
+
+**Note:** MiniPrem Monitor uses host network mode for direct Docker socket access. The backend runs internally on port 8000, but this is not exposed externally when using host networking.
+
 ## Development Workflow
 
 ### Docker Development (Local)
 1. Run `./docker/scripts/install_miniprem.sh` for interactive setup
 2. Use `./miniprem.sh start` to launch services
-3. Access services at configured ports (Flowise: 3000, Grafana: 3001, etc.)
-4. Monitor with `./miniprem.sh logs`
+3. Access services at configured ports (Monitor: 3001, Flowise: 3000, Grafana: 3002, etc.)
+4. Monitor with MiniPrem Monitor at http://localhost:3001 or `./miniprem.sh logs`
+
+**Standalone Monitor Deployment (Kubernetes monitoring):**
+```bash
+cd docker
+docker-compose -f docker-compose.monitor.yml up -d
+# Access at http://localhost:3001
+```
 
 ### Kubernetes Development (Production)
 1. Configure AWS credentials and `terraform.tfvars`

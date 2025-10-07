@@ -4,214 +4,302 @@
 
 # MiniPrem Monitor
 
-> Real-time monitoring dashboard for Docker containers and Kubernetes pods with UneeQ branding
+> Professional monitoring dashboard for Docker containers and Kubernetes pods
+
+**Technical Operations Tool for DevOps, SRE, and Platform Teams**
 
 </div>
 
-## Table of Contents
+## Overview
 
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Features](#features)
-- [API Endpoints](#api-endpoints)
-- [Configuration](#configuration)
-- [Development](#development)
-- [Docker Support](#docker-support)
-- [Troubleshooting](#troubleshooting)
-- [Project Structure](#project-structure)
-- [License](#license)
-- [Copyright](#copyright)
-
-## Architecture
-
-- **Backend**: FastAPI with WebSocket support for real-time updates
-- **Frontend**: Next.js with TypeScript, Tailwind CSS, and UneeQ brand colors
-- **Security**: Command whitelisting, input sanitization, and secure subprocess execution
-- **Real-time**: WebSocket subscriptions for live container/pod status updates
+MiniPrem Monitor is a real-time monitoring solution for technical teams managing containerized workloads. Similar to Portainer, it provides a unified dashboard for Docker and Kubernetes environments with live log streaming, resource metrics, and cluster health monitoring.
 
 ## Quick Start
 
 ### Prerequisites
-- Python 3.8+
-- Node.js 18+
-- Docker (optional, for container monitoring)
-- kubectl configured (optional, for Kubernetes monitoring)
 
-### Manual Setup
+- Docker Engine 20.10+
+- kubectl configured (for Kubernetes monitoring)
+- 2GB RAM, 1 CPU core minimum
+- Linux, macOS, or Windows with Docker Desktop
 
-#### Backend Setup
+### Deployment Options
 
-```bash
-cd backend
-python3 -m venv venv
-source venv/bin/activate  # Linux/Mac
-# or venv\Scripts\activate  # Windows
-pip install -r requirements.txt
-python run.py
-```
+#### Option 1: Full MiniPrem Stack (Recommended)
 
-The backend will start on `http://localhost:8000`
-
-#### Frontend Setup
+Deploy the complete digital human platform with integrated monitoring:
 
 ```bash
-cd frontend
-npm install
-npm run dev
+cd docker
+docker-compose up -d
 ```
 
-The frontend will start on `http://localhost:3500`
+**Access:** http://localhost:3001
+**Services:** Monitor + Renny + vLLM + Redis + Grafana + Prometheus + Flowise
 
-### Docker Engine & Kubernetes Monitoring
+#### Option 2: Standalone Monitor (Kubernetes Monitoring)
 
-The application now provides enhanced host system integration:
+Monitor your EKS/AKS/GKE cluster along with local Docker containers:
 
-- **Docker Engine Health**: Comprehensive monitoring of Docker daemon status, resource usage, and container statistics
-- **Kubernetes Cluster Health**: Real-time cluster status, node health, and namespace information
-- **Host System Integration**: Direct command execution on the host system (not containerized)
-- **Cross-Platform Support**: Native operation on Mac, Linux, and Windows
+```bash
+cd docker
+docker-compose -f docker-compose.monitor.yml up -d
+```
+
+**Access:** http://localhost:3001
+**Services:** Monitor only
+**Prerequisites:** kubectl configured with cluster access
+
+#### Option 3: Minimal Stack (Renny + Monitor)
+
+Digital human service with monitoring (no AI/LLM services):
+
+```bash
+cd docker
+docker-compose -f docker-compose.default.yml up -d
+```
+
+**Access:** http://localhost:3001
+**Services:** Monitor + Renny
 
 ## Features
 
-### Enhanced Host System Monitoring
-- **Docker Engine Health**: Complete Docker daemon monitoring, version info, resource usage, and container statistics
-- **Kubernetes Cluster Health**: Cluster status, node health, namespace count, and detailed node information
-- **System Health Dashboard**: Visual indicators for Docker and Kubernetes availability and health status
-- **Host Command Integration**: Direct execution of docker and kubectl commands on the host system (not containerized)
+### Real-Time Container Monitoring
+- **Live Log Streaming**: Click any container to stream logs in real-time
+- **Resource Metrics**: CPU, memory, and network usage per container
+- **Container Controls**: Start/stop containers directly from dashboard
+- **Auto-Refresh**: WebSocket-based updates (no page refresh needed)
 
-### Real-time Monitoring
-- **Docker Containers**: Live status, resource usage, and logs
-- **Kubernetes Pods**: Pod status, namespaces, and logs
-- **System Metrics**: CPU, memory, disk, and network usage
-- **WebSocket Integration**: Real-time updates without page refresh
-- **Service Availability Tracking**: Automatic detection of Docker and Kubernetes availability
+### Kubernetes Cluster Monitoring
+- **Pod Status**: Real-time pod health across all namespaces
+- **Node Monitoring**: Cluster node status and resource availability
+- **Multi-Cluster**: Switch between configured kubectl contexts
+- **Live Pod Logs**: Stream logs from any pod
 
-### Development & Testing Automation
-- **Puppeteer Integration**: Automated browser testing for dashboard functionality
-- **E2E Test Suite**: Comprehensive end-to-end testing including WebSocket communication
-- **Cross-Platform Scripts**: Automated setup, testing, and management for Mac/Linux/Windows
-- **Performance Monitoring**: Response time tracking and performance metrics
-
-### Security Features
-- Command whitelisting (only safe Docker/kubectl commands)
-- Input sanitization and validation
-- Rate limiting and connection management
-- Safe error handling without information leakage
-
-### UI Features
+### Professional UI
+- **Syntax Highlighting**: Automatic color-coding for log levels (ERROR, WARN, INFO, DEBUG)
+- **Dark/Light Mode**: Theme toggle for user preference
 - **Responsive Design**: Works on desktop, tablet, and mobile
-- **Enhanced Health Panel**: Detailed system health monitoring with Docker Engine and Kubernetes cluster status
-- **Dark Log Viewer**: Terminal-style log display with syntax highlighting
-- **Connection Status**: Real-time WebSocket connection indicator
-- **Auto-refresh**: Configurable polling and subscription intervals
+- **Download Logs**: Export logs to text files for offline analysis
 
-## API Endpoints
+## Architecture
 
-### REST Endpoints
-- `GET /` - Health check
-- `GET /health` - Detailed health check with component status
-- `GET /api/system/info` - System information (includes Docker and Kubernetes basic info)
-- `GET /api/system/metrics` - Current system metrics
-- `GET /api/connections/stats` - WebSocket connection statistics
-
-### Enhanced Monitoring Endpoints
-- `GET /api/docker/health` - Comprehensive Docker Engine health information
-- `GET /api/kubernetes/health` - Detailed Kubernetes cluster health status
-- `GET /api/services/availability` - Real-time Docker and Kubernetes availability check
-
-### WebSocket Endpoint
-- `WS /ws` - Real-time monitoring commands and subscriptions
-
-### WebSocket Message Format
-
-```json
-{
-  "type": "command|subscribe|unsubscribe",
-  "target": "docker|kubernetes",
-  "command": "ps|logs|stats|pods|nodes",
-  "params": {"container": "name", "namespace": "default"},
-  "requestId": "unique-id"
-}
 ```
+┌─────────────────────────────────────────────────────────┐
+│                       Browser                            │
+│                  http://localhost:3001                   │
+└──────────────────────┬──────────────────────────────────┘
+                       │
+                       │ WebSocket + HTTP
+                       │
+┌──────────────────────▼──────────────────────────────────┐
+│              MiniPrem Monitor Container                  │
+│                  (Host Network Mode)                     │
+│  ┌────────────────┐          ┌─────────────────────┐   │
+│  │ Next.js        │◄────────►│ FastAPI Backend     │   │
+│  │ Frontend :3001 │  Proxy   │ + WebSocket :8000   │   │
+│  └────────────────┘          └─────────┬───────────┘   │
+└────────────────────────────────────────┼───────────────┘
+                                          │
+                    ┌─────────────────────┼─────────────────────┐
+                    │                     │                     │
+                    ▼                     ▼                     ▼
+        ┌───────────────────┐ ┌──────────────────┐ ┌──────────────────┐
+        │ Docker Socket     │ │ kubectl          │ │ System Metrics   │
+        │ /var/run/docker.. │ │ ~/.kube/config   │ │ CPU/RAM/Disk     │
+        └───────────────────┘ └──────────────────┘ └──────────────────┘
+```
+
+### Networking Architecture
+
+**Host Network Mode** - The monitor uses Docker's host networking (`network_mode: host`) for optimal performance and direct system access:
+
+**Why Host Networking?**
+- ✅ **Direct Docker Socket Access**: No network bridge overhead for container monitoring
+- ✅ **Kubernetes Context Access**: Seamless kubectl integration with host's kubeconfig
+- ✅ **Zero Port Mapping Overhead**: Services bind directly to host ports
+- ✅ **Simplified Configuration**: No complex port forwarding or NAT
+
+**Port Bindings:**
+- **Frontend**: Binds directly to host port **3001** (accessible at http://localhost:3001)
+- **Backend**: Binds directly to host port **8000** (internal API, not exposed externally)
+- **No Port Mapping Required**: With host networking, the `ports:` directive in docker-compose is ignored
+
+**Service Communication:**
+- Frontend proxies API requests to backend on localhost:8000
+- WebSocket connections established directly between browser and backend
+- All services share the host's network namespace
+
+**Security Features:**
+- **Single Container**: Frontend and backend run together via supervisord
+- **Read-Only Socket**: Security-hardened with read-only Docker socket mount
+- **No New Privileges**: Container runs with `no-new-privileges:true` security option
+- **Command Whitelisting**: Only approved Docker/kubectl commands are executed
 
 ## Configuration
 
 ### Environment Variables
-- `BACKEND_HOST`: Backend server host (default: 0.0.0.0)
-- `BACKEND_PORT`: Backend server port (default: 8000)
-- `LOG_LEVEL`: Logging level (default: info)
 
-### Security Settings
-- Max 50 concurrent WebSocket connections
-- 60 requests per minute rate limiting
-- 30-second command timeout
-- 1MB output size limit
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MONITOR_MODE` | Deployment mode (`full_stack`, `standalone`, `default`) | `full_stack` |
+| `LOG_LEVEL` | Logging level (`debug`, `info`, `warn`, `error`) | `info` |
+| `BACKEND_PORT` | Internal backend port | `8000` |
+| `FRONTEND_PORT` | External frontend port | `3001` |
 
-## Development
+### Port Bindings (Host Network Mode)
 
-### Backend Development
-```bash
-cd backend
-pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+| Service | Port | Access | Description |
+|---------|------|--------|-------------|
+| Frontend | 3001 | **Public** | Main dashboard - http://localhost:3001 |
+| Backend | 8000 | **Internal** | API & WebSocket (proxied by frontend) |
+
+**Note**: With host networking, services bind directly to host ports. No port mapping (e.g., `3001:3001`) is needed or used.
+
+### Docker Socket
+
+The monitor requires access to the Docker socket for container monitoring:
+
+```yaml
+volumes:
+  - /var/run/docker.sock:/var/run/docker.sock:ro  # Read-only mount
 ```
 
-### Frontend Development
-```bash
-cd frontend
-npm run dev
+**Security Note:** Docker socket access provides container management capabilities. The monitor uses a read-only mount and whitelists only safe commands (ps, logs, stats).
+
+### Kubernetes Configuration
+
+For Kubernetes monitoring, mount your kubectl config:
+
+```yaml
+volumes:
+  - ~/.kube:/root/.kube:ro  # Read-only mount
 ```
 
-### Type Checking
-```bash
-cd frontend
-npm run type-check
-```
+The monitor automatically detects available clusters and allows context switching.
 
-### Building for Production
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt
+## Security
 
-# Frontend
-cd frontend
-npm run build
-npm start
-```
+### Command Whitelisting
+Only pre-approved Docker and kubectl commands are allowed:
+- `docker ps`, `docker logs`, `docker stats`
+- `kubectl get pods`, `kubectl get nodes`, `kubectl logs`
 
-## Docker Support
+### Input Validation
+All container/pod names are validated against strict regex patterns to prevent injection attacks.
 
-The application automatically detects available services:
-- If Docker is not available, container monitoring is disabled
-- If kubectl is not configured, Kubernetes monitoring is disabled
-- System metrics are always available
+### Read-Only Mounts
+Both Docker socket and kubectl config are mounted read-only where possible.
+
+### Network Architecture
+Uses `host` network mode for optimal performance and direct system access:
+- Direct Docker socket access without bridge overhead
+- Seamless Kubernetes kubectl integration
+- Services bind directly to host ports (3001, 8000)
+- Maintains `no-new-privileges` security option
 
 ## Troubleshooting
 
-### Common Issues
+### Monitor Not Starting
 
-1. **Backend Connection Issues**
-   - Ensure Python dependencies are installed
-   - Check if port 8000 is available
-   - Verify Docker/kubectl access if using those features
+**Check Docker build:**
+```bash
+docker build -t miniprem-monitor:test miniprem-monitor/
+docker images | grep miniprem-monitor
+```
 
-2. **Frontend WebSocket Issues**
-   - Ensure backend is running on port 8000
-   - Check browser console for connection errors
-   - Verify CORS settings in backend
+**Check container logs:**
+```bash
+docker logs miniprem-monitor
+```
 
-3. **Command Execution Failures**
-   - Check Docker daemon status: `docker ps`
-   - Verify kubectl configuration: `kubectl cluster-info`
-   - Review backend logs for security violations
+### No Containers Visible
 
-### Debug Mode
+**Verify Docker socket access:**
+```bash
+docker exec miniprem-monitor ls -l /var/run/docker.sock
+```
 
-Enable debug logging:
+**Test Docker command inside container:**
+```bash
+docker exec miniprem-monitor docker ps
+```
+
+### Kubernetes Monitoring Not Working
+
+**Verify kubectl config:**
+```bash
+docker exec miniprem-monitor kubectl config get-contexts
+docker exec miniprem-monitor kubectl cluster-info
+```
+
+**Check AWS credentials (for EKS):**
+```bash
+# On host, refresh credentials
+aws sso login
+aws eks update-kubeconfig --region us-east-1 --name your-cluster
+```
+
+### Log Streaming Not Working
+
+**Check WebSocket connection:**
+- Open browser Developer Tools → Network tab
+- Look for WebSocket connection to `ws://localhost:8000/ws`
+- Check for any connection errors
+
+**Verify backend health:**
+```bash
+curl http://localhost:8000/health
+```
+
+### Port Conflicts
+
+If port 3001 is already in use:
+
+```bash
+# Find process using port 3001
+lsof -i :3001
+
+# Stop the conflicting service or choose a different port
+```
+
+## Development (For Contributors)
+
+If you're modifying the MiniPrem Monitor code:
+
+### Local Development Setup
+
+**Backend:**
 ```bash
 cd backend
-LOG_LEVEL=debug python run.py
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python run.py  # Runs on port 8000
+```
+
+**Frontend:**
+```bash
+cd frontend
+npm install
+npm run dev  # Runs on port 3500
+```
+
+### Testing
+
+**Run Playwright tests:**
+```bash
+cd frontend
+npm run test          # All tests
+npm run test:headed   # Visual mode
+npm run test:ui       # Interactive UI
+```
+
+### Building Docker Image
+
+```bash
+cd miniprem-monitor
+docker build -t miniprem-monitor:dev .
 ```
 
 ## Project Structure
@@ -225,33 +313,43 @@ miniprem-monitor/
 │   │   ├── models/          # Pydantic data models
 │   │   ├── services/        # System monitoring services
 │   │   └── main.py         # FastAPI application
-│   ├── requirements.txt
-│   └── run.py
+│   └── requirements.txt
 ├── frontend/               # Next.js frontend
 │   ├── src/
 │   │   ├── app/            # Next.js 13+ app directory
 │   │   ├── components/     # React components
 │   │   ├── hooks/          # Custom React hooks
-│   │   ├── types/          # TypeScript type definitions
-│   │   └── styles/         # Global CSS and Tailwind config
-│   ├── package.json
-│   └── next.config.js
-├── design-system.md        # UneeQ brand guidelines
-├── architecture.md         # Security architecture documentation
+│   │   └── types/          # TypeScript type definitions
+│   └── package.json
+├── Dockerfile              # Multi-stage build
+├── docker-entrypoint.sh    # Container startup script
+├── supervisord.conf        # Process manager config
 └── README.md
 ```
 
-## Contributing
+## Deployment Scenarios
 
-1. Follow the established code patterns
-2. Maintain security practices (no arbitrary command execution)
-3. Test both Docker and Kubernetes integration paths
-4. Ensure responsive design compliance
-5. Follow UneeQ brand guidelines for UI changes
+### Scenario 1: Complete Platform Team
+**Use Case:** Full digital human platform for customer demos
+**Command:** `docker-compose up -d`
+**Services:** All MiniPrem services + monitoring
+**Best For:** Internal demos, development, testing
+
+### Scenario 2: Platform Operations Team
+**Use Case:** Monitor production Kubernetes cluster + local dev containers
+**Command:** `docker-compose -f docker-compose.monitor.yml up -d`
+**Services:** Monitor only
+**Best For:** Production monitoring, SRE teams
+
+### Scenario 3: DevOps Team
+**Use Case:** Minimal footprint with just Renny and monitoring
+**Command:** `docker-compose -f docker-compose.default.yml up -d`
+**Services:** Renny + Monitor
+**Best For:** Resource-constrained environments
 
 ## License
 
-This monitoring dashboard is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+This monitoring dashboard is part of the MiniPrem platform.
 
 ---
 
@@ -259,7 +357,7 @@ This monitoring dashboard is part of the MiniPrem platform, licensed under the M
 
 <div align="center">
 
-**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+**© 2025 UneeQ. All rights reserved.**
 
 ![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
 

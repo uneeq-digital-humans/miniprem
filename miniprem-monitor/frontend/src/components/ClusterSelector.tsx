@@ -72,8 +72,8 @@ export function ClusterSelector({
 
   const formatClusterName = (cluster: ClusterInfo) => {
     const envLabel = ENVIRONMENT_LABELS[cluster.environment];
-    const name = cluster.name.length > 15
-      ? `${cluster.name.substring(0, 12)}...`
+    const name = cluster.name.length > 30
+      ? `${cluster.name.substring(0, 27)}...`
       : cluster.name;
     return `${envLabel} ${name}`;
   };
@@ -153,7 +153,7 @@ export function ClusterSelector({
 
       {/* Dropdown menu */}
       {isOpen && (
-        <div className="absolute top-full left-0 mt-2 w-80 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
+        <div className="absolute top-full left-0 mt-2 w-96 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 z-50">
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between">
@@ -232,7 +232,11 @@ export function ClusterSelector({
                             <div className="text-xs text-muted mt-1">
                               {cluster.lastSync && (
                                 <span>
-                                  Last sync: {new Date(cluster.lastSync).toLocaleTimeString()}
+                                  Last sync: {typeof cluster.lastSync === 'string'
+                                    ? cluster.lastSync
+                                    : cluster.lastSync instanceof Date
+                                    ? cluster.lastSync.toLocaleTimeString()
+                                    : 'Unknown'}
                                 </span>
                               )}
                               {cluster.latency && (

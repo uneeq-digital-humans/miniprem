@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 from typing import Dict, Set, Optional, Any, List
 from datetime import datetime, timedelta
 from collections import deque
@@ -171,6 +172,8 @@ class ConnectionManager:
             data = json.loads(message)
             request = CommandRequest(**data)
 
+            logger.info(f"[{connection_id[:8]}] Received: type={request.type}, target={request.target}, command={request.command}, requestId={request.requestId}")
+
             # Handle different message types
             if request.type == "command":
                 await self._handle_command(websocket, connection_id, request)
@@ -206,11 +209,15 @@ class ConnectionManager:
                 await self._handle_log_stream(websocket, connection_id, request)
                 return
 
+            logger.debug(f"[{connection_id[:8]}] Executing: {request.target}.{request.command} with params={request.params}")
+
             result = await self.command_executor.execute_command(
                 request.target,
                 request.command,
                 request.params
             )
+
+            logger.info(f"[{connection_id[:8]}] Result: success={result['success']}, data_keys={list(result.get('data', {}).keys()) if result.get('data') else None}")
 
             response = CommandResponse(
                 requestId=request.requestId,
@@ -220,11 +227,13 @@ class ConnectionManager:
             )
 
             await websocket.send_text(response.json())
+            logger.debug(f"[{connection_id[:8]}] Sent response for requestId={request.requestId}")
 
         except SecurityError as e:
+            logger.warning(f"[{connection_id[:8]}] Security error: {str(e)}")
             await self._send_error(websocket, connection_id, str(e), request.requestId)
         except Exception as e:
-            logger.error(f"Command execution error: {str(e)}")
+            logger.error(f"[{connection_id[:8]}] Command execution error: {str(e)}")
             await self._send_error(websocket, connection_id, "Command execution failed", request.requestId)
 
     async def _handle_log_stream(self, websocket: WebSocket, connection_id: str, request: CommandRequest):
@@ -260,11 +269,11 @@ class ConnectionManager:
             # Build command
             cmd = ['docker', 'logs', '--follow', '--tail', str(lines), '--timestamps', container_name]
 
-            # Start subprocess
+            # Start subprocess - merge stderr into stdout
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                stderr=asyncio.subprocess.STDOUT  # Merge stderr into stdout
             )
 
             # Store process for cleanup

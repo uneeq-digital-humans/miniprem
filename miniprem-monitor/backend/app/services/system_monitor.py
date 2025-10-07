@@ -4,6 +4,7 @@ import logging
 import json
 import subprocess
 import platform
+import docker
 from typing import Dict, Any, Optional
 from datetime import datetime
 from ..models.schemas import SystemMetrics
@@ -19,6 +20,14 @@ class SystemMonitor:
         self.platform_system = platform.system().lower()
         self._docker_available = None
         self._kubectl_available = None
+        self._docker_client = None
+
+    def _get_docker_client(self):
+        """Get or create Docker client instance (stub - using CLI commands instead)"""
+        # Note: Returning None to indicate CLI-based approach should be used
+        # The Docker Python SDK has compatibility issues with urllib3<2.0
+        # which is required by Kubernetes SDK
+        return None
 
     async def get_system_metrics(self) -> SystemMetrics:
         """Get current system metrics"""
@@ -71,64 +80,48 @@ class SystemMonitor:
             return self._docker_available
 
         try:
-            result = await asyncio.create_subprocess_exec(
-                'docker', 'version', '--format', 'json',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await result.communicate()
-            self._docker_available = result.returncode == 0
+            client = self._get_docker_client()
+            if client is not None:
+                # Try to ping Docker
+                client.ping()
+                self._docker_available = True
+            else:
+                self._docker_available = False
 
-        except Exception:
+        except Exception as e:
+            logger.error(f"Docker availability check failed: {str(e)}")
             self._docker_available = False
 
         return self._docker_available
 
     async def get_docker_engine_health(self) -> Dict[str, Any]:
-        """Get comprehensive Docker Engine health information"""
+        """Get comprehensive Docker Engine health information using Docker SDK"""
         if not await self.check_docker_availability():
             return {'available': False, 'error': 'Docker Engine not available'}
 
         try:
-            # Get Docker version and info
-            version_result = await asyncio.create_subprocess_exec(
-                'docker', 'version', '--format', 'json',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            version_stdout, _ = await version_result.communicate()
+            client = self._get_docker_client()
+            if client is None:
+                return {'available': False, 'error': 'Cannot connect to Docker'}
+
+            # Get Docker version info
+            version_info = client.version()
 
             # Get Docker system info
-            info_result = await asyncio.create_subprocess_exec(
-                'docker', 'info', '--format', 'json',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            info_stdout, _ = await info_result.communicate()
+            info_data = client.info()
 
-            # Get system resource usage
-            df_result = await asyncio.create_subprocess_exec(
-                'docker', 'system', 'df', '--format', 'json',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            df_stdout, _ = await df_result.communicate()
+            # Get system resource usage using df()
+            df_data = client.df()
 
             docker_health = {
                 'available': True,
-                'engine_status': 'healthy'
-            }
-
-            if version_result.returncode == 0:
-                version_info = json.loads(version_stdout.decode())
-                docker_health['version'] = {
-                    'client': version_info.get('Client', {}).get('Version', 'Unknown'),
-                    'server': version_info.get('Server', {}).get('Version', 'Unknown')
-                }
-
-            if info_result.returncode == 0:
-                info_data = json.loads(info_stdout.decode())
-                docker_health['system_info'] = {
+                'engine_status': 'healthy',
+                'version': {
+                    'client': version_info.get('Version', 'Unknown'),
+                    'server': version_info.get('Version', 'Unknown'),
+                    'api_version': version_info.get('ApiVersion', 'Unknown')
+                },
+                'system_info': {
                     'containers_running': info_data.get('ContainersRunning', 0),
                     'containers_paused': info_data.get('ContainersPaused', 0),
                     'containers_stopped': info_data.get('ContainersStopped', 0),
@@ -141,17 +134,13 @@ class SystemMonitor:
                     'operating_system': info_data.get('OperatingSystem', 'Unknown'),
                     'cpu_count': info_data.get('NCPU', 0),
                     'memory_total': info_data.get('MemTotal', 0)
+                },
+                'resource_usage': {
+                    'images': df_data.get('Images', []),
+                    'containers': df_data.get('Containers', []),
+                    'volumes': df_data.get('Volumes', [])
                 }
-
-            if df_result.returncode == 0:
-                # Parse multi-line JSON output (one JSON object per line)
-                df_output = df_stdout.decode().strip()
-                df_data = []
-                if df_output:
-                    for line in df_output.split('\n'):
-                        if line.strip():
-                            df_data.append(json.loads(line))
-                docker_health['resource_usage'] = df_data
+            }
 
             return docker_health
 

@@ -96,7 +96,7 @@ This documentation is part of the MiniPrem platform, licensed under the MIT Lice
 
 <div align="center">
 
-**© 2025 UneeQ - A FaceMe Company. All rights reserved.**
+**© 2025 UneeQ. All rights reserved.**
 
 <img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png" alt="UneeQ Logo" class="logo-light-mode" />
 <img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+Rev+White.png" alt="UneeQ Logo" class="logo-dark-mode" />

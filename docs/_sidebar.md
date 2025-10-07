@@ -8,6 +8,7 @@
   * [Docker (Local)](guides/getting-started.md)
   * [Kubernetes/EKS (Production)](guides/kubernetes.md)
 * [Services](guides/services.md)
+  * [MiniPrem Monitor](guides/miniprem-monitor.md)
   * [Flowise](guides/flowise.md)
   * [vLLM](guides/vllm.md)
   * [Prometheus & Grafana](guides/monitoring.md)
