@@ -1188,10 +1188,10 @@ check_environment() {
     info "Stopping any existing Miniprem containers..."
 
     if [ -f "$PROJECT_ROOT/miniprem.sh" ]; then
-        "$PROJECT_ROOT/miniprem.sh" stop >/dev/null 2>&1
+        "$PROJECT_ROOT/miniprem.sh" stop >/dev/null 2>&1 || true
         success "$CHECKMARK Existing Miniprem containers stopped using miniprem.sh"
     elif [ -d "$PROJECT_ROOT/docker" ]; then
-        (cd "$PROJECT_ROOT/docker" && $DOCKER_CMD down) >/dev/null 2>&1
+        (cd "$PROJECT_ROOT/docker" && $DOCKER_CMD down) >/dev/null 2>&1 || true
         success "$CHECKMARK Existing Miniprem containers stopped using docker compose"
     else
         info "No existing Miniprem containers found"
