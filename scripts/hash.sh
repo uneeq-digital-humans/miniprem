@@ -10,8 +10,10 @@ compute_hash() {
 
 # Function to compute and log the hash of the script and other source files
 log_script_hash() {
-    local script_hash=$(compute_hash "install_miniprem.sh")
-    local other_files=("scripts/audio.sh" "scripts/docker.sh" "scripts/logging.sh" "scripts/hash.sh" "scripts/environment.sh" "scripts/prerequisites.sh")
+    # Use absolute paths based on PROJECT_ROOT which is set in install_miniprem.sh
+    local script_path="$PROJECT_ROOT/docker/scripts/install_miniprem.sh"
+    local script_hash=$(compute_hash "$script_path")
+    local other_files=("$PROJECT_ROOT/scripts/audio.sh" "$PROJECT_ROOT/scripts/docker.sh" "$PROJECT_ROOT/scripts/logging.sh" "$PROJECT_ROOT/scripts/hash.sh" "$PROJECT_ROOT/scripts/environment.sh" "$PROJECT_ROOT/scripts/prerequisites.sh")
     local combined_hashes="$script_hash"
 
     for file in "${other_files[@]}"; do
