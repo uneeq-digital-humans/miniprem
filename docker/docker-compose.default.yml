@@ -41,7 +41,7 @@ services:
       - docker-compose.env
     environment:
       - NEW_SPEECH_OVERRIDE=1
-    image: "facemeproduction/renny:5.6speechanim"
+    image: "facemeproduction/renny:0.700-fc39a"
     network_mode: "host"
     runtime: nvidia
     privileged: true
