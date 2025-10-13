@@ -55,10 +55,23 @@ check_ollama_status() {
 # Check NVIDIA Docker setup
 check_nvidia_docker() {
     log_info "Checking NVIDIA Docker setup..."
-    
+
     if command -v nvidia-smi >/dev/null 2>&1; then
         log_success "NVIDIA drivers are installed."
-        nvidia-smi --query-gpu=driver_version,name,temperature.gpu,utilization.gpu,utilization.memory,memory.used,memory.total --format=csv,noheader
+
+        # Get GPU count
+        local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1)
+        log_info "Detected ${gpu_count} GPU(s)"
+
+        # Query all GPUs and display with index
+        local gpu_stats=$(nvidia-smi --query-gpu=driver_version,name,temperature.gpu,utilization.gpu,utilization.memory,memory.used,memory.total --format=csv,noheader)
+        local gpu_index=0
+
+        echo "GPU Stats:"
+        while IFS= read -r line; do
+            gpu_index=$((gpu_index + 1))
+            echo "  GPU ${gpu_index}: ${line}"
+        done <<< "$gpu_stats"
     else
         log_error "NVIDIA drivers not found. Make sure they are installed."
         return 1

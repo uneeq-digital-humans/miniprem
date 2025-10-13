@@ -217,20 +217,42 @@ check_hardware_prerequisites() {
         # shouldn't reach here if check_driver_prerequisites has already apssed
         fatal "$CROSS Nvidia GPU is not available. Please install Nvidia GPU and try again"
     else
-        # Extract GPU model
-        gpu_model=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits)
-        info "\tGPU Model: $gpu_model"
+        # Get GPU count
+        gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1)
+        info "\tDetected ${gpu_count} GPU(s)"
 
-        # Extract GPU memory information
+        # Extract GPU models and memory info for all GPUs
+        gpu_models=$(nvidia-smi --query-gpu=name --format=csv,noheader,nounits)
         gpu_memory_info=$(nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits)
-        total_memory=$(echo $gpu_memory_info | cut -d ',' -f 1 | xargs)
-        used_memory=$(echo $gpu_memory_info | cut -d ',' -f 2 | xargs)
 
-        # Check if GPU memory is sufficient
-        if [ $total_memory -lt $MIN_GPU_MEMORY ]; then
-            fatal "$CROSS GPU memory is less than ${MIN_GPU_MEMORY} MB. Please use a GPU with at least ${MIN_GPU_MEMORY} MB memory"
-        else
-            success "$CHECKMARK GPU memory is sufficient. Total memory: ${total_memory} MB, free memory: $((total_memory - used_memory)) MB"
+        # Check each GPU and find at least one with sufficient memory
+        gpu_index=0
+        sufficient_gpu_found=false
+
+        while IFS= read -r memory_line && IFS= read -r model_line <&3; do
+            gpu_index=$((gpu_index + 1))
+
+            # Parse total and used memory for this GPU
+            total_memory=$(echo "$memory_line" | cut -d ',' -f 1 | xargs)
+            used_memory=$(echo "$memory_line" | cut -d ',' -f 2 | xargs)
+            free_memory=$((total_memory - used_memory))
+
+            # Display info for this GPU
+            info "\tGPU ${gpu_index}: ${model_line}"
+            info "\t  Total: ${total_memory} MB, Used: ${used_memory} MB, Free: ${free_memory} MB"
+
+            # Check if this GPU meets requirements
+            if [ "$free_memory" -ge "$MIN_GPU_MEMORY" ]; then
+                success "$CHECKMARK GPU ${gpu_index} has sufficient free memory (${free_memory} MB >= ${MIN_GPU_MEMORY} MB)"
+                sufficient_gpu_found=true
+            else
+                warning "GPU ${gpu_index} does not have sufficient free memory (${free_memory} MB < ${MIN_GPU_MEMORY} MB)"
+            fi
+        done <<< "$gpu_memory_info" 3<<< "$gpu_models"
+
+        # If no GPU with sufficient memory was found, fail
+        if [ "$sufficient_gpu_found" = false ]; then
+            fatal "$CROSS No GPU found with at least ${MIN_GPU_MEMORY} MB of free memory. Please free up GPU memory or use a system with more GPU resources."
         fi
     fi
 

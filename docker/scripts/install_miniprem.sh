@@ -930,7 +930,18 @@ start_miniprem() {
 # Function to check GPU memory usage periodically for monitoring progress
 check_gpu_usage() {
     if command_exists nvidia-smi; then
-        nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader
+        # Get GPU count
+        local gpu_count=$(nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1)
+
+        # Query all GPUs and format output
+        local gpu_stats=$(nvidia-smi --query-gpu=utilization.gpu,memory.used,memory.total --format=csv,noheader)
+
+        # Display each GPU's stats with index
+        local gpu_index=0
+        while IFS= read -r line; do
+            gpu_index=$((gpu_index + 1))
+            echo "GPU ${gpu_index}: ${line}"
+        done <<< "$gpu_stats"
     else
         echo "GPU monitoring not available (nvidia-smi not found)"
     fi
@@ -1004,9 +1015,14 @@ prepare_vllm_model() {
         # Show progress every 6 attempts (30 seconds)
         if [ $((api_attempt % 6)) -eq 0 ]; then
             info "Still waiting for vLLM API... ($api_attempt/$api_max_attempts)"
-            # Show GPU usage
+            # Show GPU usage (multi-GPU aware)
             info "Current GPU memory usage:"
-            $DOCKER_CMD exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+            local vllm_gpu_stats=$($DOCKER_CMD exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader)
+            local gpu_idx=0
+            while IFS= read -r line; do
+                gpu_idx=$((gpu_idx + 1))
+                info "  GPU ${gpu_idx}: ${line}"
+            done <<< "$vllm_gpu_stats"
             # Show recent logs
             info "Recent container logs:"
             $DOCKER_CMD logs --tail 5 vllm
@@ -1055,7 +1071,12 @@ prepare_vllm_model() {
         
         # Show final GPU memory usage
         info "Final GPU memory usage:"
-        docker exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader
+        local final_gpu_stats=$(docker exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader)
+        local final_gpu_idx=0
+        while IFS= read -r line; do
+            final_gpu_idx=$((final_gpu_idx + 1))
+            info "  GPU ${final_gpu_idx}: ${line}"
+        done <<< "$final_gpu_stats"
     fi
     
     info "vLLM is ready for use with Flowise (use /v1/chat/completions endpoint)"
