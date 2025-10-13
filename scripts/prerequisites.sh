@@ -223,8 +223,8 @@ check_hardware_prerequisites() {
 
         # Extract GPU memory information
         gpu_memory_info=$(nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits)
-        total_memory=$(echo $gpu_memory_info | cut -d ',' -f 1)
-        used_memory=$(echo $gpu_memory_info | cut -d ',' -f 2)
+        total_memory=$(echo $gpu_memory_info | cut -d ',' -f 1 | xargs)
+        used_memory=$(echo $gpu_memory_info | cut -d ',' -f 2 | xargs)
 
         # Check if GPU memory is sufficient
         if [ $total_memory -lt $MIN_GPU_MEMORY ]; then
