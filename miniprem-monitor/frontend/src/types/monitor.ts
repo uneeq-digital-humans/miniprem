@@ -1,3 +1,12 @@
+export interface PrometheusMetrics {
+  gpu_percent?: number | null;
+  cpu_percent?: number | null;
+  memory_percent?: number | null;
+  memory_bytes?: number | null;
+  request_count?: number | null;
+  uptime_seconds?: number | null;
+}
+
 export interface ContainerStatus {
   name: string;
   status: string;
@@ -6,6 +15,7 @@ export interface ContainerStatus {
   created: string;
   cpu_usage?: string;
   memory_usage?: string;
+  metrics?: PrometheusMetrics;
 }
 
 export interface PodStatus {

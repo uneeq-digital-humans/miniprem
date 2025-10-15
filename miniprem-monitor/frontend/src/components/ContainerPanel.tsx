@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ContainerStatus, StatusType, SystemInfo } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
+import { MetricsBadge } from './MetricsBadge';
 import { RefreshCw, Eye, EyeOff, Play, Square, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -307,12 +308,18 @@ export function ContainerPanel({
                 </div>
 
                 <div className="flex items-center space-x-2">
-                  {container.cpu_usage && (
+                  {/* Prometheus Metrics Badges */}
+                  {container.metrics && (
+                    <MetricsBadge metrics={container.metrics} />
+                  )}
+
+                  {/* Fallback to Docker stats if no Prometheus metrics */}
+                  {!container.metrics && container.cpu_usage && (
                     <div className="text-xs font-mono bg-gray-100 dark:bg-gray-600 dark:text-gray-200 px-2 py-1 rounded">
                       CPU: {container.cpu_usage}
                     </div>
                   )}
-                  {container.memory_usage && (
+                  {!container.metrics && container.memory_usage && (
                     <div className="text-xs font-mono bg-gray-100 dark:bg-gray-600 dark:text-gray-200 px-2 py-1 rounded">
                       MEM: {container.memory_usage}
                     </div>

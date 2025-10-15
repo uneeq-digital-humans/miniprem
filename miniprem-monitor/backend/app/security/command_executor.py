@@ -9,6 +9,7 @@ from ..services.system_monitor import SystemMonitor
 from ..services.kubernetes_monitor import KubernetesMonitor
 from ..services.docker_manager import DockerManager
 from ..services.aws_region_manager import AwsRegionManager
+from ..services.prometheus_client import get_prometheus_client
 from ..models.schemas import (
     DockerServiceRequest, DockerServiceResponse, ServiceControlRequest,
     ServiceControlResponse, AwsRegion, RegionStatus, RegionListResponse,
@@ -318,7 +319,7 @@ class CommandExecutor:
             }
 
     async def _parse_docker_json(self, command: str, output: str) -> Dict[str, Any]:
-        """Parse Docker JSON output"""
+        """Parse Docker JSON output and enrich with Prometheus metrics"""
         try:
             lines = output.strip().split('\n')
             containers = []
@@ -336,6 +337,10 @@ class CommandExecutor:
                         'memory_usage': container_data.get('MemUsage', '0B / 0B') if command == 'stats' else None
                     })
 
+            # Enrich containers with Prometheus metrics for known containers (only for 'ps' command)
+            if command == 'ps':
+                containers = await self._enrich_with_prometheus_metrics(containers)
+
             return {
                 'success': True,
                 'data': {'containers': containers},
@@ -347,6 +352,62 @@ class CommandExecutor:
                 'error': 'Invalid JSON response from Docker',
                 'timestamp': datetime.utcnow().isoformat()
             }
+
+    async def _enrich_with_prometheus_metrics(self, containers: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Enrich container data with Prometheus metrics where available.
+
+        Currently supports: renny, flowise, prometheus
+        """
+        # Metrics configuration for known containers
+        metrics_config = {
+            "renny": {"port": 8080, "path": "/metrics"},
+            "flowise": {"port": 3000, "path": "/metrics"},
+            "prometheus": {"port": 9090, "path": "/metrics"}
+        }
+
+        # Get Prometheus client
+        prom_client = get_prometheus_client()
+
+        enriched_containers = []
+        for container in containers:
+            container_name = container.get("name", "").lower()
+
+            # Check if this container has metrics configuration
+            metrics_conf = None
+            for conf_name, conf in metrics_config.items():
+                if conf_name.lower() in container_name:
+                    metrics_conf = conf
+                    break
+
+            if metrics_conf:
+                # Fetch metrics asynchronously
+                try:
+                    metrics = await prom_client.get_container_metrics(
+                        container_name=container_name,
+                        metrics_port=metrics_conf.get("port", 8080),
+                        metrics_path=metrics_conf.get("path", "/metrics")
+                    )
+
+                    if metrics:
+                        # Add metrics to container data
+                        container_copy = container.copy()
+                        container_copy["metrics"] = metrics.to_dict()
+                        enriched_containers.append(container_copy)
+                        logger.debug(f"Enriched container '{container_name}' with Prometheus metrics")
+                    else:
+                        # No metrics available
+                        enriched_containers.append(container)
+
+                except Exception as e:
+                    # Log error but don't fail - just add container without metrics
+                    logger.debug(f"Failed to fetch metrics for container '{container_name}': {e}")
+                    enriched_containers.append(container)
+            else:
+                # Container has no metrics configuration
+                enriched_containers.append(container)
+
+        return enriched_containers
 
     async def _parse_kubectl_json(self, command: str, output: str) -> Dict[str, Any]:
         """Parse kubectl JSON output"""

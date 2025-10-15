@@ -17,6 +17,7 @@ from pathlib import Path
 from auth.command_executor import CommandExecutor, CommandType, CommandResult, PrivilegeError
 from auth.auth_manager import AuthManager
 from auth.session_manager import SessionManager
+from app.services.prometheus_client import get_prometheus_client, PrometheusMetrics
 
 
 logger = logging.getLogger(__name__)
@@ -595,3 +596,82 @@ class DockerMonitor:
             raise
         except Exception as e:
             raise DockerCommandError(f"Failed to stream logs for container {container_name}: {str(e)}")
+
+    async def enrich_containers_with_metrics(
+        self,
+        containers: List[Dict[str, Any]],
+        metrics_config: Optional[Dict[str, Dict[str, Any]]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Enrich container data with Prometheus metrics where available.
+
+        Args:
+            containers: List of container dictionaries from get_containers()
+            metrics_config: Optional configuration for metrics endpoints per container.
+                           Format: {"container_name": {"port": 8080, "path": "/metrics"}}
+                           Defaults to checking common ports for known containers.
+
+        Returns:
+            List[Dict[str, Any]]: Containers with added "metrics" field where available
+
+        Example:
+            containers = await docker_monitor.get_containers()
+            enriched = await docker_monitor.enrich_containers_with_metrics(containers)
+        """
+        if not containers:
+            return containers
+
+        # Default metrics configuration for known containers
+        default_metrics_config = {
+            "renny": {"port": 8080, "path": "/metrics"},  # Renny exposes metrics on 8080
+            "flowise": {"port": 3000, "path": "/metrics"},  # Flowise may expose metrics
+            "prometheus": {"port": 9090, "path": "/metrics"}  # Prometheus self-metrics
+        }
+
+        # Merge with user-provided config
+        final_config = {**default_metrics_config, **(metrics_config or {})}
+
+        # Get Prometheus client
+        prom_client = get_prometheus_client()
+
+        # Enrich each container
+        enriched_containers = []
+        for container in containers:
+            container_name = container.get("name", "").lower()
+
+            # Check if this container has metrics configuration
+            metrics_conf = None
+            for conf_name, conf in final_config.items():
+                if conf_name.lower() in container_name:
+                    metrics_conf = conf
+                    break
+
+            if metrics_conf:
+                # Fetch metrics asynchronously
+                try:
+                    metrics = await prom_client.get_container_metrics(
+                        container_name=container_name,
+                        metrics_port=metrics_conf.get("port", 8080),
+                        metrics_path=metrics_conf.get("path", "/metrics")
+                    )
+
+                    if metrics:
+                        # Add metrics to container data
+                        container_copy = container.copy()
+                        container_copy["metrics"] = metrics.to_dict()
+                        enriched_containers.append(container_copy)
+                        logger.debug(f"Enriched container '{container_name}' with Prometheus metrics")
+                    else:
+                        # No metrics available, add container without metrics
+                        enriched_containers.append(container)
+                        logger.debug(f"No metrics available for container '{container_name}'")
+
+                except Exception as e:
+                    # Log error but don't fail - just add container without metrics
+                    logger.debug(f"Failed to fetch metrics for container '{container_name}': {e}")
+                    enriched_containers.append(container)
+            else:
+                # Container has no metrics configuration
+                enriched_containers.append(container)
+
+        return enriched_containers
