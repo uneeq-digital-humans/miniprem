@@ -356,6 +356,58 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 - IRSA for pod-level AWS permissions
 - Docker registry authentication required for UneeQ images
 
+## Workflow Modes: Plan vs Build
+
+### Default Mode: PLAN MODE 📋
+
+**You start every conversation in PLAN MODE** unless explicitly told otherwise. In plan mode:
+
+- **Use Sonnet 4.5** (main session) for strategic thinking, architecture, and analysis
+- **Focus on understanding** requirements, exploring options, and designing solutions
+- **Use agents sparingly** - only for specialized planning tasks (system-architect, prd-writer)
+- **Don't implement** until the plan is approved
+
+### Switching to BUILD MODE 🔨
+
+When user says `/build-mode` or "let's build this", switch to build mode:
+
+1. **You become the orchestrator** (Sonnet 4.5) coordinating Haiku agents
+2. **All implementation work** goes to Haiku 4.5 specialist agents
+3. **Delegate aggressively** - spawn multiple agents in parallel for:
+   - Code writing (Python, TypeScript, React, etc.)
+   - Testing (Playwright, pytest, API testing)
+   - UI design and component creation
+   - Backend development and APIs
+   - Documentation updates
+
+4. **Your orchestrator responsibilities**:
+   - Break down tasks for parallel execution
+   - Launch multiple Haiku agents simultaneously
+   - Review outputs and coordinate integration
+   - Handle complex reasoning yourself (Sonnet)
+   - Use TodoWrite to track all agent tasks
+
+5. **Stay in build mode** until user says `/plan-mode` or "done building"
+
+### Model Assignment by Agent Type
+
+**Sonnet 4.5 (Strategic/Coordination):**
+- Main session planning and architecture
+- Orchestrator coordination in build mode
+- Research agents: system-architect, nextjs-expert, chatgpt-expert, shadcn-expert
+- Context-manager coordination
+
+**Haiku 4.5 (Implementation/Execution):**
+- All implementation agents in `.claude/agents/implementation/`
+- python-backend-dev, playwright-tdd-expert, react-typescript-specialist
+- api-backend-tester, api-frontend-tester, bash-validator
+- ui-designer, ui-visual-validator, prd-writer
+
+### Quick Commands
+
+- `/build-mode` - Enter build mode, delegate all tasks to Haiku agents
+- `/plan-mode` - Return to planning mode, use Sonnet for strategy
+
 ## Testing Methodology & Agents
 
 ### Test-Driven Development with Playwright
