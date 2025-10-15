@@ -115,9 +115,9 @@ You can also view logs for a specific service:
 
 Once your MiniPrem platform is up and running, proceed to:
 
-1. [Configure Flowise](flowise.md) to set up your conversation flows
-2. [Monitor Performance](monitoring.md) using Grafana dashboards
-3. [Customize Renny](renny.md) for your specific use case
+1. [Configure Flowise](https://miniprem-2025-6da807.gitlab.io/#/guides/flowise) to set up your conversation flows
+2. [Monitor Performance](https://miniprem-2025-6da807.gitlab.io/#/guides/monitoring) using Grafana dashboards
+3. [Customize Renny](https://miniprem-2025-6da807.gitlab.io/#/guides/renny) for your specific use case
 
 ---
 
