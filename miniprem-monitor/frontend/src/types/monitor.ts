@@ -1,11 +1,51 @@
 export interface PrometheusMetrics {
+  // Standard system metrics (for compatibility)
   gpu_percent?: number | null;
   cpu_percent?: number | null;
   memory_percent?: number | null;
   memory_bytes?: number | null;
+  power_watts?: number | null;
   request_count?: number | null;
   uptime_seconds?: number | null;
+
+  // Renny application metrics
+  session_total?: number | null;
+  session_started?: number | null;
+  session_successful?: number | null;
+  session_failed?: number | null;
+  frames_rendered?: number | null;
+
+  // Response time metrics (milliseconds)
+  response_time_p50?: number | null;
+  response_time_p90?: number | null;
+  response_time_p99?: number | null;
+  nlp_response_time_p50?: number | null;
+  a2f_response_time_p50?: number | null;
+
+  // Frame timing metrics (milliseconds, averages)
+  gpu_frame_time_avg?: number | null;
+  render_frame_time_avg?: number | null;
+  game_frame_time_avg?: number | null;
+  frame_time_avg?: number | null;
 }
+
+// Metric configuration for user selection
+export interface MetricConfig {
+  key: keyof PrometheusMetrics;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>; // Lucide React icon component
+  unit: string;
+  category: 'system' | 'session' | 'performance' | 'timing';
+  description: string;
+  thresholds?: { warning: number; critical: number };
+}
+
+// User metric preferences (3 slots)
+export type MetricPreferences = [
+  keyof PrometheusMetrics,
+  keyof PrometheusMetrics,
+  keyof PrometheusMetrics
+];
 
 export interface ContainerStatus {
   name: string;

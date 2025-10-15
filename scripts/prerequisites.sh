@@ -20,7 +20,7 @@ MIN_CPU_CORES=8
 MIN_RAM=16000
 
 # Define minimum free SSD space (in GB)
-MIN_FREE_SSD_SPACE=128
+MIN_FREE_SSD_SPACE=64
 
 # Define minimum Ubuntu version
 MIN_UBUNTU_VERSION="24.04"

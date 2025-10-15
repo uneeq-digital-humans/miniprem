@@ -73,3 +73,5 @@ personal_notes/
 .deployment_id
 terraform.tfvars.bak
 kubernetes/values/my-renny-values.yml
+
+get_eleven_labs_voices.py

@@ -1,7 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { ContainerStatus, StatusType, SystemInfo } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
-import { MetricsBadge } from './MetricsBadge';
+import { InlineMetrics } from './InlineMetrics';
+import { MetricSelector } from './MetricSelector';
+import { useMetricPreferences } from '../hooks/useMetricPreferences';
 import { RefreshCw, Eye, EyeOff, Play, Square, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -31,6 +33,7 @@ export function ContainerPanel({
 }: ContainerPanelProps) {
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterType>('all');
+  const { selectedMetrics } = useMetricPreferences();
 
   const getContainerStatus = (status: string): StatusType => {
     if (status.toLowerCase().includes('up')) return 'healthy';
@@ -133,18 +136,21 @@ export function ContainerPanel({
             )}
           </h2>
 
-          <button
-            onClick={onRefresh}
-            className={clsx(
-              'btn-icon',
-              loading && 'animate-spin'
-            )}
-            disabled={loading}
-            title="Refresh containers"
-            aria-label="Refresh containers"
-          >
-            <RefreshCw className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <MetricSelector />
+            <button
+              onClick={onRefresh}
+              className={clsx(
+                'btn-icon',
+                loading && 'animate-spin'
+              )}
+              disabled={loading}
+              title="Refresh containers"
+              aria-label="Refresh containers"
+            >
+              <RefreshCw className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Status Filter - Segmented Control */}
@@ -292,12 +298,12 @@ export function ContainerPanel({
                   expandedContainer === container.name ? null : container.name
                 )}
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-4 flex-1">
                   <StatusIndicator
                     status={getContainerStatus(container.status)}
                     size="md"
                   />
-                  <div>
+                  <div className="flex-1">
                     <div className="font-semibold text-gray-900 dark:text-gray-100">
                       {container.name}
                     </div>
@@ -305,14 +311,14 @@ export function ContainerPanel({
                       {container.image} • {formatUptime(container.created)}
                     </div>
                   </div>
+
+                  {/* Inline Metrics - displayed directly on the container row */}
+                  {container.metrics && (
+                    <InlineMetrics metrics={container.metrics} selectedMetrics={selectedMetrics} />
+                  )}
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  {/* Prometheus Metrics Badges */}
-                  {container.metrics && (
-                    <MetricsBadge metrics={container.metrics} />
-                  )}
-
+                <div className="flex items-center space-x-2 ml-4">
                   {/* Fallback to Docker stats if no Prometheus metrics */}
                   {!container.metrics && container.cpu_usage && (
                     <div className="text-xs font-mono bg-gray-100 dark:bg-gray-600 dark:text-gray-200 px-2 py-1 rounded">

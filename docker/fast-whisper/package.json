@@ -1,0 +1,14 @@
+{
+  "name": "fast-whisper",
+  "version": "1.0.0",
+  "description": "A lightweight Docker-based solution for voice dictation using faster-whisper with GPU acceleration. Press a keyboard shortcut, speak, and your words will be transcribed directly where your cursor is.",
+  "main": "index.js",
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@types/node": "^24.7.2"
+  }
+}
