@@ -18,19 +18,51 @@ export function useMetricPreferences() {
 
   // Load preferences from localStorage on mount
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length === 3) {
-          setSelectedMetrics(parsed as [string, string, string]);
+    const loadPreferences = () => {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length === 3) {
+            setSelectedMetrics(parsed as [string, string, string]);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load metric preferences:', error);
+        // Fallback to defaults on error
+        setSelectedMetrics(DEFAULT_METRIC_PREFERENCES);
+      }
+    };
+
+    // Load on mount
+    loadPreferences();
+
+    // Listen for storage changes (when another component updates preferences)
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (Array.isArray(parsed) && parsed.length === 3) {
+            setSelectedMetrics(parsed as [string, string, string]);
+          }
+        } catch (error) {
+          console.error('Failed to parse storage change:', error);
         }
       }
-    } catch (error) {
-      console.error('Failed to load metric preferences:', error);
-      // Fallback to defaults on error
-      setSelectedMetrics(DEFAULT_METRIC_PREFERENCES);
-    }
+    };
+
+    // Custom event for same-window updates (storage event only fires across tabs)
+    const handleCustomStorageChange = (e: Event) => {
+      loadPreferences();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('metricsPreferencesChanged', handleCustomStorageChange);
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('metricsPreferencesChanged', handleCustomStorageChange);
+    };
   }, []);
 
   /**
@@ -45,6 +77,8 @@ export function useMetricPreferences() {
       // Save to localStorage
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        // Dispatch custom event to notify other components in same window
+        window.dispatchEvent(new Event('metricsPreferencesChanged'));
       } catch (error) {
         console.error('Failed to save metric preferences:', error);
       }
@@ -60,6 +94,8 @@ export function useMetricPreferences() {
     setSelectedMetrics(DEFAULT_METRIC_PREFERENCES);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_METRIC_PREFERENCES));
+      // Dispatch custom event to notify other components in same window
+      window.dispatchEvent(new Event('metricsPreferencesChanged'));
     } catch (error) {
       console.error('Failed to reset metric preferences:', error);
     }
@@ -72,6 +108,8 @@ export function useMetricPreferences() {
     setSelectedMetrics(metrics);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(metrics));
+      // Dispatch custom event to notify other components in same window
+      window.dispatchEvent(new Event('metricsPreferencesChanged'));
     } catch (error) {
       console.error('Failed to save metric preferences:', error);
     }
