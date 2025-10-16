@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { PodStatus, StatusType, SystemInfo } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
 import { ClusterSelector, ClusterInfo } from './ClusterSelector';
 import { RegionSelector } from './RegionSelector';
+import CloudProviderBadge from './CloudProviderBadge';
 import { RefreshCw, Eye, Filter, Play, Square, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -18,6 +19,26 @@ export interface ClusterStatus {
   podCount?: number;
   nodeCount?: number;
   connectionError?: string;
+}
+
+// Enhanced cluster info interface
+interface EnhancedClusterInfo {
+  available: boolean;
+  provider: 'eks' | 'aks' | 'gke' | 'unknown';
+  context?: string;
+
+  // EKS specific
+  region?: string;
+  status?: string;
+  endpoint?: string;
+
+  // AKS specific
+  resource_group?: string;
+  location?: string;
+  power_state?: string;
+
+  // Common
+  error?: string;
 }
 
 // Define pod status filter types
@@ -71,6 +92,41 @@ export function KubernetesPanel({
   const [expandedPod, setExpandedPod] = useState<string | null>(null);
   const [namespaceFilter, setNamespaceFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<PodStatusFilter>('all');
+  const [enhancedClusterInfo, setEnhancedClusterInfo] = useState<EnhancedClusterInfo | null>(null);
+  const [loadingEnhancedInfo, setLoadingEnhancedInfo] = useState(false);
+
+  // Fetch enhanced cluster info
+  useEffect(() => {
+    const fetchEnhancedClusterInfo = async () => {
+      if (!systemInfo?.kubernetes?.available) {
+        setEnhancedClusterInfo(null);
+        return;
+      }
+
+      setLoadingEnhancedInfo(true);
+      try {
+        const response = await fetch('/api/kubernetes/cluster/info/enhanced');
+        const data = await response.json();
+
+        if (data.success && data.cluster_info) {
+          setEnhancedClusterInfo(data.cluster_info);
+        } else {
+          setEnhancedClusterInfo(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch enhanced cluster info:', err);
+        setEnhancedClusterInfo(null);
+      } finally {
+        setLoadingEnhancedInfo(false);
+      }
+    };
+
+    fetchEnhancedClusterInfo();
+
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchEnhancedClusterInfo, 30000);
+    return () => clearInterval(interval);
+  }, [systemInfo?.kubernetes?.available, currentContext]);
 
   const getPodStatus = (status: string, ready: string): StatusType => {
     if (status === 'Running' && ready === '1/1') return 'healthy';
@@ -167,7 +223,109 @@ export function KubernetesPanel({
               title={systemInfo.kubernetes.available ? 'Available' : `Unavailable: ${systemInfo.kubernetes.error || 'Unknown error'}`}
             />
           )}
+          {/* Cloud Provider Badge */}
+          {enhancedClusterInfo && enhancedClusterInfo.available && enhancedClusterInfo.provider !== 'unknown' && (
+            <div className="ml-3">
+              <CloudProviderBadge provider={enhancedClusterInfo.provider} />
+            </div>
+          )}
         </h2>
+
+        {/* Enhanced Cluster Info Display */}
+        {enhancedClusterInfo && enhancedClusterInfo.available && (
+          <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="text-sm space-y-1">
+              {enhancedClusterInfo.provider === 'eks' && (
+                <>
+                  {enhancedClusterInfo.region && (
+                    <div className="flex items-center">
+                      <span className="font-medium text-gray-700 dark:text-gray-300 w-32">Region:</span>
+                      <span className="text-gray-600 dark:text-gray-400">{enhancedClusterInfo.region}</span>
+                    </div>
+                  )}
+                  {enhancedClusterInfo.status && (
+                    <div className="flex items-center">
+                      <span className="font-medium text-gray-700 dark:text-gray-300 w-32">Status:</span>
+                      <span className={clsx(
+                        'px-2 py-0.5 rounded text-xs font-medium',
+                        enhancedClusterInfo.status === 'ACTIVE'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                          : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300'
+                      )}>
+                        {enhancedClusterInfo.status}
+                      </span>
+                    </div>
+                  )}
+                  {enhancedClusterInfo.endpoint && (
+                    <div className="flex items-center">
+                      <span className="font-medium text-gray-700 dark:text-gray-300 w-32">Endpoint:</span>
+                      <span className="text-gray-600 dark:text-gray-400 font-mono text-xs truncate max-w-md">
+                        {enhancedClusterInfo.endpoint}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {enhancedClusterInfo.provider === 'aks' && (
+                <>
+                  {enhancedClusterInfo.resource_group && (
+                    <div className="flex items-center">
+                      <span className="font-medium text-gray-700 dark:text-gray-300 w-32">Resource Group:</span>
+                      <span className="text-gray-600 dark:text-gray-400">{enhancedClusterInfo.resource_group}</span>
+                    </div>
+                  )}
+                  {enhancedClusterInfo.location && (
+                    <div className="flex items-center">
+                      <span className="font-medium text-gray-700 dark:text-gray-300 w-32">Location:</span>
+                      <span className="text-gray-600 dark:text-gray-400">{enhancedClusterInfo.location}</span>
+                    </div>
+                  )}
+                  {enhancedClusterInfo.power_state && (
+                    <div className="flex items-center">
+                      <span className="font-medium text-gray-700 dark:text-gray-300 w-32">Power State:</span>
+                      <span className={clsx(
+                        'px-2 py-0.5 rounded text-xs font-medium',
+                        enhancedClusterInfo.power_state === 'Running'
+                          ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                          : 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300'
+                      )}>
+                        {enhancedClusterInfo.power_state}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {enhancedClusterInfo.context && (
+                <div className="flex items-center">
+                  <span className="font-medium text-gray-700 dark:text-gray-300 w-32">Context:</span>
+                  <span className="text-gray-600 dark:text-gray-400 font-mono text-xs truncate max-w-md">
+                    {enhancedClusterInfo.context}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Enhanced info loading or error state */}
+        {loadingEnhancedInfo && (
+          <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
+            <div className="flex items-center text-sm text-gray-600 dark:text-gray-400">
+              <Loader2 className="w-4 h-4 animate-spin mr-2" />
+              Loading cluster information...
+            </div>
+          </div>
+        )}
+
+        {enhancedClusterInfo && !enhancedClusterInfo.available && enhancedClusterInfo.error && (
+          <div className="mb-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+            <div className="text-sm text-yellow-700 dark:text-yellow-300">
+              Cluster info unavailable: {enhancedClusterInfo.error}
+            </div>
+          </div>
+        )}
 
         {/* Controls - Responsive Layout */}
         <div className="space-y-3">

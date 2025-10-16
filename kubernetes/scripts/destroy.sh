@@ -79,7 +79,7 @@ echo "======================================"
 echo ""
 
 # Load deployment configuration
-cd "$KUBERNETES_DIR/terraform"
+cd "$KUBERNETES_DIR/terraform/eks"
 if [ "$LIST_ONLY" = "true" ]; then
     echo "📋 Listing all deployments..."
     load_terraform_config
@@ -485,7 +485,7 @@ fi
 # Step 4: Delete EKS node groups
 echo ""
 echo "🖥️  Step 4/8: Removing EKS node groups..."
-cd "$KUBERNETES_DIR/terraform"
+cd "$KUBERNETES_DIR/terraform/eks"
 
 if [ "$CLUSTER_NAME" != "unknown" ]; then
     # List current node groups
@@ -812,7 +812,7 @@ verify_clean "Internet Gateways" \
     "aws ec2 describe-internet-gateways --region $REGION --filters Name=tag:Project,Values=renny --query 'InternetGateways[].InternetGatewayId' --output text"
 
 verify_clean "Terraform State Resources" \
-    "cd $KUBERNETES_DIR/terraform && terraform state list 2>/dev/null | wc -l | tr -d ' '"
+    "cd $KUBERNETES_DIR/terraform/eks && terraform state list 2>/dev/null | wc -l | tr -d ' '"
 
 # Table footer
 echo -e "${CYAN}└──────────────────────────────┴───────────┴─────────────────────────────────┘${NC}"

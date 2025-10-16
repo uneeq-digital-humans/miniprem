@@ -1,0 +1,148 @@
+# AKS-Specific Overrides for Renny Deployment
+# Azure Kubernetes Service configuration for NC16as_T4_v3 GPU nodes
+#
+# USAGE:
+# Deploy with both base and AKS-specific values:
+#   helm install renny ./renny-chart \
+#     -f renny-values.yaml \
+#     -f renny-values-aks.yaml \
+#     --namespace uneeq-renderer
+#
+# CLUSTER CONFIGURATION:
+# - Node Type: NC16as_T4_v3 (16 vCPUs, 110GB RAM, 1x NVIDIA T4 16GB)
+# - Node Count: 10 nodes (scales based on autoscaler)
+# - Total Capacity: 40 Renny instances (4 pods per node)
+
+# GPU time-slicing configuration for AKS NC16as_T4_v3
+gpuTimeSlicing:
+  replicasPerGpu: 1  # No time-slicing needed (16GB VRAM sufficient per pod)
+
+# Deployment scaling
+deployment:
+  totalReplicas: 40  # 10 nodes × 4 pods = 40 Renny instances
+
+# Resource requests per pod (optimized for 4 pods per NC16as_T4_v3 node)
+resources:
+  requests:
+    cpu: "3"           # 3 CPUs per pod (16 vCPUs / 4 pods with headroom)
+    memory: "6Gi"      # 6GB RAM per pod (110GB / 4 pods with headroom)
+    nvidia.com/gpu: 1  # Request full GPU (no time-slicing)
+  limits:
+    nvidia.com/gpu: 1  # Full GPU allocation
+
+# Node affinity for GPU nodes
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: workload-type
+          operator: In
+          values:
+          - gpu
+        - key: uneeq.io/node-type
+          operator: In
+          values:
+          - renny
+
+# Toleration for GPU node taints
+tolerations:
+- key: nvidia.com/gpu
+  operator: Equal
+  value: "true"
+  effect: NoSchedule
+
+# Azure-specific annotations
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+
+# Health checks (tuned for Renny startup times)
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Pod disruption budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 35  # Ensure 35/40 pods remain available during disruptions
+
+# Horizontal Pod Autoscaler (optional, for dynamic scaling)
+autoscaling:
+  enabled: false  # Set to true for HPA-based scaling
+  minReplicas: 20
+  maxReplicas: 40
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 8081
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+
+# Azure-specific storage class for persistent volumes
+persistence:
+  enabled: false  # Renny typically doesn't require persistent storage
+  storageClass: managed-premium  # Azure Premium SSD if needed
+
+# Network policy for WebRTC/TURN traffic
+networkPolicy:
+  enabled: true
+  ingress:
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 8081
+    - protocol: UDP
+      port: 49152-65535  # WebRTC port range
+
+# Azure Monitor integration
+monitoring:
+  enabled: true
+  prometheusOperator: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Security context (Azure best practices)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop:
+    - ALL
+
+# Image pull secrets for private registries
+imagePullSecrets:
+- name: uneeq-registry-secret
+
+# Environment-specific configuration
+env:
+  # Add AKS-specific environment variables here
+  CLOUD_PROVIDER: "azure"
+  AZURE_REGION: "eastus"
+
+# Logging configuration for Azure Monitor
+logging:
+  level: "info"
+  format: "json"  # JSON format for better Azure Log Analytics integration

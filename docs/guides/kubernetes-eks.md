@@ -3,10 +3,19 @@
 <img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png" alt="UneeQ Logo" class="logo-light-mode" />
 <img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+Rev+White.png" alt="UneeQ Logo" class="logo-dark-mode" />
 
-# Kubernetes/EKS Production Deployment
+# AWS EKS Production Deployment
 
-> Scale your MiniPrem digital humans to production with AWS EKS and GPU acceleration
+> Deploy Renny digital humans on AWS EKS with NVIDIA A10G GPU acceleration
 
+</div>
+
+<div class="info-box">
+<strong>ℹ️ Multi-Cloud Support:</strong> This guide is specific to AWS EKS. For other cloud providers, see:
+<ul>
+  <li><a href="kubernetes-overview.md">Multi-Cloud Overview</a> - Compare all cloud providers</li>
+  <li><a href="kubernetes-aks.md">Azure AKS Deployment</a> - Deploy on Azure</li>
+  <li><a href="kubernetes-multi-cloud.md">Multi-Cloud Guide</a> - Cost comparison and migration</li>
+</ul>
 </div>
 
 ## Table of Contents

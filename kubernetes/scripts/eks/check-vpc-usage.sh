@@ -77,18 +77,18 @@ fi
 # Determine region to use (terraform.tfvars is single source of truth)
 if [ -z "$REGION" ]; then
     # Check terraform.tfvars first (primary source)
-    if [ -f "../terraform/terraform.tfvars" ]; then
-        REGION=$(grep "^aws_region" ../terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
+    if [ -f "../../terraform/eks/terraform.tfvars" ]; then
+        REGION=$(grep "^aws_region" ../../terraform/eks/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
     fi
-    
+
     # If still empty, check current directory for terraform.tfvars
     if [ -z "$REGION" ] && [ -f "terraform.tfvars" ]; then
         REGION=$(grep "^aws_region" terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
     fi
-    
+
     # If still empty, try terraform output (only if infrastructure exists)
-    if [ -z "$REGION" ] && [ -f "../terraform/terraform.tfstate" ]; then
-        REGION=$(cd ../terraform && terraform output -raw region 2>/dev/null || echo "")
+    if [ -z "$REGION" ] && [ -f "../../terraform/eks/terraform.tfstate" ]; then
+        REGION=$(cd ../../terraform/eks && terraform output -raw region 2>/dev/null || echo "")
     fi
     
     # NO FALLBACK - Region must be explicitly configured

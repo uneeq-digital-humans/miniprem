@@ -20,6 +20,8 @@ from .models.schemas import (
     DockerServiceRequest, DockerServiceResponse, ServiceControlRequest,
     RegionListResponse, RegionContextsResponse, RegionStatus
 )
+from .routes.aks_metrics import get_aks_metrics_endpoint
+from .routes.cost_metrics import get_enhanced_cost_metrics_endpoint
 
 # Configure logging with proper WebSocket disconnect handling
 logging.basicConfig(
@@ -224,6 +226,125 @@ async def get_cluster_info():
         raise HTTPException(status_code=500, detail=f"Failed to get cluster info: {str(e)}")
 
 
+@app.get("/api/kubernetes/cluster/info/enhanced")
+async def get_cluster_info_enhanced():
+    """Get Kubernetes cluster information with cloud provider detection (EKS, AKS, GKE)"""
+    try:
+        cluster_info = await kubernetes_monitor.get_cluster_info_with_provider()
+        return {
+            "success": True,
+            "cluster_info": cluster_info,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting enhanced cluster info: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e),
+                "error_type": "cluster_info_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+@app.get("/api/kubernetes/aks/nodepools")
+async def get_aks_node_pools():
+    """Get AKS node pool information"""
+    try:
+        # First check if current cluster is AKS
+        cluster_info = await kubernetes_monitor.get_cluster_info_with_provider()
+        provider = cluster_info.get('provider', 'unknown')
+
+        if provider != 'aks':
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "success": False,
+                    "error": f"Current cluster is {provider}, not AKS",
+                    "error_type": "wrong_provider",
+                    "timestamp": datetime.utcnow().isoformat()
+                }
+            )
+
+        node_pools = await kubernetes_monitor.get_aks_node_pools()
+        return {
+            "success": True,
+            "node_pools": node_pools,
+            "count": len(node_pools),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting AKS node pools: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e),
+                "error_type": "aks_nodepool_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
+@app.get("/api/kubernetes/metrics/aks")
+async def get_aks_metrics():
+    """
+    Get comprehensive AKS cluster metrics.
+
+    Returns real-time metrics including:
+    - Node pool details (autoscaling, health, resource utilization)
+    - Cluster-wide totals (nodes, pods, namespaces)
+    - Cost estimates based on VM sizes
+    - Health status for each node pool
+
+    Requires:
+    - Azure CLI (az) installed and authenticated
+    - kubectl configured with AKS cluster context
+    - Current context must be an AKS cluster
+
+    Returns:
+        AKSMetricsResponse: Complete metrics or error details
+
+    Raises:
+        HTTPException: 400 if not AKS cluster, 500 if metrics collection fails
+    """
+    try:
+        response = await get_aks_metrics_endpoint()
+
+        # Return appropriate status code based on error type
+        if not response.success:
+            error_type = response.error_type
+            if error_type == "wrong_provider":
+                status_code = 400
+            elif error_type == "tool_not_available":
+                status_code = 503
+            elif error_type == "authentication_error":
+                status_code = 401
+            else:
+                status_code = 500
+
+            return JSONResponse(
+                status_code=status_code,
+                content=response.dict()
+            )
+
+        return response.dict()
+
+    except Exception as e:
+        logger.error(f"Unexpected error in AKS metrics endpoint: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Internal server error: {str(e)}",
+                "error_type": "server_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
 @app.get("/api/kubernetes/namespaces")
 async def get_namespaces():
     """Get Kubernetes namespaces"""
@@ -236,6 +357,71 @@ async def get_namespaces():
     except Exception as e:
         logger.error(f"Error getting namespaces: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to get namespaces: {str(e)}")
+
+
+@app.get("/api/kubernetes/costs/enhanced")
+async def get_enhanced_kubernetes_costs():
+    """
+    Get enhanced cost tracking with comprehensive analysis for Kubernetes clusters.
+
+    Returns real-time cost metrics including:
+    - Current period cost summary with daily averages
+    - Cost breakdown by category (compute, networking, storage, monitoring)
+    - Per node pool cost details
+    - Historical cost trends (7-day and 30-day)
+    - Optimization recommendations with potential savings
+    - Budget tracking status (if configured)
+
+    Supports:
+    - AWS EKS clusters
+    - Azure AKS clusters
+    - GCP GKE clusters
+
+    Data Source:
+    - Phase 1: Hardcoded pricing tables (immediate, reliable)
+    - Phase 2: Cloud billing APIs (optional, requires credentials)
+
+    Returns:
+        EnhancedCostResponse: Complete cost analysis or error details
+
+    Raises:
+        HTTPException: 400 if provider detection fails, 500 if cost calculation fails
+    """
+    try:
+        response = await get_enhanced_cost_metrics_endpoint()
+
+        # Return appropriate status code based on error type
+        if not response.success:
+            error_type = response.error_type
+            if error_type == "no_kubectl_context":
+                status_code = 503
+            elif error_type == "provider_detection_failed":
+                status_code = 400
+            elif error_type == "no_node_pools":
+                status_code = 404
+            elif error_type == "kubectl_command_failed":
+                status_code = 502
+            else:
+                status_code = 500
+
+            return JSONResponse(
+                status_code=status_code,
+                content=response.dict()
+            )
+
+        return response.dict()
+
+    except Exception as e:
+        logger.error(f"Unexpected error in enhanced cost metrics endpoint: {str(e)}")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": f"Internal server error: {str(e)}",
+                "error_type": "server_error",
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
 
 
 # AWS Region Management Endpoints

@@ -61,14 +61,41 @@ kubernetes/
 └── README.md           # This file
 ```
 
+## Supported Cloud Providers
+
+MiniPrem Kubernetes deployment supports multiple cloud providers:
+
+### AWS EKS
+- **GPU Instance**: g5.4xlarge (NVIDIA A10G, 24GB VRAM)
+- **Cost**: ~$8,712/month (10 nodes)
+- **Setup Guide**: [AWS_SETUP.md](./AWS_SETUP.md)
+- **Deployment**: `./scripts/deploy.sh` (select AWS profile)
+
+### Azure AKS
+- **GPU Instance**: NC16as_T4_v3 (NVIDIA T4, 16GB VRAM)
+- **Cost**: ~$10,800/month (10 nodes)
+- **Setup Guide**: [AZURE_SETUP.md](./AZURE_SETUP.md)
+- **Deployment**: `./scripts/deploy.sh` (configure Azure credentials)
+
+### Choosing a Cloud Provider
+See [MULTI_CLOUD_GUIDE.md](./MULTI_CLOUD_GUIDE.md) for detailed comparison.
+
+**Quick Decision:**
+- **Choose AWS** if: Lower cost priority, existing AWS infrastructure, need 24GB VRAM per GPU
+- **Choose Azure** if: Azure ecosystem, enterprise agreements, compliance requirements, need more RAM per node (110GB vs 64GB)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
 
-1. **AWS Account** with appropriate permissions (see [AWS_SETUP.md](AWS_SETUP.md))
-2. **AWS CLI** >= 2.3.0 configured with credentials ⚠️ **IMPORTANT VERSION REQUIREMENT**
+1. **Cloud Account** with appropriate permissions:
+   - AWS: See [AWS_SETUP.md](AWS_SETUP.md) for IAM user/role setup
+   - Azure: See [AZURE_SETUP.md](AZURE_SETUP.md) for Service Principal setup
+2. **Cloud CLI** configured with credentials:
+   - AWS CLI >= 2.3.0 ⚠️ **IMPORTANT VERSION REQUIREMENT**
+   - Azure CLI >= 2.50.0
 3. **Terraform** >= 1.0 (see installation below)
-4. **kubectl** 
+4. **kubectl** >= 1.28
 5. **Helm** >= 3.0
 6. **Docker Hub** account with access to UneeQ repositories
 7. **Renny Helm chart** (renny-chart.tar file)
@@ -116,10 +143,15 @@ scoop install terraform
 
 **Other Tools:**
 
-*AWS CLI:*
+*AWS CLI (for AWS EKS):*
 - macOS: `brew install awscli`
 - Linux: `pip install awscli` or use package manager
 - Windows: Download from AWS or `choco install awscli`
+
+*Azure CLI (for Azure AKS):*
+- macOS: `brew install azure-cli`
+- Linux: `curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash`
+- Windows: Download from [https://aka.ms/installazurecliwindows](https://aka.ms/installazurecliwindows) or `choco install azure-cli`
 
 *kubectl:*
 - macOS: `brew install kubectl`

@@ -1339,7 +1339,7 @@ check_aws_limits() {
         echo "Consider:"
         echo "  1. Changing to a different region with GPU availability"
         echo "  2. Requesting quota increase for GPU instances"
-        echo "  3. Using different instance types (modify kubernetes/terraform/variables.tf)"
+        echo "  3. Using different instance types (modify kubernetes/terraform/eks/variables.tf)"
         exit 1
     fi
     
@@ -1738,7 +1738,7 @@ docker_password = ""  # Your Docker Hub password
 # renny_max_size = 20
 # renny_desired_size = 10
 EOF
-        echo -e "${YELLOW}⚠️  Please edit kubernetes/terraform/terraform.tfvars with your credentials${NC}"
+        echo -e "${YELLOW}⚠️  Please edit kubernetes/terraform/eks/terraform.tfvars with your credentials${NC}"
         echo "Required values:"
         echo "  - dhop_tenant_id: Your DHOP tenant ID"
         echo "  - dhop_api_key: Your DHOP API key (base64 encoded)"

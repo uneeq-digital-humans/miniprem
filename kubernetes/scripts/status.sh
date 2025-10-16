@@ -44,14 +44,14 @@ echo "======================================"
 echo ""
 
 # Check if terraform state exists
-if [ ! -f "$PROJECT_DIR/terraform/terraform.tfstate" ]; then
+if [ ! -f "$PROJECT_DIR/terraform/eks/terraform.tfstate" ]; then
     echo -e "${RED}❌ No deployment found${NC}"
     echo "Run ./scripts/deploy.sh to create a deployment"
     exit 1
 fi
 
 # Load deployment configuration
-cd "$PROJECT_DIR/terraform"
+cd "$PROJECT_DIR/terraform/eks"
 init_deployment_config "false" ""
 REGION="$AWS_REGION"
 
