@@ -22,6 +22,7 @@ from .models.schemas import (
 )
 from .routes.aks_metrics import get_aks_metrics_endpoint
 from .routes.cost_metrics import get_enhanced_cost_metrics_endpoint
+from .routes import cluster_management
 
 # Configure logging with proper WebSocket disconnect handling
 logging.basicConfig(
@@ -94,6 +95,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include cluster management routes
+app.include_router(cluster_management.router, prefix="/api/kubernetes")
 
 # Initialize managers
 connection_manager = ConnectionManager()
