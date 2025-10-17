@@ -505,7 +505,9 @@ az support tickets create \
 
 Terraform needs a Service Principal to authenticate with Azure and manage resources.
 
-### Option 1: Service Principal with Client Secret (Recommended)
+### Recommended: Service Principal with Client Secret
+
+This is the standard authentication method and works in all environments.
 
 **Step 1: Create Service Principal**
 
@@ -553,13 +555,14 @@ az role assignment list --assignee "12345678-1234-1234-1234-123456789012" --outp
 
 **Step 4: Add to Terraform Configuration**
 
-Create `terraform/terraform.tfvars`:
+Copy `kubernetes/terraform/aks/terraform.tfvars.local` from the example and fill in your values:
+
 ```hcl
 # Azure authentication
-subscription_id = "12345678-1234-1234-1234-123456789012"
-tenant_id       = "87654321-4321-4321-4321-210987654321"
-client_id       = "12345678-1234-1234-1234-123456789012"
-client_secret   = "super-secret-password-here"
+azure_subscription_id = "12345678-1234-1234-1234-123456789012"
+azure_tenant_id       = "87654321-4321-4321-4321-210987654321"
+azure_client_id       = "12345678-1234-1234-1234-123456789012"
+azure_client_secret   = "super-secret-password-here"
 
 # Required Renny credentials
 dhop_tenant_id  = "your-uneeq-tenant-id"
@@ -568,44 +571,21 @@ docker_username = "your-dockerhub-username"
 docker_password = "your-dockerhub-password"
 
 # Optional: Override defaults
-azure_region = "eastus"  # Change to your preferred region
+azure_region = "westus3"  # Change to your preferred region
 ```
 
-### Option 2: Service Principal with Certificate (More Secure)
-
-**Step 1: Generate Certificate**
-
+Then copy to the working file:
 ```bash
-# Generate self-signed certificate
-openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes
-
-# Create PFX file
-openssl pkcs12 -export -out cert.pfx -inkey key.pem -in cert.pem -passout pass:
+cp kubernetes/terraform/aks/terraform.tfvars.local kubernetes/terraform/aks/terraform.tfvars
 ```
 
-**Step 2: Create Service Principal with Certificate**
+### Alternative: Certificate-Based Authentication
 
-```bash
-# Create service principal with certificate authentication
-az ad sp create-for-rbac \
-  --name "renny-aks-deployer-cert" \
-  --role Contributor \
-  --scopes /subscriptions/$(az account show --query id -o tsv) \
-  --cert @cert.pem \
-  --output json
-```
+**Only required in environments with security policies that prohibit client secrets.** If your organization requires certificate-based authentication, you likely have internal documentation for this process. The standard client secret method (above) works in all other scenarios.
 
-**Step 3: Configure Terraform**
+For certificate authentication, use `--cert @cert.pem` when creating the service principal and configure Terraform with `client_certificate_path` instead of `client_secret`.
 
-```hcl
-# terraform/terraform.tfvars
-subscription_id         = "your-subscription-id"
-tenant_id              = "your-tenant-id"
-client_id              = "your-client-id"
-client_certificate_path = "/path/to/cert.pfx"
-```
-
-### Option 3: Managed Identity (For Production/CI/CD)
+### Alternative: Managed Identity (For Production/CI/CD)
 
 If running Terraform from an Azure VM or Azure DevOps:
 
@@ -990,10 +970,10 @@ Before running the deployment script, ensure you have:
 - [ ] **GPU quota approved** (160 vCPUs for NC16as_T4_v3 in target region)
 - [ ] **Regional availability confirmed** for NC16as_T4_v3
 - [ ] **terraform.tfvars configured** with all required credentials:
-  - `subscription_id`
-  - `tenant_id`
-  - `client_id`
-  - `client_secret`
+  - `azure_subscription_id`
+  - `azure_tenant_id`
+  - `azure_client_id`
+  - `azure_client_secret`
   - `dhop_tenant_id` (UneeQ)
   - `dhop_api_key` (UneeQ)
   - `docker_username` (Docker Hub)

@@ -44,6 +44,8 @@ Thumbs.db
 *.bak
 *.backup
 
-# Sensitive variable files (use terraform.tfvars but keep example)
-# Uncomment this if you want to exclude terraform.tfvars from git:
-# terraform.tfvars
+# Sensitive variable files
+# terraform.tfvars is checked in with placeholder values only
+# Real credentials should be in terraform.tfvars.local (ignored by git)
+terraform.tfvars.local
+*.tfvars.local

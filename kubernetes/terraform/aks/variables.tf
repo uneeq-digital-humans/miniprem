@@ -10,6 +10,24 @@ variable "azure_subscription_id" {
   sensitive   = true
 }
 
+variable "azure_tenant_id" {
+  description = "Azure AD Tenant ID for service principal authentication"
+  type        = string
+  sensitive   = true
+}
+
+variable "azure_client_id" {
+  description = "Service Principal Client ID (App ID)"
+  type        = string
+  sensitive   = true
+}
+
+variable "azure_client_secret" {
+  description = "Service Principal Client Secret (Password)"
+  type        = string
+  sensitive   = true
+}
+
 variable "azure_region" {
   description = "Azure region for all resources (e.g., eastus, westus2, westeurope)"
   type        = string

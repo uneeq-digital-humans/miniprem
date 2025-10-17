@@ -9,6 +9,9 @@
 # Find your subscription ID: az account show --query id -o tsv
 # Or list all subscriptions: az account list --output table
 azure_subscription_id = "YOUR_AZURE_SUBSCRIPTION_ID"
+azure_tenant_id       = "YOUR_AZURE_TENANT_ID"
+azure_client_id       = "YOUR_SERVICE_PRINCIPAL_CLIENT_ID"
+azure_client_secret   = "YOUR_SERVICE_PRINCIPAL_CLIENT_SECRET"
 
 # ============================================================================
 # REQUIRED: DHOP Configuration (UneeQ Platform)
