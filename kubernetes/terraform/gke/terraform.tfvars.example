@@ -1,0 +1,49 @@
+# GKE Terraform Configuration Example
+# Copy this file to terraform.tfvars and customize
+
+# GCP Project Configuration
+gcp_project_id = "your-gcp-project-id"  # Find with: gcloud config get-value project
+gcp_region     = "us-central1"          # us-central1, us-east1, europe-west1
+
+# Network Configuration (PERMANENT - cannot change without rebuild)
+subnet_cidr    = "10.17.0.0/22"   # 1024 IPs for nodes
+pods_cidr      = "10.18.0.0/16"   # 65K IPs for pods
+services_cidr  = "10.117.0.0/16"  # 65K IPs for services
+
+# Kubernetes Configuration
+kubernetes_version = "1.31"
+
+# Project Identification
+project_name  = "miniprem"
+environment   = "prod"
+deployment_id = ""  # Leave empty for auto-generation
+
+# Renny Node Pool (GPU nodes)
+renny_instance_type = "n1-standard-16"  # 16 vCPUs, 60GB RAM
+renny_min_size      = 10                # Minimum nodes
+renny_max_size      = 20                # Maximum nodes
+renny_desired_size  = 10                # Initial nodes
+
+# GPU Time-Slicing (2-4 pods per GPU)
+gpu_time_slicing_replicas = 2  # 2 Renny pods per GPU
+
+# UneeQ Platform Credentials (REQUIRED)
+dhop_url       = "wss://api.enterprise.uneeq.io:443/signalling-service"
+dhop_tenant_id = "your-dhop-tenant-id-here"  # Get from UneeQ platform
+dhop_api_key   = "your-dhop-api-key-here"    # Get from UneeQ platform
+
+# Docker Registry Credentials (REQUIRED)
+docker_username = "your-docker-username"
+docker_password = "your-docker-password"
+
+# ESTIMATED MONTHLY COSTS (10 nodes, us-central1):
+# - GPU Nodes (10x n1-standard-16 + T4): ~$8,000
+# - System Nodes (2x n1-standard-4): ~$270
+# - Networking (NAT, firewall): ~$100
+# - Storage (node disks): ~$150
+# - TOTAL: ~$8,574/month
+#
+# Cost optimization:
+# - Use committed use discounts (25-52% savings)
+# - Scale down during off-hours
+# - Use preemptible VMs for non-prod (70% discount)
