@@ -15,10 +15,16 @@ from .services.kubernetes_monitor import KubernetesMonitor
 from .services.docker_manager import DockerManager
 from .services.aws_region_manager import AwsRegionManager
 from .services.terminal_manager import terminal_manager, TerminalManager
+from .services.snapshot_manager import get_snapshot_manager, close_snapshot_manager
+from .services.prometheus_client import PrometheusMetrics
 from .security.command_executor import CommandExecutor
+from .integrations.aws_sns_sender import AwsSnsSender
 from .models.schemas import (
     DockerServiceRequest, DockerServiceResponse, ServiceControlRequest,
-    RegionListResponse, RegionContextsResponse, RegionStatus
+    RegionListResponse, RegionContextsResponse, RegionStatus,
+    SendMetricsSupportRequest, SendMetricsSupportResponse,
+    MetricsSnapshotRequest, MetricsSnapshotResponse,
+    SnapshotListResponse, SnapshotDetailResponse, SnapshotPreview
 )
 
 # Configure logging with proper WebSocket disconnect handling
@@ -100,6 +106,17 @@ kubernetes_monitor = KubernetesMonitor()
 docker_manager = DockerManager()
 aws_region_manager = AwsRegionManager()
 command_executor = CommandExecutor()
+
+# Initialize SNS sender (optional - only if configured)
+try:
+    sns_sender = AwsSnsSender()
+    logger.info("AWS SNS sender initialized successfully")
+except ValueError as e:
+    sns_sender = None
+    logger.warning(f"AWS SNS sender not initialized: {str(e)}")
+except Exception as e:
+    sns_sender = None
+    logger.error(f"Failed to initialize AWS SNS sender: {str(e)}")
 
 
 @app.get("/")
@@ -802,6 +819,334 @@ async def aws_sso_login(profile: str = "uneeq-admin"):
         )
 
 
+# Metrics Snapshot Management Endpoints
+
+@app.post("/api/metrics/snapshot")
+async def create_metrics_snapshot(request: MetricsSnapshotRequest):
+    """
+    Create a new metrics snapshot for a container.
+
+    Captures current Prometheus metrics and stores them with a unique ID for
+    later retrieval. Snapshots are automatically cleaned up based on retention policy.
+
+    Args:
+        request: MetricsSnapshotRequest with container_name and metrics
+
+    Returns:
+        MetricsSnapshotResponse with snapshot ID and timestamp
+
+    Raises:
+        HTTPException: If snapshot creation fails
+    """
+    try:
+        logger.info(f"Creating metrics snapshot for container '{request.container_name}'")
+
+        # Generate unique snapshot ID
+        snapshot_id = str(uuid.uuid4())
+
+        # Convert metrics dict to PrometheusMetrics object
+        metrics = PrometheusMetrics()
+        metrics_dict = request.metrics
+
+        # Populate metrics from request
+        metrics.gpu_percent = metrics_dict.get("gpu_percent")
+        metrics.cpu_percent = metrics_dict.get("cpu_percent")
+        metrics.memory_percent = metrics_dict.get("memory_percent")
+        metrics.memory_bytes = metrics_dict.get("memory_bytes")
+        metrics.power_watts = metrics_dict.get("power_watts")
+        metrics.request_count = metrics_dict.get("request_count")
+        metrics.uptime_seconds = metrics_dict.get("uptime_seconds")
+        metrics.session_total = metrics_dict.get("session_total")
+        metrics.session_started = metrics_dict.get("session_started")
+        metrics.session_successful = metrics_dict.get("session_successful")
+        metrics.session_failed = metrics_dict.get("session_failed")
+        metrics.frames_rendered = metrics_dict.get("frames_rendered")
+        metrics.response_time_p50 = metrics_dict.get("response_time_p50")
+        metrics.response_time_p90 = metrics_dict.get("response_time_p90")
+        metrics.response_time_p99 = metrics_dict.get("response_time_p99")
+        metrics.nlp_response_time_p50 = metrics_dict.get("nlp_response_time_p50")
+        metrics.a2f_response_time_p50 = metrics_dict.get("a2f_response_time_p50")
+        metrics.gpu_frame_time_avg = metrics_dict.get("gpu_frame_time_avg")
+        metrics.render_frame_time_avg = metrics_dict.get("render_frame_time_avg")
+        metrics.game_frame_time_avg = metrics_dict.get("game_frame_time_avg")
+        metrics.frame_time_avg = metrics_dict.get("frame_time_avg")
+
+        # Create snapshot
+        snapshot_manager = get_snapshot_manager()
+        snapshot = await snapshot_manager.create_snapshot(
+            snapshot_id,
+            request.container_name,
+            metrics
+        )
+
+        response = MetricsSnapshotResponse(
+            success=True,
+            snapshot_id=snapshot.id,
+            container_name=snapshot.container_name,
+            timestamp=snapshot.timestamp,
+            message="Snapshot created successfully"
+        )
+
+        return response.dict()
+
+    except ValueError as e:
+        logger.error(f"Validation error creating snapshot: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error creating metrics snapshot: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create snapshot: {str(e)}")
+
+
+@app.get("/api/metrics/snapshots/{container_name}")
+async def list_metrics_snapshots(container_name: str, hours: int = 1):
+    """
+    List recent metrics snapshots for a specific container.
+
+    Returns preview data with key metrics for efficient listing.
+
+    Args:
+        container_name: Name of the container to filter by
+        hours: Number of hours to look back (default: 1)
+
+    Returns:
+        SnapshotListResponse with snapshot previews
+
+    Raises:
+        HTTPException: If listing fails
+    """
+    try:
+        logger.info(f"Listing snapshots for container '{container_name}' (last {hours}h)")
+
+        snapshot_manager = get_snapshot_manager()
+        snapshots = await snapshot_manager.list_snapshots(
+            container_name=container_name,
+            hours=hours
+        )
+
+        response = SnapshotListResponse(
+            success=True,
+            container_name=container_name,
+            snapshots=[SnapshotPreview(**s) for s in snapshots],
+            total_count=len(snapshots),
+            hours=hours
+        )
+
+        return response.dict()
+
+    except Exception as e:
+        logger.error(f"Error listing snapshots for '{container_name}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to list snapshots: {str(e)}")
+
+
+@app.get("/api/metrics/snapshot/{snapshot_id}")
+async def get_metrics_snapshot(snapshot_id: str):
+    """
+    Get detailed metrics snapshot by ID.
+
+    Returns complete snapshot data including all metrics.
+
+    Args:
+        snapshot_id: Unique identifier of the snapshot
+
+    Returns:
+        SnapshotDetailResponse with complete snapshot data
+
+    Raises:
+        HTTPException: If snapshot not found or retrieval fails
+    """
+    try:
+        logger.info(f"Retrieving snapshot {snapshot_id}")
+
+        snapshot_manager = get_snapshot_manager()
+        snapshot = await snapshot_manager.get_snapshot(snapshot_id)
+
+        if not snapshot:
+            raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
+
+        response = SnapshotDetailResponse(
+            success=True,
+            snapshot=snapshot.to_dict()
+        )
+
+        return response.dict()
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving snapshot {snapshot_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve snapshot: {str(e)}")
+
+
+@app.delete("/api/metrics/snapshot/{snapshot_id}")
+async def delete_metrics_snapshot(snapshot_id: str):
+    """
+    Delete a specific metrics snapshot.
+
+    Args:
+        snapshot_id: Unique identifier of the snapshot to delete
+
+    Returns:
+        Dictionary with operation status
+
+    Raises:
+        HTTPException: If deletion fails or snapshot not found
+    """
+    try:
+        logger.info(f"Deleting snapshot {snapshot_id}")
+
+        snapshot_manager = get_snapshot_manager()
+        deleted = await snapshot_manager.delete_snapshot(snapshot_id)
+
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
+
+        return {
+            "success": True,
+            "snapshot_id": snapshot_id,
+            "message": "Snapshot deleted successfully",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting snapshot {snapshot_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete snapshot: {str(e)}")
+
+
+@app.post("/api/metrics/send/support")
+async def send_metrics_to_support(request: SendMetricsSupportRequest):
+    """
+    Send metrics snapshot to UneeQ support team via AWS SNS.
+
+    This endpoint retrieves a previously saved metrics snapshot and sends it
+    to the configured AWS SNS topic, which delivers it to support team email subscribers.
+
+    Args:
+        request: SendMetricsSupportRequest containing container_name, snapshot_id, and user_email
+
+    Returns:
+        SendMetricsSupportResponse with operation status and details
+
+    Raises:
+        HTTPException: 503 if SNS is not configured
+        HTTPException: 404 if snapshot_id not found
+        HTTPException: 500 if sending fails
+    """
+    try:
+        logger.info(
+            f"Processing metrics support request: "
+            f"container={request.container_name}, "
+            f"snapshot={request.snapshot_id}, "
+            f"user={request.user_email}"
+        )
+
+        # Check if SNS sender is initialized
+        if sns_sender is None:
+            error_msg = (
+                "AWS SNS integration is not configured. "
+                "Set AWS_SNS_TOPIC_ARN environment variable."
+            )
+            logger.error(error_msg)
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "error": error_msg,
+                    "error_type": "sns_not_configured"
+                }
+            )
+
+        # Retrieve metrics snapshot from database
+        snapshot_manager = get_snapshot_manager()
+        snapshot = await snapshot_manager.get_snapshot(request.snapshot_id)
+
+        if not snapshot:
+            error_msg = f"Snapshot not found: {request.snapshot_id}"
+            logger.warning(error_msg)
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": error_msg,
+                    "error_type": "snapshot_not_found"
+                }
+            )
+
+        # Extract metrics from snapshot
+        snapshot_dict = snapshot.to_dict()
+        metrics_data = snapshot_dict.get("metrics", {})
+
+        if not metrics_data:
+            error_msg = "Snapshot contains no metrics data"
+            logger.error(error_msg)
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": error_msg,
+                    "error_type": "invalid_snapshot"
+                }
+            )
+
+        # Enrich metrics with snapshot metadata
+        enriched_metrics = {
+            "snapshot_id": request.snapshot_id,
+            "container_name": request.container_name,
+            "timestamp": snapshot_dict.get("timestamp", datetime.utcnow().isoformat()),
+            **metrics_data
+        }
+
+        # Send via SNS
+        success = await sns_sender.send_metrics_snapshot(
+            container_name=request.container_name,
+            metrics=enriched_metrics,
+            user_email=request.user_email
+        )
+
+        if success:
+            response = SendMetricsSupportResponse(
+                success=True,
+                message="Metrics snapshot sent successfully to support team",
+                container_name=request.container_name,
+                snapshot_id=request.snapshot_id,
+                user_email=request.user_email,
+                message_id="sns-message-id-placeholder"  # TODO: Return actual MessageId from SNS
+            )
+            logger.info(
+                f"Metrics snapshot sent successfully: "
+                f"container={request.container_name}, snapshot={request.snapshot_id}"
+            )
+            return response.dict()
+
+        else:
+            error_msg = "Failed to send metrics snapshot via SNS"
+            logger.error(error_msg)
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": error_msg,
+                    "error_type": "sns_send_failed"
+                }
+            )
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        error_msg = str(e)
+        logger.error(f"Error processing metrics support request: {error_msg}", exc_info=True)
+
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": error_msg,
+                "error_type": "metrics_support_error",
+                "container_name": request.container_name,
+                "snapshot_id": request.snapshot_id,
+                "timestamp": datetime.utcnow().isoformat()
+            }
+        )
+
+
 async def _send_initial_system_status(websocket: WebSocket, connection_id: str):
     """
     Send initial system status immediately after connection to prevent 'not available' states.
@@ -1098,7 +1443,19 @@ async def terminal_websocket_endpoint(websocket: WebSocket):
 async def startup_event():
     """Initialize services on application startup"""
     logger.info("Starting MiniPrem Monitor backend services...")
+
+    # Start terminal manager
     await terminal_manager.start()
+
+    # Initialize snapshot manager and start cleanup task
+    try:
+        snapshot_manager = get_snapshot_manager()
+        await snapshot_manager.initialize()
+        await snapshot_manager.start_cleanup_task(interval_minutes=5)
+        logger.info("Snapshot manager initialized with cleanup task")
+    except Exception as e:
+        logger.error(f"Failed to initialize snapshot manager: {e}")
+
     logger.info("All backend services started successfully")
 
 
@@ -1106,7 +1463,17 @@ async def startup_event():
 async def shutdown_event():
     """Cleanup services on application shutdown"""
     logger.info("Shutting down MiniPrem Monitor backend services...")
+
+    # Stop terminal manager
     await terminal_manager.stop()
+
+    # Stop snapshot manager cleanup task
+    try:
+        await close_snapshot_manager()
+        logger.info("Snapshot manager stopped")
+    except Exception as e:
+        logger.error(f"Error stopping snapshot manager: {e}")
+
     logger.info("All backend services stopped successfully")
 
 

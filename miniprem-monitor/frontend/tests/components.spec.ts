@@ -387,49 +387,66 @@ test.describe('ConnectionStatus Component', () => {
     await page.waitForTimeout(2000);
   });
 
-  test('displays connection status indicator', async ({ page }) => {
-    const connectionStatus = page
-      .locator('[data-testid="connection-status"]')
-      .or(page.getByText('WebSocket'))
-      .or(page.getByText('Connected'))
-      .or(page.getByText('Disconnected'))
-      .first();
+  test('displays connection status with visual indicators', async ({ page }) => {
+    await page.waitForSelector('[data-testid="connection-status"]', { timeout: 10000 });
 
-    if (await connectionStatus.isVisible()) {
-      await expect(connectionStatus).toBeVisible();
+    const connectionStatus = page.locator('[data-testid="connection-status"]');
+    await expect(connectionStatus).toBeVisible();
 
-      // Should have status indicator dot
-      const statusDot = page.locator('.w-2.h-2.rounded-full, .w-3.h-3.rounded-full').first();
-      if (await statusDot.isVisible()) {
-        await expect(statusDot).toBeVisible();
+    // Status indicator dot should be visible
+    const statusIndicator = page.locator('[data-testid="connection-indicator"]');
+    await expect(statusIndicator).toBeVisible();
 
-        // Should have appropriate color
-        const classes = await statusDot.getAttribute('class');
-        const hasStatusColor =
-          classes?.includes('bg-green') ||
-          classes?.includes('bg-red') ||
-          classes?.includes('bg-status-healthy') ||
-          classes?.includes('bg-status-error');
-        expect(hasStatusColor).toBeTruthy();
-      }
+    // Verify status indicator has appropriate color class
+    const dotClasses = await statusIndicator.getAttribute('class');
+    const hasStatusColor =
+      dotClasses?.includes('bg-status-healthy') ||
+      dotClasses?.includes('bg-status-error') ||
+      dotClasses?.includes('bg-status-warning');
+    expect(hasStatusColor).toBeTruthy();
+
+    // WiFi icon should exist (either connected or disconnected)
+    const hasWifiIcon = (await page.locator('[data-testid="connection-wifi-icon"]').count()) > 0;
+    const hasWifiOffIcon = (await page.locator('[data-testid="connection-wifi-off-icon"]').count()) > 0;
+    expect(hasWifiIcon || hasWifiOffIcon).toBeTruthy();
+
+    console.log('✓ Connection status displays with visual indicators');
+  });
+
+  test('shows connection ID when available', async ({ page }) => {
+    await page.waitForTimeout(3500); // Allow time for connection
+
+    const connectionId = page.locator('[data-testid="connection-id"]');
+
+    if ((await connectionId.count()) > 0) {
+      await expect(connectionId).toBeVisible();
+
+      // Verify it's the short format (8 characters)
+      const idText = await connectionId.textContent();
+      expect(idText?.length).toBe(8);
+
+      // Verify format is alphanumeric
+      expect(idText).toMatch(/^[a-zA-Z0-9]{8}$/);
+
+      console.log('✓ Connection ID displayed in correct format');
     }
   });
 
-  test('shows connection ID when connected', async ({ page }) => {
-    await page.waitForTimeout(3500); // Allow time for connection
+  test('status indicator changes color based on connection state', async ({ page }) => {
+    const statusIndicator = page.locator('[data-testid="connection-indicator"]');
 
-    const connectionStatus = page.locator('[data-testid="connection-status"]').first();
+    if (await statusIndicator.isVisible()) {
+      await expect(statusIndicator).toBeVisible();
 
-    if (await connectionStatus.isVisible()) {
-      const connectionText = await connectionStatus.textContent();
+      // Should have appropriate status color class
+      const classes = await statusIndicator.getAttribute('class');
+      const hasStatusColor =
+        classes?.includes('bg-status-healthy') ||
+        classes?.includes('bg-status-error') ||
+        classes?.includes('bg-status-warning');
+      expect(hasStatusColor).toBeTruthy();
 
-      // Should show either connection status or ID
-      expect(connectionText).toBeTruthy();
-
-      // If connected, might show connection ID pattern
-      if (connectionText?.includes('#')) {
-        expect(connectionText).toMatch(/#[a-zA-Z0-9]+/);
-      }
+      console.log('✓ Status indicator has appropriate color coding');
     }
   });
 });
@@ -458,6 +475,139 @@ test.describe('SystemHealthPanel Component', () => {
         }
       }
     }
+  });
+});
+
+test.describe('UneeQ Admin Portal Link (Issue #7)', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(2000);
+  });
+
+  test('should display UneeQ Admin Portal link when tenant ID is available', async ({ page }) => {
+    // Wait for header to load
+    await page.waitForSelector('[data-testid="dashboard-header"]', { timeout: 10000 });
+
+    // Check if UneeQ Admin link exists
+    const uneeqLink = page.locator('[data-testid="uneeq-admin-link"]');
+
+    // If tenant ID is set, link should be visible
+    if ((await uneeqLink.count()) > 0) {
+      await expect(uneeqLink).toBeVisible();
+
+      // Verify link href format
+      const href = await uneeqLink.getAttribute('href');
+      expect(href).toMatch(/^https:\/\/cdn\.enterprise\.uneeq\.io\/admin\/customers\/.+\/tenants$/);
+
+      // Verify link has correct attributes
+      expect(await uneeqLink.getAttribute('target')).toBe('_blank');
+      expect(await uneeqLink.getAttribute('rel')).toBe('noopener noreferrer');
+
+      // Verify link text
+      await expect(uneeqLink).toContainText('UneeQ Admin Portal');
+
+      // Verify SVG icon exists
+      const svgIcon = uneeqLink.locator('svg');
+      await expect(svgIcon).toBeVisible();
+
+      console.log('✓ UneeQ Admin Portal link is correctly displayed');
+    } else {
+      console.log('⊘ UneeQ Admin Portal link not present (tenant ID not set)');
+    }
+  });
+
+  test('should not display Platform and CPU count in header', async ({ page }) => {
+    await page.waitForSelector('[data-testid="dashboard-header"]', { timeout: 10000 });
+
+    const systemInfo = page.locator('[data-testid="system-info"]');
+
+    // Wait for system info to load
+    if ((await systemInfo.count()) > 0) {
+      // These should NOT exist anymore
+      await expect(page.locator('[data-testid="system-platform"]')).not.toBeVisible();
+      await expect(page.locator('[data-testid="system-cpu-count"]')).not.toBeVisible();
+
+      // Memory should still be visible
+      await expect(page.locator('[data-testid="system-memory"]')).toBeVisible();
+
+      // Verify memory format
+      const memoryText = await page.locator('[data-testid="system-memory"]').textContent();
+      expect(memoryText).toMatch(/Memory: \d+(\.\d+)?GB/);
+
+      console.log('✓ Platform and CPU count removed from header');
+    }
+  });
+
+  test('header displays only Memory and optional UneeQ Admin Portal link', async ({ page }) => {
+    await page.waitForSelector('[data-testid="dashboard-header"]', { timeout: 10000 });
+
+    const systemInfo = page.locator('[data-testid="system-info"]');
+
+    if ((await systemInfo.count()) > 0) {
+      // Memory is required
+      await expect(page.locator('[data-testid="system-memory"]')).toBeVisible();
+
+      // Count visible elements in system info
+      const childrenCount = await systemInfo.locator('> *').count();
+
+      // Should have:
+      // - 1 span for Memory
+      // - Optional: separator (•) and UneeQ link (2 elements)
+      expect(childrenCount).toBeGreaterThanOrEqual(1);
+      expect(childrenCount).toBeLessThanOrEqual(3); // Memory + separator + link
+
+      const hasUneeqLink = (await page.locator('[data-testid="uneeq-admin-link"]').count()) > 0;
+      if (hasUneeqLink) {
+        // Should have separator between Memory and link
+        const separatorCount = await systemInfo.locator('span:has-text("•")').count();
+        expect(separatorCount).toBe(1);
+      }
+
+      console.log(`✓ Header simplified: Memory + ${hasUneeqLink ? 'UneeQ Admin Portal link' : 'no tenant ID'}`);
+    }
+  });
+
+  test('UneeQ Admin Portal link opens in new tab', async ({ page }) => {
+    await page.waitForSelector('[data-testid="dashboard-header"]', { timeout: 10000 });
+
+    const uneeqLink = page.locator('[data-testid="uneeq-admin-link"]');
+
+    if ((await uneeqLink.count()) > 0) {
+      // Verify target="_blank" attribute (already checked in first test)
+      const target = await uneeqLink.getAttribute('target');
+      expect(target).toBe('_blank');
+
+      // Verify security attributes
+      const rel = await uneeqLink.getAttribute('rel');
+      expect(rel).toBe('noopener noreferrer');
+
+      console.log('✓ UneeQ Admin Portal link configured for new tab with security');
+    }
+  });
+
+  test('header visual regression with UneeQ Admin Portal link', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('[data-testid="dashboard-header"]', { timeout: 10000 });
+
+    // Wait for all content to load
+    await page.waitForTimeout(2000);
+
+    // Hide dynamic elements for consistent screenshots
+    await page.addStyleTag({
+      content: `
+        [data-testid="connection-id"] { visibility: hidden !important; }
+        [class*="animate-"] { animation: none !important; }
+      `,
+    });
+
+    // Take screenshot of header
+    const header = page.locator('[data-testid="dashboard-header"]');
+    await expect(header).toHaveScreenshot('header-with-uneeq-link.png', {
+      threshold: 0.3,
+    });
+
+    console.log('✓ Header visual regression test captured');
   });
 });
 

@@ -33,6 +33,16 @@ export function Terminal({
     setMounted(true);
   }, []);
 
+  // Auto-detect WebSocket URL - connect directly to backend port 8000
+  const getWebSocketUrl = (): string => {
+    if (typeof window === 'undefined') return '';
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const hostname = window.location.hostname; // just hostname, no port
+    // Terminal WebSocket must connect directly to backend port 8000
+    return `${protocol}//${hostname}:8000/ws/terminal`;
+  };
+
   useEffect(() => {
     if (!isOpen || !terminalRef.current || !mounted) return;
 
@@ -98,16 +108,9 @@ export function Terminal({
     term.writeln('\x1b[0;36mConnecting to backend WebSocket...\x1b[0m');
     term.writeln('');
 
-    // Connect to WebSocket if URL provided
-    if (websocketUrl) {
-      connectWebSocket(term, websocketUrl);
-    }
-
-    // Execute initial command if provided
-    if (initialCommand) {
-      term.writeln(`\x1b[0;33m$ ${initialCommand}\x1b[0m`);
-      sendCommand(initialCommand);
-    }
+    // Connect to WebSocket
+    const wsUrl = websocketUrl || getWebSocketUrl();
+    connectWebSocket(term, wsUrl);
 
     // Handle resize
     const handleResize = () => {
@@ -173,21 +176,14 @@ export function Terminal({
         term.writeln('\x1b[0;33m⚠ Connection closed\x1b[0m');
       };
 
-      // Handle terminal input
+      // Handle terminal input - send each character directly to subprocess
       term.onData((data: string) => {
-        if (data === '\r') { // Enter key
-          const currentLine = (term as any)._core.buffer.active.getLine(
-            (term as any)._core.buffer.active.cursorY
-          );
-          const command = currentLine?.translateToString(true).replace(/^\$ /, '').trim();
-
-          if (command) {
-            term.writeln('');
-            sendCommand(command);
-            setCommandHistory(prev => [...prev, command]);
-          }
-        } else {
-          term.write(data);
+        // Send input directly to subprocess (character-by-character)
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'input',
+            data: data
+          }));
         }
       });
 
@@ -197,14 +193,6 @@ export function Terminal({
     }
   };
 
-  const sendCommand = (command: string) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: 'command',
-        command: command
-      }));
-    }
-  };
 
   const handleClear = () => {
     xtermRef.current?.clear();
