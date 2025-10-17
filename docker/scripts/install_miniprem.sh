@@ -242,7 +242,7 @@ pull_required_images() {
     else
         # Only pull images for Renny with internal speech processing
         info "Pulling Renny images..."
-        $DOCKER_CMD pull facemeproduction/renny:0.484-37235
+        $DOCKER_CMD pull facemeproduction/renny:0.713-37d59
         
         # If using RIME in default install, pull RIME images
         if [ "$TTS_PROVIDER" = "rime" ]; then

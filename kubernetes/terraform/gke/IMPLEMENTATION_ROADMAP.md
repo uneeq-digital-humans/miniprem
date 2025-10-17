@@ -270,7 +270,7 @@ kubectl create secret docker-registry uneeq-registry \
 
 ```yaml
 # GKE-Specific Overrides
-image: "facemeproduction/renny:0.700-fc39a"
+image: "facemeproduction/renny:0.713-37d59"
 
 # GPU Time-Slicing (GKE Native)
 gpuTimeSlicing:

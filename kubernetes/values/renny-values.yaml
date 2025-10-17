@@ -1,5 +1,5 @@
 # Renny Helm values
-image: "facemeproduction/renny:0.700-fc39a"
+image: "facemeproduction/renny:0.713-37d59"
 
 # GPU time-slicing configuration
 # Controls how many Renny pods share a single physical GPU
