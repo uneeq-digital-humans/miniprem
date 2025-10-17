@@ -16,14 +16,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ./setup-chatflow-post-deployment.sh
 ```
 
-### Kubernetes/EKS Deployment
+### Kubernetes Multi-Cloud Deployment
 ```bash
 cd kubernetes/
 
-# One-click production deployment (~30-45 min)
-./scripts/deploy.sh [--profile <aws-profile>]
+# Multi-cloud deployment with interactive platform selection
+# Supports: AWS (EKS), Azure (AKS), Google Cloud (GKE - planned)
+./scripts/deploy.sh
+# → Prompts for platform → validates CLI/auth → deploys infrastructure
 
-# Check deployment status
+# Platform-specific direct deployment (optional)
+./scripts/deploy-aws.sh     # AWS EKS deployment (~30-45 min)
+./scripts/deploy-azure.sh   # Azure AKS deployment (~35-50 min)
+
+# Check deployment status (multi-cloud aware)
 ./scripts/status.sh
 
 # Scale Renny instances (10-20)
@@ -32,17 +38,20 @@ cd kubernetes/
 # Complete cleanup (~15-20 min)
 ./scripts/destroy.sh
 
-# Emergency cleanup (no confirmations)
+# Emergency cleanup (no confirmations, AWS only)
 ./scripts/cleanup.sh
 ```
 
-### AWS Utilities
+### Cloud Platform Utilities
 ```bash
-# Check AWS prerequisites and permissions
+# AWS-specific utilities
 ./scripts/check-aws-prerequisites.sh [--profile <profile>]
-
-# Analyze VPC usage (critical - AWS has VPC limits)
 ./scripts/check-vpc-usage.sh [--region <region>] [--vpc <vpc-id>]
+
+# Multi-cloud deployment uses:
+# - AWS CLI (aws) for EKS deployments
+# - Azure CLI (az) for AKS deployments
+# - Google Cloud CLI (gcloud) for GKE deployments (planned)
 ```
 
 ### Common Development Tasks
@@ -175,12 +184,28 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 - `full`: All services including AI stack, metrics, and monitoring
 - `monitor-only`: Standalone MiniPrem Monitor for Kubernetes cluster monitoring
 
-### Kubernetes Architecture (Production)
+### Kubernetes Architecture (Production - Multi-Cloud)
+
+**AWS EKS:**
 - **EKS Cluster**: Production-ready with auto-scaling
-- **GPU Node Groups**: g5.4xlarge instances with NVIDIA A10G GPUs
+- **GPU Node Groups**: g5.4xlarge instances with NVIDIA A10G GPUs (24GB VRAM)
 - **GPU Operator**: Automatic NVIDIA driver installation (575+ or 580+)
 - **Multi-AZ**: High availability across 3 availability zones
 - **Time-Slicing**: Multiple pods per GPU for cost optimization
+- **Cost**: ~$1.20/hour per node
+
+**Azure AKS:**
+- **AKS Cluster**: Managed Kubernetes with auto-scaling
+- **GPU Node Pools**: Standard_NC16as_T4_v3 with NVIDIA T4 GPUs (16GB VRAM)
+- **GPU Operator**: Automatic NVIDIA driver installation (580+)
+- **Multi-Zone**: High availability across availability zones
+- **Time-Slicing**: Multiple pods per GPU for cost optimization
+- **Cost**: ~$1.50/hour per node
+
+**Google Cloud GKE** (Planned):
+- GKE cluster with GPU node pools
+- T4 or A100 GPU instances
+- Full feature parity with AWS/Azure
 
 ## Key Configuration Files
 
@@ -192,14 +217,24 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 - `.miniprem_install_type`: Current installation type (default/full)
 - `miniprem-monitor/`: Complete monitoring application (Next.js + FastAPI in single Docker image)
 
-### Kubernetes Configuration
-- `kubernetes/terraform/terraform.tfvars`: Infrastructure settings (region, credentials, scaling)
-- `kubernetes/values/renny-values.yaml`: **Single source of truth** for Renny configuration, including:
+### Kubernetes Configuration (Multi-Cloud)
+
+**AWS EKS:**
+- `kubernetes/terraform/eks/terraform.tfvars`: AWS infrastructure settings (region, credentials, scaling)
+- AWS-specific: VPC configuration, IAM roles, EKS cluster settings
+
+**Azure AKS:**
+- `kubernetes/terraform/aks/terraform.tfvars`: Azure infrastructure settings (region, credentials, scaling)
+- Azure-specific: VNet configuration, service principal, AKS cluster settings
+
+**Shared Configuration:**
+- `kubernetes/values/renny-values.yaml`: **Single source of truth** for Renny configuration (all platforms):
   - GPU time-slicing settings (`gpuTimeSlicing.replicasPerGpu`)
   - Total replica count (`deployment.totalReplicas`)
   - Per-pod resource limits (CPU, memory, GPU)
   - All application environment variables
-- `kubernetes/manifests/`: Kubernetes resource definitions
+- `kubernetes/manifests/`: Kubernetes resource definitions (platform-agnostic)
+- `kubernetes/scripts/`: Multi-cloud deployment automation
 
 ## Directory Structure
 
@@ -215,11 +250,20 @@ miniprem-2025/
 │   ├── frontend/          # Next.js frontend
 │   ├── Dockerfile         # Multi-stage build
 │   └── docker-entrypoint.sh
-├── kubernetes/             # Production EKS deployment
-│   ├── terraform/          # Infrastructure as Code
-│   ├── scripts/           # Deployment automation
-│   ├── manifests/         # Kubernetes resources
-│   └── values/            # Helm chart values
+├── kubernetes/             # Production multi-cloud Kubernetes deployment
+│   ├── terraform/          # Infrastructure as Code (per-platform)
+│   │   ├── eks/           # AWS EKS Terraform configuration
+│   │   ├── aks/           # Azure AKS Terraform configuration
+│   │   └── gke/           # Google Cloud GKE (planned)
+│   ├── scripts/           # Multi-cloud deployment automation
+│   │   ├── deploy.sh      # Main router (prompts for platform)
+│   │   ├── deploy-aws.sh  # AWS EKS deployment
+│   │   ├── deploy-azure.sh # Azure AKS deployment
+│   │   ├── destroy.sh     # Multi-cloud router
+│   │   ├── status.sh      # Multi-cloud router
+│   │   └── scale.sh       # Multi-cloud router
+│   ├── manifests/         # Kubernetes resources (platform-agnostic)
+│   └── values/            # Helm chart values (shared)
 ├── scripts/               # Utility scripts (audio, environment)
 └── docs/                  # Documentation
 ```
@@ -256,19 +300,55 @@ docker-compose -f docker-compose.monitor.yml up -d
 # Access at http://localhost:3001
 ```
 
-### Kubernetes Development (Production)
-1. Configure AWS credentials and `terraform.tfvars`
-2. Configure GPU time-slicing in `kubernetes/values/renny-values.yaml`:
-   ```yaml
-   gpuTimeSlicing:
-     replicasPerGpu: 2  # Pods per GPU
-   deployment:
-     totalReplicas: 4   # Total pods (must be multiple of replicasPerGpu)
-   ```
-3. Run `./scripts/deploy.sh` for complete deployment
-4. Monitor with `./scripts/status.sh`
-5. Scale with `./scripts/scale.sh <instances>`
-6. Clean up with `./scripts/destroy.sh`
+### Kubernetes Development (Production - Multi-Cloud)
+
+**Step 1: Choose Your Cloud Platform**
+```bash
+cd kubernetes/
+./scripts/deploy.sh
+# Interactive menu prompts for: AWS, Azure, or GCP
+```
+
+**Step 2: Platform-Specific Configuration**
+
+**For AWS EKS:**
+1. Configure AWS credentials: `aws sso login --profile <profile>` or `aws configure`
+2. Edit `kubernetes/terraform/eks/terraform.tfvars`:
+   - Set AWS region, VPC settings
+   - Configure node group sizes
+3. The script validates: AWS CLI installed, authentication active
+
+**For Azure AKS:**
+1. Configure Azure credentials: `az login`
+2. Edit `kubernetes/terraform/aks/terraform.tfvars`:
+   - Set Azure subscription ID, tenant ID, service principal
+   - Configure resource group, VNet settings
+   - Set node pool sizes
+3. The script validates: Azure CLI installed, authentication active
+
+**Step 3: Configure GPU Time-Slicing (All Platforms)**
+Edit `kubernetes/values/renny-values.yaml`:
+```yaml
+gpuTimeSlicing:
+  replicasPerGpu: 2  # Pods per GPU (2-4 recommended)
+deployment:
+  totalReplicas: 4   # Total pods (must be multiple of replicasPerGpu)
+```
+
+**Step 4: Deploy**
+```bash
+./scripts/deploy.sh
+# OR use platform-specific scripts:
+./scripts/deploy-aws.sh      # AWS EKS (~30-45 min)
+./scripts/deploy-azure.sh    # Azure AKS (~35-50 min)
+```
+
+**Step 5: Monitor and Manage**
+```bash
+./scripts/status.sh    # Check deployment status (multi-cloud aware)
+./scripts/scale.sh 15  # Scale Renny instances
+./scripts/destroy.sh   # Complete cleanup
+```
 
 **Changing GPU Time-Slicing After Deployment:**
 ```bash
@@ -311,11 +391,26 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 - GPU operator status: `kubectl get pods -n gpu-operator`
 - Node resources: `kubectl describe nodes -l uneeq.io/node-type=renny`
 
-### AWS/EKS Issues
-- Profile detection: Scripts auto-detect AWS profile/region
-- VPC limits: Use `./scripts/check-vpc-usage.sh` before deployment  
-- Region config: All scripts read region from `terraform.tfvars`
+### Multi-Cloud Platform Issues
+
+**AWS/EKS:**
+- Profile detection: Scripts auto-detect AWS profile/region from environment
+- VPC limits: Use `./scripts/check-vpc-usage.sh` before deployment
+- Region config: Scripts read region from `kubernetes/terraform/eks/terraform.tfvars`
+- Authentication: `aws sts get-caller-identity` must succeed
+- IAM permissions: Ensure EKS/EC2/VPC permissions configured
+
+**Azure/AKS:**
+- Subscription detection: Scripts check `AZURE_SUBSCRIPTION_ID` environment variable
+- Resource quotas: Request GPU quota increase before deployment (160 vCPUs for NC16as_T4_v3)
+- Region config: Scripts read from `kubernetes/terraform/aks/terraform.tfvars`
+- Authentication: `az account show` must succeed (use `az login`)
+- Service principal: Ensure client ID/secret configured in terraform.tfvars
+
+**All Platforms:**
 - Context management: `kubectl config current-context`
+- Kubeconfig: Auto-configured by deployment scripts
+- CLI validation: Scripts check for required CLI tools (aws/az/gcloud)
 
 ## GPU Configuration
 
@@ -495,14 +590,28 @@ All agents must use Gemini CLI proactively for large research tasks that exceed 
 
 ## Cost Optimization
 
-### Kubernetes Production Costs (us-east-1)
-- Base infrastructure: ~$10,840/month (10 Renny instances)
-- Scales with instance count (10-20 supported)
-- Consider destroying resources during off-hours
-- ASG scaling available for manual shutdown/startup
+### Kubernetes Production Costs
 
-### Cost-Saving Options
-- Single NAT gateway vs HA (dev/test)
-- Spot instances for non-critical workloads  
-- Reserved instances for production
-- Time-based scaling automation
+**AWS EKS (us-east-1):**
+- Base infrastructure: ~$8,640/month (10 GPU nodes @ $1.20/hour each)
+- System nodes: ~$280/month (2x Standard nodes)
+- NAT Gateway: ~$32/month
+- **Total (10 nodes)**: ~$8,952/month
+- **Total (20 nodes)**: ~$17,592/month
+- Scales with instance count (10-20 supported)
+
+**Azure AKS (westus3):**
+- Base infrastructure: ~$10,800/month (10 GPU nodes @ $1.50/hour each)
+- System nodes: ~$280/month (2x Standard nodes)
+- NAT Gateway: ~$32/month
+- **Total (10 nodes)**: ~$11,112/month
+- **Total (20 nodes)**: ~$21,792/month
+- Scales with instance count (10-20 supported)
+
+### Cost-Saving Options (All Platforms)
+- **Autoscaling**: Scale down GPU nodes during off-hours (50-80% savings)
+- **Time-slicing**: 2-4 pods per GPU reduces node count by 50-75%
+- **Reserved instances**: Up to 72% savings with 3-year commitment (AWS/Azure)
+- **Spot instances**: 60-90% savings for dev/test workloads (availability not guaranteed)
+- **Resource destruction**: Use `./scripts/destroy.sh` when not in use
+- **Single NAT gateway**: Save ~$32/month for dev/test (reduces HA)
