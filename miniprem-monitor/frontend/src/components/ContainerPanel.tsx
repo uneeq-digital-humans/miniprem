@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react';
-import { ContainerStatus, StatusType, SystemInfo } from '../types/monitor';
+import { ContainerStatus, StatusType, SystemInfo, PrometheusMetrics } from '../types/monitor';
 import { StatusIndicator } from './StatusIndicator';
 import { InlineMetrics } from './InlineMetrics';
 import { MetricSelector } from './MetricSelector';
+import { FullMetricsModal } from './FullMetricsModal';
+import { PermissionModal } from './PermissionModal';
 import { useMetricPreferences } from '../hooks/useMetricPreferences';
-import { RefreshCw, Eye, EyeOff, Play, Square, Loader2 } from 'lucide-react';
+import { RefreshCw, Eye, EyeOff, Play, Square, Loader2, BarChart3 } from 'lucide-react';
 import clsx from 'clsx';
 
 interface ContainerPanelProps {
@@ -33,6 +35,9 @@ export function ContainerPanel({
 }: ContainerPanelProps) {
   const [expandedContainer, setExpandedContainer] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<FilterType>('all');
+  const [metricsModalOpen, setMetricsModalOpen] = useState(false);
+  const [permissionModalOpen, setPermissionModalOpen] = useState(false);
+  const [selectedContainerMetrics, setSelectedContainerMetrics] = useState<{ name: string; metrics: PrometheusMetrics } | null>(null);
   const { selectedMetrics } = useMetricPreferences();
 
   const getContainerStatus = (status: string): StatusType => {
@@ -115,6 +120,95 @@ export function ContainerPanel({
 
     return { all, running, stopped };
   }, [containers]);
+
+  // Handler for opening full metrics modal
+  const handleViewAllMetrics = (containerName: string, metrics: PrometheusMetrics) => {
+    setSelectedContainerMetrics({ name: containerName, metrics });
+    setMetricsModalOpen(true);
+  };
+
+  // Handler for snapshot capture
+  const handleCaptureSnapshot = async () => {
+    if (!selectedContainerMetrics) return;
+
+    try {
+      const response = await fetch('/api/metrics/snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          container_name: selectedContainerMetrics.name,
+          metrics: selectedContainerMetrics.metrics
+        })
+      });
+
+      if (!response.ok) throw new Error('Failed to capture snapshot');
+
+      const data = await response.json();
+
+      // Download as JSON file
+      const blob = new Blob([JSON.stringify(selectedContainerMetrics.metrics, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `metrics-${selectedContainerMetrics.name}-${data.snapshot_id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      alert('Snapshot captured and downloaded successfully!');
+    } catch (error) {
+      console.error('Failed to capture snapshot:', error);
+      alert('Failed to capture snapshot. Please try again.');
+    }
+  };
+
+  // Handler for sending to support
+  const handleSendToSupport = () => {
+    setPermissionModalOpen(true);
+  };
+
+  // Handler for permission modal confirmation
+  const handlePermissionConfirm = async (email: string) => {
+    if (!selectedContainerMetrics) return;
+
+    try {
+      // First, create a snapshot
+      const snapshotResponse = await fetch('/api/metrics/snapshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          container_name: selectedContainerMetrics.name,
+          metrics: selectedContainerMetrics.metrics
+        })
+      });
+
+      if (!snapshotResponse.ok) throw new Error('Failed to create snapshot');
+
+      const snapshotData = await snapshotResponse.json();
+
+      // Then, send to support via SNS
+      const sendResponse = await fetch('/api/metrics/send/support', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          container_name: selectedContainerMetrics.name,
+          snapshot_id: snapshotData.snapshot_id,
+          user_email: email
+        })
+      });
+
+      if (!sendResponse.ok) {
+        const errorData = await sendResponse.json();
+        throw new Error(errorData.detail?.error || 'Failed to send to support');
+      }
+
+      // Success - permission modal will show success state
+    } catch (error) {
+      console.error('Failed to send to support:', error);
+      throw error; // Re-throw to let PermissionModal handle error display
+    }
+  };
 
   return (
     <div className="card p-6">
@@ -420,11 +514,55 @@ export function ContainerPanel({
                       <div className="text-gray-600 dark:text-gray-400">{container.created}</div>
                     </div>
                   </div>
+
+                  {/* View All Metrics Button */}
+                  {container.metrics && (
+                    <div className="mt-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewAllMetrics(container.name, container.metrics!);
+                        }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-uneeq text-white hover:opacity-90 transition-opacity"
+                        data-testid={`view-all-metrics-${container.name}`}
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        <span className="font-medium">View All Metrics</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           ))}
         </div>
+      )}
+
+      {/* Full Metrics Modal */}
+      {metricsModalOpen && selectedContainerMetrics && (
+        <FullMetricsModal
+          containerName={selectedContainerMetrics.name}
+          metrics={selectedContainerMetrics.metrics}
+          onClose={() => setMetricsModalOpen(false)}
+          onCaptureSnapshot={handleCaptureSnapshot}
+          onSendToSupport={handleSendToSupport}
+          timestamp={new Date().toISOString()}
+        />
+      )}
+
+      {/* Permission Modal */}
+      {permissionModalOpen && selectedContainerMetrics && (
+        <PermissionModal
+          isOpen={permissionModalOpen}
+          onClose={() => setPermissionModalOpen(false)}
+          onConfirm={handlePermissionConfirm}
+          containerName={selectedContainerMetrics.name}
+          metricsPreview={{
+            gpu_percent: selectedContainerMetrics.metrics.gpu_percent ?? undefined,
+            cpu_percent: selectedContainerMetrics.metrics.cpu_percent ?? undefined,
+            memory_percent: selectedContainerMetrics.metrics.memory_percent ?? undefined
+          }}
+        />
       )}
     </div>
   );

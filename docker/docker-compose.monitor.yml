@@ -19,7 +19,7 @@ services:
     # Using bridge mode for cross-platform compatibility
     ports:
       - "3001:3001"  # Frontend access
-      # Backend port 8000 not exposed (internal only, accessed via frontend proxy)
+      - "8000:8000"  # Backend API and WebSocket (needed for terminal)
     volumes:
       # Docker socket for container monitoring (required)
       - /var/run/docker.sock:/var/run/docker.sock:ro

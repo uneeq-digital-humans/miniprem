@@ -2,7 +2,9 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket.simple';
+import { useMetricsHistory } from '../hooks/useMetricsHistory';
 import { MetricsCard } from '../components/MetricsCard';
+import { SystemMetricsModal } from '../components/SystemMetricsModal';
 import { ContainerPanel } from '../components/ContainerPanel';
 import { KubernetesPanel, ClusterStatus } from '../components/KubernetesPanel';
 import { ClusterInfo } from '../components/ClusterSelector';
@@ -74,6 +76,18 @@ export default function MonitoringDashboard() {
 
   // Terminal state
   const [showTerminal, setShowTerminal] = useState(false);
+
+  // Metrics modal state
+  const [metricsModal, setMetricsModal] = useState<{
+    isOpen: boolean;
+    metricType: 'cpu' | 'memory' | 'disk' | 'network' | null;
+  }>({
+    isOpen: false,
+    metricType: null,
+  });
+
+  // Metrics history hook
+  const { metricsHistory, addEvent } = useMetricsHistory(systemMetrics, systemInfo);
 
   // WebSocket message handler
   const handleWebSocketMessage = useCallback((response: CommandResponse) => {
@@ -529,6 +543,9 @@ Available Clusters: ${availableClusters.length}`;
         // Send WebSocket command to start container
         sendCommand('docker', 'start', { container: containerName });
 
+        // Add event to metrics history
+        addEvent('container_start', containerName);
+
         // The response will come back through WebSocket and trigger container refresh
         // Set a timeout to clear loading state in case of no response
         setTimeout(() => {
@@ -542,7 +559,7 @@ Available Clusters: ${availableClusters.length}`;
       alert(`Failed to start container ${containerName}: ${error}`);
       setContainerLoading(null);
     }
-  }, [isConnected, sendCommand, containerLoading]);
+  }, [isConnected, sendCommand, containerLoading, addEvent]);
 
   const handleStopContainer = useCallback(async (containerName: string) => {
     console.log(`Stopping container: ${containerName}`);
@@ -552,6 +569,9 @@ Available Clusters: ${availableClusters.length}`;
       if (isConnected) {
         // Send WebSocket command to stop container
         sendCommand('docker', 'stop', { container: containerName });
+
+        // Add event to metrics history
+        addEvent('container_stop', containerName);
 
         // The response will come back through WebSocket and trigger container refresh
         // Set a timeout to clear loading state in case of no response
@@ -566,7 +586,7 @@ Available Clusters: ${availableClusters.length}`;
       alert(`Failed to stop container ${containerName}: ${error}`);
       setContainerLoading(null);
     }
-  }, [isConnected, sendCommand, containerLoading]);
+  }, [isConnected, sendCommand, containerLoading, addEvent]);
 
   const handleStartKubernetesService = useCallback(async (region: string) => {
     console.log(`Starting Kubernetes service in ${region}...`);
@@ -702,6 +722,16 @@ Available Clusters: ${availableClusters.length}`;
     }
   }, [kubernetesError, checkForAwsSsoError]);
 
+  // Metrics card click handler
+  const handleMetricClick = useCallback((metricType: 'cpu' | 'memory' | 'disk' | 'network') => {
+    setMetricsModal({ isOpen: true, metricType });
+  }, []);
+
+  // Metrics modal tab change handler
+  const handleMetricTypeChange = useCallback((metricType: 'cpu' | 'memory' | 'disk' | 'network') => {
+    setMetricsModal(prev => ({ ...prev, metricType }));
+  }, []);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors" data-testid="dashboard-root">
       {/* Header */}
@@ -756,7 +786,11 @@ Available Clusters: ${availableClusters.length}`;
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* System Metrics */}
-        <MetricsCard metrics={systemMetrics} loading={metricsLoading} />
+        <MetricsCard
+          metrics={systemMetrics}
+          loading={metricsLoading}
+          onMetricClick={handleMetricClick}
+        />
 
 
         {/* Service Panels - Vertical Layout */}
@@ -840,8 +874,21 @@ Available Clusters: ${availableClusters.length}`;
         isOpen={showTerminal}
         onClose={() => setShowTerminal(false)}
         title="MiniPrem Terminal"
-        websocketUrl="ws://localhost:8000/ws/terminal"
       />
+
+      {/* System Metrics Modal */}
+      {metricsModal.isOpen && metricsModal.metricType && systemMetrics && systemInfo && (
+        <SystemMetricsModal
+          isOpen={metricsModal.isOpen}
+          onClose={() => setMetricsModal({ isOpen: false, metricType: null })}
+          onMetricTypeChange={handleMetricTypeChange}
+          metricType={metricsModal.metricType}
+          currentMetrics={systemMetrics}
+          metricsHistory={metricsHistory}
+          systemInfo={systemInfo}
+          containers={containers}
+        />
+      )}
     </div>
   );
 }

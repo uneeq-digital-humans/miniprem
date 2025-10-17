@@ -57,6 +57,7 @@ commits.mdc
 
 # Claude (local agent definitions and personal notes)
 .claude/
+.mcp.json
 
 .playwright-mcp/
 customer-package/
