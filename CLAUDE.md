@@ -31,15 +31,24 @@ cd kubernetes/
 
 # Check deployment status (multi-cloud aware)
 ./scripts/status.sh
-
-# Scale Renny instances (10-20)
 ./scripts/scale.sh <number>
-
-# Complete cleanup (~15-20 min)
 ./scripts/destroy.sh
+```
 
-# Emergency cleanup (no confirmations, AWS only)
-./scripts/cleanup.sh
+**Google GKE:**
+```bash
+cd kubernetes/terraform/gke/
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan  # ~15-20 min
+gcloud container clusters get-credentials <cluster-name> --region <region>
+```
+
+**Azure AKS:**
+```bash
+# AKS deployment scripts (see kubernetes/terraform/aks/)
 ```
 
 ### Cloud Platform Utilities
@@ -98,9 +107,16 @@ docker exec miniprem-monitor kubectl version --client  # Test kubectl access
 - Docker container listing via CLI (subprocess-based)
 - Real-time WebSocket updates for container status changes
 - System metrics: CPU, Memory, Disk, Network I/O
+- **Clickable metrics cards** with detailed drill-down views (CPU, Memory, Disk, Network)
+- **Live 5-minute rolling graphs** for all system metrics with real-time updates
+- **Per-core CPU visualization** to verify multi-threading behavior
+- **Top consumers lists** for CPU, Memory, and Network resources
+- **Automatic insights engine** with intelligent pattern detection
+- **Color-coded recommendations** for actionable guidance
 - Container status indicators (running/stopped with color coding)
 - Filter tabs (All/Running/Stopped) with live counts
 - Start/Stop container control buttons
+- Per-container network statistics (TX/RX bytes)
 
 ### Technical Implementation Details
 - **Architecture**: CLI-based approach using subprocess (not Python SDKs)
@@ -109,6 +125,107 @@ docker exec miniprem-monitor kubectl version --client  # Test kubectl access
 - **Networking**: Bridge mode (macOS/Windows compatible, Linux can use host)
 - **Docker Socket**: `/var/run/docker.sock` mounted read-only
 - **Kubeconfig**: `~/.kube` mounted read-only for cluster access
+- **Metrics Collection**: 2-second polling interval, 5-minute rolling history (150 data points)
+- **Network Stats**: SI 1000-based unit conversion (Docker NetIO field parsing)
+
+### Detailed Metrics Modal System 📊
+
+**Overview**: Click any of the four top metrics cards (CPU, Memory, Disk, Network) to open an interactive modal with live graphs, detailed breakdowns, and automatic insights.
+
+**CPU Detail View** (`SystemMetricsModal.tsx` → `CpuDetailView.tsx`):
+- **Live 5-minute rolling graph**: Displays CPU usage percentage over time with real-time updates
+- **Current metrics**: Overall CPU usage with color-coded status indicators
+  - Green: 0-60% (healthy)
+  - Yellow: 60-80% (moderate)
+  - Red: 80-100% (critical)
+- **Per-core CPU visualization**: Horizontal bars showing individual core usage
+  - Verifies multi-threading behavior for containerized applications
+  - Useful for identifying single-threaded bottlenecks
+  - Color-coded per core: green (0-60%), yellow (60-80%), red (80-100%)
+- **Top CPU consumers**: Sortable list of containers by CPU usage percentage
+  - Shows container name and CPU percentage
+  - Helps identify resource-intensive containers
+- **Automatic insights**:
+  - Multi-threading efficiency: Detects balanced workload distribution (std dev < 15%)
+  - Core imbalance warnings: Identifies uneven core usage patterns
+  - Single-threaded bottlenecks: Detects when one core is maxed while others idle
+  - Critical CPU alerts: Warns when system CPU > 90%
+  - Resource monopoly detection: Identifies containers consuming > 70% CPU
+- **Color-coded recommendations**: Green (success), Yellow (warning), Red (error), Blue (info)
+
+**Memory Detail View** (`MemoryDetailView.tsx`):
+- **Live 5-minute rolling graph**: Memory usage percentage with time-series visualization
+- **Current metrics**: Memory used (GB), available (GB), and percentage
+- **Memory breakdown**: Total system memory vs. consumed memory
+- **Top memory consumers**: Sortable list by memory usage
+  - Shows container name, memory in MB, and percentage of total
+- **Automatic insights**:
+  - Critical/high memory alerts: Warnings at 90% and 80% thresholds
+  - Memory trend detection: Identifies increasing usage patterns (requires 50+ data points)
+  - Memory leak detection: Analyzes sustained growth over time (requires 100+ data points)
+  - Memory concentration warnings: Flags when top consumer uses > 40%
+  - Healthy memory status: Confirms when usage is below 60%
+- **Statistical analysis**: Calculates trends and growth patterns from historical data
+
+**Network Detail View** (`NetworkDetailView.tsx`):
+- **Live dual-line graph**: Upload (blue) and download (purple) rates over 5 minutes
+- **Transfer statistics**:
+  - Current upload/download rates in MB/s or KB/s
+  - Peak rates during the monitoring window
+  - Average rates for sustained traffic analysis
+- **Top network consumers**: Sortable list by total bytes transferred
+  - Shows TX (transmit) and RX (receive) bytes per container
+  - Total combined network usage
+- **Automatic insights**:
+  - High bandwidth detection: Warns when peak exceeds 100 MB/s
+  - Traffic imbalance analysis: Detects upload/download ratio > 5x
+  - Sustained traffic patterns: Identifies continuous high usage
+  - Low activity confirmation: Healthy state when < 10 MB/s
+  - Top consumer impact: Flags containers using > 1 GB or > 80% bandwidth
+- **Network rate calculations**: Derives per-second rates from cumulative byte counters
+
+**Disk Detail View** (built-in, existing):
+- Live disk usage graph with percentage over time
+- Current disk space breakdown
+- Used/free space statistics
+
+**Common Modal Features**:
+- **Framer Motion animations**: Smooth entrance/exit with backdrop fade
+- **Dark mode support**: Full Tailwind dark: classes for all components
+- **Real-time updates**: Live data via WebSocket subscriptions (2-second interval)
+- **Historical data management**: FIFO cleanup maintains 5-minute window (150 points max)
+- **Responsive design**: Mobile-friendly layouts with proper spacing
+- **Tab navigation**: Switch between different metric details within modal
+- **Close button**: ESC key or X button to dismiss modal
+- **Data-testid attributes**: Full Playwright test coverage support
+
+**Usage for Multi-Threading Verification**:
+1. Start a container that should utilize all CPU cores
+2. Click the CPU metrics card to open CPU Detail View
+3. Scroll to "Per-Core CPU Usage" section
+4. Verify that all cores show balanced usage (variance should be low)
+5. Check automatic insights for "Excellent Multi-Threading" confirmation
+6. If only one core is active, check Docker Compose CPU settings
+
+**File Structure**:
+```
+miniprem-monitor/frontend/src/components/
+├── SystemMetricsModal.tsx           # Main modal container
+├── metrics-detail/
+│   ├── index.ts                     # Module exports
+│   ├── MetricsChart.tsx            # Recharts line chart component
+│   ├── CpuDetailView.tsx           # CPU metrics + insights
+│   ├── MemoryDetailView.tsx        # Memory metrics + insights
+│   ├── NetworkDetailView.tsx       # Network metrics + insights
+│   └── DiskDetailView.tsx          # Disk metrics (basic)
+```
+
+**Backend Enhancements**:
+- `backend/app/models/schemas.py`: Added network_tx_bytes/network_rx_bytes to ContainerStatus
+- `backend/app/security/command_executor.py`: Enhanced Docker stats parser
+  - Parses NetIO field: "130kB / 385kB" → (rx_bytes, tx_bytes)
+  - Converts all Docker size units: B, kB, MB, GB, TB, PB (SI 1000-based)
+  - Returns per-container network statistics in real-time
 
 ### Known Limitations ⚠️
 - Kubernetes EKS authentication requires active AWS SSO session

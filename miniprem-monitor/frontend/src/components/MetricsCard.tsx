@@ -5,9 +5,10 @@ import { Cpu, HardDrive, MemoryStick, Network } from 'lucide-react';
 interface MetricsCardProps {
   metrics: SystemMetrics | null;
   loading?: boolean;
+  onMetricClick?: (metricType: 'cpu' | 'memory' | 'disk' | 'network') => void;
 }
 
-export function MetricsCard({ metrics, loading }: MetricsCardProps) {
+export function MetricsCard({ metrics, loading, onMetricClick }: MetricsCardProps) {
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -51,7 +52,19 @@ export function MetricsCard({ metrics, loading }: MetricsCardProps) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-testid="metrics-section">
       {/* CPU Usage */}
-      <div className="metric-card" data-testid="cpu-metrics-card">
+      <div
+        className="metric-card cursor-pointer hover:shadow-lg transition-shadow duration-200"
+        onClick={() => onMetricClick?.('cpu')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onMetricClick?.('cpu');
+          }
+        }}
+        data-testid="cpu-metrics-card"
+      >
         <div>
           <div className="metric-label" data-testid="cpu-label">CPU Usage</div>
           <div className={`metric-value ${getUsageColor(metrics.cpu_percent)}`} data-testid="cpu-value">
@@ -62,7 +75,19 @@ export function MetricsCard({ metrics, loading }: MetricsCardProps) {
       </div>
 
       {/* Memory Usage */}
-      <div className="metric-card" data-testid="memory-metrics-card">
+      <div
+        className="metric-card cursor-pointer hover:shadow-lg transition-shadow duration-200"
+        onClick={() => onMetricClick?.('memory')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onMetricClick?.('memory');
+          }
+        }}
+        data-testid="memory-metrics-card"
+      >
         <div>
           <div className="metric-label" data-testid="memory-label">Memory</div>
           <div className={`metric-value ${getUsageColor(metrics.memory_percent)}`} data-testid="memory-value">
@@ -73,7 +98,19 @@ export function MetricsCard({ metrics, loading }: MetricsCardProps) {
       </div>
 
       {/* Disk Usage */}
-      <div className="metric-card" data-testid="disk-metrics-card">
+      <div
+        className="metric-card cursor-pointer hover:shadow-lg transition-shadow duration-200"
+        onClick={() => onMetricClick?.('disk')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onMetricClick?.('disk');
+          }
+        }}
+        data-testid="disk-metrics-card"
+      >
         <div>
           <div className="metric-label" data-testid="disk-label">Disk</div>
           <div className={`metric-value ${getUsageColor(metrics.disk_percent)}`} data-testid="disk-value">
@@ -84,7 +121,19 @@ export function MetricsCard({ metrics, loading }: MetricsCardProps) {
       </div>
 
       {/* Network */}
-      <div className="metric-card" data-testid="network-metrics-card">
+      <div
+        className="metric-card cursor-pointer hover:shadow-lg transition-shadow duration-200"
+        onClick={() => onMetricClick?.('network')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onMetricClick?.('network');
+          }
+        }}
+        data-testid="network-metrics-card"
+      >
         <div>
           <div className="metric-label" data-testid="network-label">Network I/O</div>
           <div className="flex flex-col text-sm">

@@ -3,7 +3,7 @@ import subprocess
 import json
 import re
 import random
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 import logging
 from ..services.system_monitor import SystemMonitor
@@ -328,6 +328,15 @@ class CommandExecutor:
             for line in lines:
                 if line.strip():
                     container_data = json.loads(line)
+
+                    # Parse network I/O if available (stats command only)
+                    network_tx_bytes = None
+                    network_rx_bytes = None
+                    if command == 'stats':
+                        net_io = container_data.get('NetIO', '')
+                        if net_io:
+                            network_rx_bytes, network_tx_bytes = self._parse_network_io(net_io)
+
                     containers.append({
                         'name': container_data.get('Names', 'Unknown'),
                         'status': container_data.get('Status', 'Unknown'),
@@ -335,7 +344,9 @@ class CommandExecutor:
                         'ports': container_data.get('Ports', ''),
                         'created': container_data.get('CreatedAt', ''),
                         'cpu_usage': container_data.get('CPUPerc', '0%') if command == 'stats' else None,
-                        'memory_usage': container_data.get('MemUsage', '0B / 0B') if command == 'stats' else None
+                        'memory_usage': container_data.get('MemUsage', '0B / 0B') if command == 'stats' else None,
+                        'network_tx_bytes': network_tx_bytes,
+                        'network_rx_bytes': network_rx_bytes
                     })
 
             # Enrich containers with Prometheus metrics for known containers (only for 'ps' command)
@@ -581,6 +592,84 @@ class CommandExecutor:
         logs = re.sub(r'secret[=:]\s*\S+', 'secret=[REDACTED]', logs, flags=re.IGNORECASE)
 
         return logs
+
+    def _parse_network_io(self, net_io: str) -> Tuple[Optional[int], Optional[int]]:
+        """
+        Parse Docker network I/O string to bytes.
+
+        Args:
+            net_io: Network I/O string in format "RX / TX" (e.g., "130kB / 385kB")
+
+        Returns:
+            Tuple of (rx_bytes, tx_bytes) or (None, None) if parsing fails
+
+        Example:
+            "130kB / 385kB" -> (133120, 394240)
+            "1.5MB / 2.3GB" -> (1572864, 2469606195)
+        """
+        try:
+            if not net_io or '/' not in net_io:
+                return None, None
+
+            # Split RX and TX
+            parts = net_io.split('/')
+            if len(parts) != 2:
+                return None, None
+
+            rx_str = parts[0].strip()
+            tx_str = parts[1].strip()
+
+            # Convert to bytes
+            rx_bytes = self._convert_size_to_bytes(rx_str)
+            tx_bytes = self._convert_size_to_bytes(tx_str)
+
+            return rx_bytes, tx_bytes
+
+        except Exception as e:
+            logger.debug(f"Failed to parse network I/O '{net_io}': {str(e)}")
+            return None, None
+
+    def _convert_size_to_bytes(self, size_str: str) -> Optional[int]:
+        """
+        Convert human-readable size string to bytes.
+
+        Args:
+            size_str: Size string (e.g., "130kB", "1.5MB", "2.3GB")
+
+        Returns:
+            Size in bytes or None if parsing fails
+
+        Raises:
+            ValueError: If size format is invalid
+        """
+        if not size_str or size_str == '0B':
+            return 0
+
+        # Remove whitespace
+        size_str = size_str.strip()
+
+        # Regex to extract number and unit
+        match = re.match(r'^([\d.]+)([kMGTP]?B)$', size_str)
+        if not match:
+            raise ValueError(f"Invalid size format: {size_str}")
+
+        value = float(match.group(1))
+        unit = match.group(2)
+
+        # Conversion factors (using 1000 base as Docker uses SI units)
+        units = {
+            'B': 1,
+            'kB': 1000,
+            'MB': 1000 ** 2,
+            'GB': 1000 ** 3,
+            'TB': 1000 ** 4,
+            'PB': 1000 ** 5
+        }
+
+        if unit not in units:
+            raise ValueError(f"Unknown unit: {unit}")
+
+        return int(value * units[unit])
 
     async def _execute_system_command(self, command: str, params: Dict[str, str] = None) -> Dict[str, Any]:
         """Execute system monitoring commands using SystemMonitor"""

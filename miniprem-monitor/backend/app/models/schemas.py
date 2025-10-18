@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, EmailStr
 from typing import Dict, List, Optional, Literal, Union
 from datetime import datetime
 from enum import Enum
@@ -55,6 +55,8 @@ class ContainerStatus(BaseModel):
     created: str
     cpu_usage: Optional[str] = None
     memory_usage: Optional[str] = None
+    network_tx_bytes: Optional[int] = None
+    network_rx_bytes: Optional[int] = None
 
 class PodStatus(BaseModel):
     name: str
@@ -69,6 +71,7 @@ class PodStatus(BaseModel):
 
 class SystemMetrics(BaseModel):
     cpu_percent: float
+    cpu_per_core: List[float] = Field(default_factory=list, description="Per-core CPU usage percentages")
     memory_percent: float
     disk_percent: float
     network_io: Dict[str, int]
@@ -192,5 +195,77 @@ class RegionContextsResponse(BaseModel):
     contexts: List[KubernetesContext]
     clusters: List[ClusterInfo]
     current_context: Optional[str] = None
+    error: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# Metrics Snapshot Models
+class MetricsSnapshotRequest(BaseModel):
+    """Request model for creating a metrics snapshot."""
+    container_name: str = Field(..., min_length=1, max_length=255, description="Name of the container")
+    metrics: Dict = Field(..., description="PrometheusMetrics dictionary")
+
+    @validator('container_name')
+    def validate_container_name(cls, v):
+        """Validate container name format."""
+        if not re.match(r'^[a-zA-Z0-9-_]{1,255}$', v):
+            raise ValueError('Invalid container name format')
+        return v
+
+class MetricsSnapshotResponse(BaseModel):
+    """Response model for snapshot creation."""
+    success: bool
+    snapshot_id: str
+    container_name: str
+    timestamp: str
+    message: Optional[str] = None
+    error: Optional[str] = None
+
+class SnapshotPreview(BaseModel):
+    """Preview model for snapshot list entries."""
+    id: str
+    timestamp: str
+    gpu_percent: Optional[float] = None
+    cpu_percent: Optional[float] = None
+    memory_percent: Optional[float] = None
+    frames_rendered: Optional[int] = None
+
+class SnapshotListResponse(BaseModel):
+    """Response model for listing snapshots."""
+    success: bool
+    container_name: str
+    snapshots: List[SnapshotPreview]
+    total_count: int
+    hours: int
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+class SnapshotDetailResponse(BaseModel):
+    """Response model for detailed snapshot data."""
+    success: bool
+    snapshot: Optional[Dict] = None
+    error: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+
+# SNS Integration Models
+class SendMetricsSupportRequest(BaseModel):
+    """Request model for sending metrics snapshot to support via SNS."""
+    container_name: str = Field(..., min_length=1, description="Name of the container")
+    snapshot_id: str = Field(..., min_length=1, description="ID of the metrics snapshot to send")
+    user_email: EmailStr = Field(..., description="Email address of the requesting user")
+
+    @validator('container_name')
+    def validate_container_name(cls, v):
+        """Validate container name format."""
+        if not re.match(r'^[a-zA-Z0-9-_]{1,255}$', v):
+            raise ValueError('Invalid container name format')
+        return v
+
+class SendMetricsSupportResponse(BaseModel):
+    """Response model for metrics support request."""
+    success: bool
+    message: str
+    container_name: str
+    snapshot_id: str
+    user_email: str
+    message_id: Optional[str] = None
     error: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.utcnow)

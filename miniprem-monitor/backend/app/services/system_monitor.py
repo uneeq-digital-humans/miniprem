@@ -30,10 +30,24 @@ class SystemMonitor:
         return None
 
     async def get_system_metrics(self) -> SystemMetrics:
-        """Get current system metrics"""
+        """
+        Get current system metrics including per-core CPU usage.
+
+        Collects comprehensive system metrics with short sampling intervals
+        to avoid blocking the event loop. Per-core CPU data enables verification
+        of multi-threading in Docker containers.
+
+        Returns:
+            SystemMetrics: Complete system metrics with overall and per-core CPU data.
+
+        Raises:
+            Exception: Logs errors and returns default metrics on failure.
+        """
         try:
-            # CPU usage (1-second interval for accuracy)
-            cpu_percent = psutil.cpu_percent(interval=1)
+            # CPU usage with per-core breakdown (0.1-second interval for responsiveness)
+            # Using short interval to avoid blocking the async event loop
+            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_per_core = psutil.cpu_percent(interval=0.1, percpu=True)
 
             # Memory usage
             memory = psutil.virtual_memory()
@@ -54,6 +68,7 @@ class SystemMonitor:
 
             return SystemMetrics(
                 cpu_percent=round(cpu_percent, 1),
+                cpu_per_core=[round(core, 1) for core in cpu_per_core],
                 memory_percent=round(memory_percent, 1),
                 disk_percent=round(disk_percent, 1),
                 network_io=network_stats
@@ -64,6 +79,7 @@ class SystemMonitor:
             # Return default metrics on error
             return SystemMetrics(
                 cpu_percent=0.0,
+                cpu_per_core=[],
                 memory_percent=0.0,
                 disk_percent=0.0,
                 network_io={

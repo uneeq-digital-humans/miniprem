@@ -55,6 +55,8 @@ export interface ContainerStatus {
   created: string;
   cpu_usage?: string;
   memory_usage?: string;
+  network_tx_bytes?: number;  // NEW: bytes transmitted
+  network_rx_bytes?: number;  // NEW: bytes received
   metrics?: PrometheusMetrics;
 }
 
@@ -70,16 +72,44 @@ export interface PodStatus {
   memory_usage?: string;
 }
 
+/**
+ * System metrics snapshot for real-time monitoring.
+ * Provides overall system resource usage and network I/O statistics.
+ *
+ * Updated in Phase 2.1 to include per-core CPU data for multi-threading verification.
+ */
 export interface SystemMetrics {
+  /** Overall CPU usage percentage (0-100) */
   cpu_percent: number;
+
+  /**
+   * Per-core CPU usage percentages (0-100).
+   * Array length equals the number of logical CPU cores.
+   * Example: [42.1, 48.3, 44.5, ...] for a 12-core system.
+   * Optional field added in Phase 2 for multi-threading verification.
+   * Backend returns empty array [] if not available.
+   */
+  cpu_per_core?: number[];
+
+  /** Memory usage percentage (0-100) */
   memory_percent: number;
+
+  /** Disk usage percentage (0-100) */
   disk_percent: number;
+
+  /** Network I/O statistics */
   network_io: {
+    /** Total bytes sent since system boot */
     bytes_sent: number;
+    /** Total bytes received since system boot */
     bytes_recv: number;
+    /** Total packets sent since system boot */
     packets_sent: number;
+    /** Total packets received since system boot */
     packets_recv: number;
   };
+
+  /** ISO 8601 timestamp when metrics were captured */
   timestamp: string;
 }
 
@@ -222,4 +252,57 @@ export interface HealthApiError {
   error: string;
   message: string;
   details?: string;
+}
+
+/**
+ * Historical metrics data point structure.
+ * Stores a snapshot of system metrics at a specific point in time,
+ * with optional container event annotation.
+ *
+ * Used for time-series visualization (5 minutes rolling window).
+ */
+export interface MetricsHistoryPoint {
+  /** Timestamp when the metrics were captured */
+  timestamp: Date;
+
+  // CPU metrics
+  /** CPU usage percentage (0-100) */
+  cpu_percent: number;
+  /** Per-core CPU usage percentages (future Phase 2 enhancement) */
+  cpu_per_core?: number[];
+
+  // Memory metrics
+  /** Memory usage percentage (0-100) */
+  memory_percent: number;
+  /** Memory used in gigabytes */
+  memory_used_gb: number;
+  /** Memory available in gigabytes */
+  memory_available_gb: number;
+
+  // Disk metrics
+  /** Disk usage percentage (0-100) */
+  disk_percent: number;
+  /** Disk space used in gigabytes */
+  disk_used_gb: number;
+  /** Disk space free in gigabytes */
+  disk_free_gb: number;
+
+  // Network metrics (cumulative counters)
+  /** Total bytes sent since system boot */
+  network_sent_bytes: number;
+  /** Total bytes received since system boot */
+  network_recv_bytes: number;
+
+  // Network transfer rates (calculated derivatives)
+  /** Network upload rate in bytes per second */
+  network_sent_rate: number;
+  /** Network download rate in bytes per second */
+  network_recv_rate: number;
+
+  // Optional container lifecycle event annotation
+  /** Container start/stop event that occurred at this timestamp */
+  event?: {
+    type: 'container_start' | 'container_stop';
+    containerName: string;
+  };
 }

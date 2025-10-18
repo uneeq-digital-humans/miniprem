@@ -149,9 +149,9 @@ const CostBreakdownChart: React.FC<CostBreakdownChartProps> = ({ data }) => {
               <div className="flex items-center space-x-3">
                 <div
                   className="p-2 rounded-lg"
-                  style={{ backgroundColor: `${item.color}20` }}
+                  style={{ backgroundColor: `${item.color}20`, color: item.color }}
                 >
-                  <Icon className="w-4 h-4" style={{ color: item.color }} />
+                  <Icon className="w-4 h-4" />
                 </div>
                 <div>
                   <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
