@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Check, AlertTriangle, RefreshCw, TestTube } from 'lucide-react';
+import { X, Settings, Check, AlertTriangle, RefreshCw, TestTube, Cloud } from 'lucide-react';
 import { StatusIndicator } from './StatusIndicator';
+import CloudProviderBadge from './CloudProviderBadge';
 import clsx from 'clsx';
 
 export interface KubernetesEnvironment {
@@ -24,6 +25,13 @@ export interface KubernetesConfig {
   rememberSelection: boolean;
   autoRefresh: boolean;
   refreshInterval: number;
+}
+
+interface EnhancedClusterInfo {
+  available: boolean;
+  provider: 'eks' | 'aks' | 'gke' | 'unknown';
+  context?: string;
+  error?: string;
 }
 
 interface KubernetesSettingsModalProps {
@@ -92,12 +100,45 @@ export function KubernetesSettingsModal({
 
   const [testingConnection, setTestingConnection] = useState(false);
   const [refreshingContexts, setRefreshingContexts] = useState(false);
+  const [enhancedClusterInfo, setEnhancedClusterInfo] = useState<EnhancedClusterInfo | null>(null);
+  const [loadingClusterInfo, setLoadingClusterInfo] = useState(false);
 
   useEffect(() => {
     if (currentConfig) {
       setConfig(currentConfig);
     }
   }, [currentConfig]);
+
+  // Fetch enhanced cluster info when connected
+  useEffect(() => {
+    const fetchEnhancedInfo = async () => {
+      if (!isConnected) {
+        setEnhancedClusterInfo(null);
+        return;
+      }
+
+      setLoadingClusterInfo(true);
+      try {
+        const response = await fetch('/api/kubernetes/cluster/info/enhanced');
+        const data = await response.json();
+
+        if (data.success && data.cluster_info) {
+          setEnhancedClusterInfo(data.cluster_info);
+        } else {
+          setEnhancedClusterInfo(null);
+        }
+      } catch (err) {
+        console.error('Failed to fetch enhanced cluster info:', err);
+        setEnhancedClusterInfo(null);
+      } finally {
+        setLoadingClusterInfo(false);
+      }
+    };
+
+    if (isOpen && isConnected) {
+      fetchEnhancedInfo();
+    }
+  }, [isOpen, isConnected]);
 
   const handleSave = () => {
     onSave(config);
@@ -198,9 +239,91 @@ export function KubernetesSettingsModal({
               </div>
             </div>
 
+            {/* Cloud Provider Detection Status */}
+            {enhancedClusterInfo && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
+                  <Cloud className="w-4 h-4 mr-2 text-blue-500" />
+                  Detected Cloud Provider
+                </h3>
+                <div className="flex items-center">
+                  {enhancedClusterInfo.provider !== 'unknown' ? (
+                    <CloudProviderBadge provider={enhancedClusterInfo.provider} className="text-sm" />
+                  ) : (
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      Unable to detect cloud provider
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* CLI Status Indicators */}
+            {isConnected && (
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
+                <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                  CLI Tools Status
+                </h3>
+                <div className="space-y-2">
+                  {/* kubectl status */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center">
+                      <StatusIndicator status="healthy" size="sm" />
+                      <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">kubectl CLI</span>
+                    </div>
+                    <span className="text-xs text-green-600 dark:text-green-400 font-medium">
+                      Available
+                    </span>
+                  </div>
+
+                  {/* AWS CLI status (if EKS) */}
+                  {enhancedClusterInfo?.provider === 'eks' && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <StatusIndicator
+                          status={enhancedClusterInfo.available ? 'healthy' : 'warning'}
+                          size="sm"
+                        />
+                        <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">AWS CLI</span>
+                      </div>
+                      <span className={clsx(
+                        'text-xs font-medium',
+                        enhancedClusterInfo.available
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-yellow-600 dark:text-yellow-400'
+                      )}>
+                        {enhancedClusterInfo.available ? 'Available' : 'Check SSO login'}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Azure CLI status (if AKS) */}
+                  {enhancedClusterInfo?.provider === 'aks' && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <StatusIndicator
+                          status={enhancedClusterInfo.available ? 'healthy' : 'warning'}
+                          size="sm"
+                        />
+                        <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Azure CLI</span>
+                      </div>
+                      <span className={clsx(
+                        'text-xs font-medium',
+                        enhancedClusterInfo.available
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-yellow-600 dark:text-yellow-400'
+                      )}>
+                        {enhancedClusterInfo.available ? 'Available' : 'Check login'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Authentication Status */}
             <div className="space-y-4">
-              <h3 className="text-lg font-semibold text-primary mb-3">Authentication Status</h3>
+              <h3 className="text-lg font-semibold text-primary mb-3">Connection Status</h3>
               <div className="card-gradient p-4 space-y-3">
                 <div className="flex items-center space-x-2">
                   <StatusIndicator
@@ -211,6 +334,18 @@ export function KubernetesSettingsModal({
                     kubectl context: {currentContext?.name || 'None selected'}
                   </span>
                 </div>
+
+                {currentContext && (
+                  <div className="flex items-center space-x-2 ml-6">
+                    <StatusIndicator
+                      status={currentContext.cluster ? 'healthy' : 'warning'}
+                      size="md"
+                    />
+                    <span className="text-secondary">
+                      Cluster: {currentContext.cluster || 'Unknown'}
+                    </span>
+                  </div>
+                )}
 
                 {currentContext && (
                   <div className="flex items-center space-x-2 ml-6">

@@ -23,8 +23,10 @@ spec:
       nodeSelector:
         uneeq.io/node-type: {{ .Values.deployment.nodeType }}
       terminationGracePeriodSeconds: 18000
+      {{- if .Values.imagePullSecrets }}
       imagePullSecrets:
-      - name: docker-config
+      {{- toYaml .Values.imagePullSecrets | nindent 6 }}
+      {{- end }}
       containers:
       - name: renderer
         image: {{ .Values.image }}

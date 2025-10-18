@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+import yaml
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 from ..models.schemas import KubernetesContext, ClusterInfo, ServiceControlRequest, ServiceControlResponse
@@ -11,7 +12,7 @@ from ..models.schemas import KubernetesContext, ClusterInfo, ServiceControlReque
 logger = logging.getLogger(__name__)
 
 class KubernetesMonitor:
-    """Real Kubernetes cluster monitoring using kubectl commands with region-aware capabilities"""
+    """Real Kubernetes cluster monitoring using kubectl commands with multi-cloud support (EKS, AKS)"""
 
     def __init__(self):
         self._kubectl_available = None
@@ -20,6 +21,7 @@ class KubernetesMonitor:
         self._aws_profile = None
         self._region_cache: Dict[str, Any] = {}
         self._cache_ttl = 300  # 5 minutes
+        self._provider_cache: Dict[str, str] = {}  # Cache for cloud provider detection
 
     async def check_kubectl_availability(self) -> bool:
         """Check if kubectl is available and configured"""
@@ -57,6 +59,270 @@ class KubernetesMonitor:
             self._kubectl_available = False
 
         return self._kubectl_available
+
+    async def detect_cloud_provider(self, context_name: str) -> str:
+        """
+        Detect cloud provider from kubectl context.
+
+        Args:
+            context_name: Name of the kubectl context
+
+        Returns:
+            'eks', 'aks', 'gke', or 'unknown'
+        """
+        # Check cache first
+        if context_name in self._provider_cache:
+            return self._provider_cache[context_name]
+
+        try:
+            # Strategy 1: Check context name pattern
+            context_lower = context_name.lower()
+            if 'eks' in context_lower or 'amazonaws.com' in context_lower:
+                self._provider_cache[context_name] = 'eks'
+                return 'eks'
+            elif 'aks' in context_lower or 'azure' in context_lower:
+                self._provider_cache[context_name] = 'aks'
+                return 'aks'
+            elif 'gke' in context_lower or 'gcloud' in context_lower:
+                self._provider_cache[context_name] = 'gke'
+                return 'gke'
+
+            # Strategy 2: Check server URL from kubeconfig
+            kubeconfig_path = os.path.expanduser('~/.kube/config')
+            if os.path.exists(kubeconfig_path):
+                try:
+                    with open(kubeconfig_path, 'r') as f:
+                        config = yaml.safe_load(f)
+
+                    for context in config.get('contexts', []):
+                        if context['name'] == context_name:
+                            cluster_name = context['context']['cluster']
+                            for cluster in config.get('clusters', []):
+                                if cluster['name'] == cluster_name:
+                                    server = cluster['cluster']['server']
+                                    if 'eks.amazonaws.com' in server:
+                                        self._provider_cache[context_name] = 'eks'
+                                        return 'eks'
+                                    elif 'azmk8s.io' in server:
+                                        self._provider_cache[context_name] = 'aks'
+                                        return 'aks'
+                                    elif 'container.googleapis.com' in server or 'gke' in server:
+                                        self._provider_cache[context_name] = 'gke'
+                                        return 'gke'
+                except Exception as e:
+                    logger.debug(f"Error reading kubeconfig: {e}")
+
+            # Strategy 3: Query node providerID (requires kubectl access)
+            try:
+                result = await asyncio.create_subprocess_exec(
+                    'kubectl', 'get', 'nodes', '-o', 'json',
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(
+                    result.communicate(),
+                    timeout=10.0
+                )
+
+                if result.returncode == 0:
+                    nodes = json.loads(stdout.decode())
+                    if nodes.get('items'):
+                        provider_id = nodes['items'][0].get('spec', {}).get('providerID', '')
+                        if 'aws' in provider_id:
+                            self._provider_cache[context_name] = 'eks'
+                            return 'eks'
+                        elif 'azure' in provider_id:
+                            self._provider_cache[context_name] = 'aks'
+                            return 'aks'
+                        elif 'gce' in provider_id:
+                            self._provider_cache[context_name] = 'gke'
+                            return 'gke'
+            except Exception as e:
+                logger.debug(f"Error querying nodes for provider detection: {e}")
+
+        except Exception as e:
+            logger.error(f"Error detecting cloud provider for {context_name}: {e}")
+
+        self._provider_cache[context_name] = 'unknown'
+        return 'unknown'
+
+    async def get_cluster_info_with_provider(self) -> Dict[str, Any]:
+        """Get Kubernetes cluster information with cloud provider detection."""
+        try:
+            # Get basic cluster info
+            cluster_info = await self.get_cluster_info()
+
+            # Get current context
+            context = await self.get_current_context()
+
+            if context:
+                # Detect cloud provider
+                provider = await self.detect_cloud_provider(context)
+                cluster_info['provider'] = provider
+                cluster_info['context'] = context
+
+                # Get provider-specific information
+                if provider == 'eks':
+                    eks_info = await self._get_eks_cluster_info(context)
+                    if eks_info:
+                        cluster_info.update(eks_info)
+                elif provider == 'aks':
+                    aks_info = await self._get_aks_cluster_info(context)
+                    if aks_info:
+                        cluster_info.update(aks_info)
+                elif provider == 'gke':
+                    cluster_info['note'] = 'GKE support: basic kubectl info only'
+
+            return cluster_info
+
+        except Exception as e:
+            logger.error(f"Error getting cluster info with provider: {str(e)}")
+            return {
+                'available': False,
+                'error': str(e),
+                'provider': 'unknown'
+            }
+
+    async def _get_aks_cluster_info(self, context_name: str) -> Dict[str, Any]:
+        """Get AKS cluster information using az CLI."""
+        try:
+            # Extract cluster name from context (AKS contexts are typically just the cluster name)
+            cluster_name = context_name
+
+            # Try to get cluster details with az CLI
+            result = await asyncio.create_subprocess_exec(
+                'az', 'aks', 'list', '--query', f"[?name=='{cluster_name}']", '-o', 'json',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                result.communicate(),
+                timeout=10.0
+            )
+
+            if result.returncode == 0:
+                clusters = json.loads(stdout.decode())
+                if clusters:
+                    cluster = clusters[0]
+                    return {
+                        'name': cluster.get('name'),
+                        'resource_group': cluster.get('resourceGroup'),
+                        'location': cluster.get('location'),
+                        'kubernetes_version': cluster.get('kubernetesVersion'),
+                        'node_resource_group': cluster.get('nodeResourceGroup'),
+                        'provisioning_state': cluster.get('provisioningState'),
+                        'power_state': cluster.get('powerState', {}).get('code', 'Unknown'),
+                        'fqdn': cluster.get('fqdn'),
+                        'aks_managed': True
+                    }
+
+            # Fallback: basic info from kubectl
+            return {
+                'name': cluster_name,
+                'provider': 'aks',
+                'note': 'Limited info (az CLI not available or not authenticated)',
+                'aks_managed': False
+            }
+
+        except Exception as e:
+            logger.debug(f"Error getting AKS cluster info: {str(e)}")
+            return {
+                'provider': 'aks',
+                'error': str(e),
+                'aks_managed': False
+            }
+
+    async def _get_eks_cluster_info(self, context_name: str) -> Dict[str, Any]:
+        """Get EKS cluster information using aws CLI."""
+        try:
+            # Extract cluster name and region from context
+            # EKS context format: arn:aws:eks:region:account:cluster/name
+            parts = context_name.split('/')
+            if len(parts) > 0:
+                cluster_name = parts[-1]
+
+                # Try to extract region from context
+                region = await self._get_region_from_cluster_endpoint(context_name)
+                if region:
+                    cluster_info = await self._get_cluster_details(cluster_name, region)
+                    if cluster_info:
+                        return {
+                            'name': cluster_info.name,
+                            'region': cluster_info.region,
+                            'status': cluster_info.status,
+                            'node_count': cluster_info.node_count,
+                            'endpoint': cluster_info.endpoint,
+                            'eks_managed': True
+                        }
+
+            return {
+                'provider': 'eks',
+                'note': 'Limited info (unable to extract cluster details)',
+                'eks_managed': False
+            }
+
+        except Exception as e:
+            logger.debug(f"Error getting EKS cluster info: {str(e)}")
+            return {
+                'provider': 'eks',
+                'error': str(e),
+                'eks_managed': False
+            }
+
+    async def get_aks_node_pools(self) -> List[Dict[str, Any]]:
+        """Get AKS node pool information."""
+        try:
+            # Get from kubectl (works without az CLI)
+            result = await asyncio.create_subprocess_exec(
+                'kubectl', 'get', 'nodes', '-o', 'json',
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+
+            stdout, stderr = await asyncio.wait_for(
+                result.communicate(),
+                timeout=10.0
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Error getting nodes: {stderr.decode()}")
+                return []
+
+            nodes = json.loads(stdout.decode())
+
+            # Group nodes by agentpool label (AKS-specific)
+            node_pools: Dict[str, Dict[str, Any]] = {}
+            for node in nodes.get('items', []):
+                labels = node['metadata'].get('labels', {})
+                pool_name = labels.get('agentpool', labels.get('kubernetes.azure.com/agentpool', 'unknown'))
+                vm_size = labels.get('node.kubernetes.io/instance-type', 'unknown')
+
+                if pool_name not in node_pools:
+                    node_pools[pool_name] = {
+                        'name': pool_name,
+                        'vm_size': vm_size,
+                        'nodes': []
+                    }
+
+                # Get node status
+                conditions = node['status'].get('conditions', [])
+                ready_condition = next((c for c in conditions if c['type'] == 'Ready'), None)
+                is_ready = ready_condition and ready_condition['status'] == 'True'
+
+                node_pools[pool_name]['nodes'].append({
+                    'name': node['metadata']['name'],
+                    'status': 'Ready' if is_ready else 'NotReady',
+                    'ready': is_ready,
+                    'version': node['status']['nodeInfo'].get('kubeletVersion', 'Unknown'),
+                    'created': node['metadata'].get('creationTimestamp')
+                })
+
+            return list(node_pools.values())
+
+        except Exception as e:
+            logger.error(f"Error getting AKS node pools: {str(e)}")
+            return [{'error': str(e)}]
 
     async def get_available_contexts(self) -> List[Dict[str, Any]]:
         """Get available Kubernetes contexts"""

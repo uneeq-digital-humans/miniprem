@@ -28,7 +28,7 @@ if [ -z "${KUBERNETES_DIR:-}" ]; then
     readonly KUBERNETES_DIR="$PROJECT_DIR/kubernetes"
 fi
 if [ -z "${TERRAFORM_DIR:-}" ]; then
-    readonly TERRAFORM_DIR="$PROJECT_DIR/kubernetes/terraform"
+    readonly TERRAFORM_DIR="$PROJECT_DIR/kubernetes/terraform/eks"
 fi
 
 # Global variables (set by functions)

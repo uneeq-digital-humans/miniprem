@@ -14,6 +14,8 @@ import { DarkModeToggle } from '../components/DarkModeToggle';
 import { AwsSsoModal } from '../components/AwsSsoModal';
 import { AuthModal } from '../components/AuthModal';
 import { Terminal } from '../components/Terminal';
+import AKSMetricsDashboard from '../components/AKSMetricsDashboard';
+import CostTrackingDashboard from '../components/CostTrackingDashboard';
 import {
   SystemMetrics,
   ContainerStatus,
@@ -830,6 +832,22 @@ Available Clusters: ${availableClusters.length}`;
             serviceLoading={kubernetesServiceLoading}
             systemInfo={systemInfo}
           />
+
+          {/* AKS Metrics Dashboard - Only show for AKS clusters */}
+          {clusterStatus && clusterStatus.environment === 'aks' && (
+            <AKSMetricsDashboard
+              provider={clusterStatus.environment}
+              clusterContext={clusterStatus.context}
+            />
+          )}
+
+          {/* Cost Tracking Dashboard - Show for all Kubernetes clusters */}
+          {systemInfo?.kubernetes?.available && clusterStatus && (
+            <CostTrackingDashboard
+              clusterId={clusterStatus.name}
+              provider={clusterStatus.environment}
+            />
+          )}
         </div>
 
       </main>

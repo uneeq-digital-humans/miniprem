@@ -119,10 +119,10 @@ fi
 REGION=""
 
 # Try to get from terraform vars first
-if [ -f "terraform/terraform.tfvars" ]; then
-    REGION=$(grep "^aws_region" terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
-elif [ -f "../terraform/terraform.tfvars" ]; then
-    REGION=$(grep "^aws_region" ../terraform/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
+if [ -f "terraform/eks/terraform.tfvars" ]; then
+    REGION=$(grep "^aws_region" terraform/eks/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
+elif [ -f "../../terraform/eks/terraform.tfvars" ]; then
+    REGION=$(grep "^aws_region" ../../terraform/eks/terraform.tfvars | cut -d'"' -f2 2>/dev/null || echo "")
 fi
 
 # Validate region is set
@@ -283,7 +283,7 @@ if [ $CHECKS_FAILED -eq 0 ]; then
     echo "Your AWS account is ready for deployment!"
     echo "Next steps:"
     echo "  1. Place your renny-chart.tgz in the kubernetes/ directory"
-    echo "  2. Create terraform/terraform.tfvars with your credentials"
+    echo "  2. Create terraform/eks/terraform.tfvars with your credentials"
     echo "  3. Run ./scripts/deploy.sh"
 else
     echo -e "${RED}❌ Some checks failed ($CHECKS_FAILED failed, $CHECKS_PASSED passed)${NC}"

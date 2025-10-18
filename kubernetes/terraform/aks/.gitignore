@@ -1,0 +1,51 @@
+# Terraform state files
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Terraform directory
+.terraform/
+.terraform.lock.hcl
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# CLI configuration files
+.terraformrc
+terraform.rc
+
+# Kubeconfig files
+kubeconfig
+*.kubeconfig
+
+# Azure credentials (if accidentally stored)
+.azure/
+*.subscription
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+
+# Sensitive variable files
+# terraform.tfvars is checked in with placeholder values only
+# Real credentials should be in terraform.tfvars.local (ignored by git)
+terraform.tfvars.local
+*.tfvars.local

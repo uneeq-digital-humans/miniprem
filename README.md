@@ -332,31 +332,90 @@ For persistent issues, contact UneeQ support with service logs.
 
 
 
-## Kubernetes/EKS Deployment
+## Multi-Cloud Kubernetes Deployment
 
-### 🚀 Production-Ready Kubernetes Deployment
+### 🚀 Production-Ready Kubernetes Deployment (AWS EKS & Azure AKS)
 
-MiniPrem includes a complete **one-click EKS deployment solution** for production environments with:
+MiniPrem includes **one-click deployment solutions** for both AWS EKS and Azure AKS with:
 
+- **✅ Multi-cloud support** (AWS EKS, Azure AKS, GKE coming soon)
 - **✅ Auto-scaling GPU clusters** (10-20 Renny instances)
-- **✅ NVIDIA GPU Operator** with automatic driver management  
+- **✅ NVIDIA GPU Operator** with automatic driver management
 - **✅ High availability** across multiple availability zones
 - **✅ Cost optimization** with GPU time-slicing and auto-scaling
-- **✅ Production monitoring** with CloudWatch integration
+- **✅ Production monitoring** with cloud-native logging
 
-**📍 Location**: [`kubernetes/`](kubernetes/) directory contains the complete EKS deployment
+**📍 Location**: [`kubernetes/`](kubernetes/) directory contains complete deployment infrastructure
 
-**⚡ Quick Start**:
+### Cloud Provider Comparison
+
+| Feature | AWS EKS | Azure AKS | Google GKE |
+|---------|---------|-----------|------------|
+| **GPU Instance** | g5.4xlarge (A10G) | NC16as_T4_v3 (T4) | Coming Soon |
+| **GPU Memory** | 24GB | 16GB | TBD |
+| **Monthly Cost (10 nodes)** | ~$8,712 | ~$10,800 | TBD |
+| **Deployment Time** | 30-45 min | 35-50 min | TBD |
+| **Auto-Scaling** | ✅ Yes | ✅ Yes | TBD |
+| **Status** | ✅ Production | ✅ Production | 🚧 In Development |
+
+### Quick Start - AWS EKS
+
 ```bash
-cd kubernetes
-./scripts/deploy.sh  # Complete deployment in ~30-45 minutes
+cd kubernetes/
+./scripts/deploy.sh --cloud eks
+# Or let it auto-detect:
+./scripts/deploy.sh
 ```
 
-### NVIDIA Driver Management (Kubernetes/EKS)
+**Complete EKS Setup Guide**: [Kubernetes README](kubernetes/README.md)
+
+### Quick Start - Azure AKS
+
+```bash
+cd kubernetes/
+./scripts/deploy.sh --cloud aks
+```
+
+**Prerequisites:**
+- Azure account with GPU quota (160 vCPUs for NC16as_T4_v3)
+- Azure CLI installed and authenticated (`az login`)
+- Service principal with Contributor role
+
+**Complete AKS Setup Guide**: [Azure Setup Guide](kubernetes/AZURE_SETUP.md)
+
+**Key Differences:**
+- **EKS**: Uses g5.4xlarge with A10G GPUs (24GB VRAM, ~$1.18/hour per node)
+- **AKS**: Uses NC16as_T4_v3 with T4 GPUs (16GB VRAM, ~$1.50/hour per node)
+- **Recommendation**: Choose based on regional availability and existing cloud provider
+
+### Multi-Cloud Deployment Commands
+
+The deployment script automatically detects your cloud provider:
+
+```bash
+# Automatic cloud detection
+./scripts/deploy.sh
+
+# Explicit cloud selection
+./scripts/deploy.sh --cloud eks    # AWS EKS deployment
+./scripts/deploy.sh --cloud aks    # Azure AKS deployment
+./scripts/deploy.sh --cloud gke    # GKE (coming soon)
+
+# Check deployment status (works with all clouds)
+./scripts/status.sh
+
+# Scale instances (cloud-agnostic)
+./scripts/scale.sh 15
+
+# Complete cleanup
+./scripts/destroy.sh
+```
+
+### NVIDIA Driver Management (Multi-Cloud)
 
 #### Driver Version Selection
 
-The EKS deployment automatically handles NVIDIA GPU Operator installation. You'll be prompted to choose:
+The deployment script automatically handles NVIDIA GPU Operator installation on all cloud providers. You'll be prompted to choose:
 
 1. **🚀 Driver 580+** (Recommended Default)
    - ✅ Latest NVIDIA driver features and optimizations
@@ -408,13 +467,21 @@ kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-dr
 
 For detailed Kubernetes deployment instructions, troubleshooting, and advanced configuration:
 
-**➡️ [Kubernetes Deployment Guide](kubernetes/README.md)**
+**AWS EKS:**
+- **➡️ [EKS Deployment Guide](kubernetes/README.md)** - Complete EKS setup, AWS credentials, VPC configuration
 
+**Azure AKS:**
+- **➡️ [Azure Setup Guide](kubernetes/AZURE_SETUP.md)** - Azure account setup, GPU quotas, service principals
+
+**Multi-Cloud:**
+- **➡️ [Multi-Cloud Guide](kubernetes/MULTI_CLOUD_GUIDE.md)** - Cloud comparison, cost analysis, migration strategies
+
+**Documentation includes:**
 - Prerequisites and tool installation
-- AWS credentials and VPC setup  
-- GPU driver troubleshooting
+- Cloud-specific credentials and networking setup
+- GPU driver troubleshooting for each platform
 - Known issues and solutions
-- Production monitoring with CloudWatch
+- Production monitoring integration
 
 ## Additional Documentation
 

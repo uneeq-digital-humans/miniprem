@@ -1,0 +1,262 @@
+# AKS-Specific Configuration for Renny Deployment
+# Azure Kubernetes Service configuration for NC16as_T4_v3 GPU nodes
+#
+# USAGE:
+# Deploy with AKS-specific values:
+#   helm install renny ./renny \
+#     -f values/renny-values-aks.yaml \
+#     -f values/my-renny-values.yml \
+#     --namespace uneeq-renderer
+#
+# The my-renny-values.yml file (NOT in git) contains credentials:
+# - DHOP API key and tenant ID
+# - Azure Speech and TTS API keys
+# - ElevenLabs API key
+# - Unreal Engine license configuration
+#
+# CLUSTER CONFIGURATION:
+# - Node Type: NC16as_T4_v3 (16 vCPUs, 110GB RAM, 1x NVIDIA T4 16GB)
+# - Node Count: 2-10 nodes (auto-scales based on load)
+# - GPU Time-Slicing: 2 Renny instances per T4 GPU
+# - Total Capacity: 4-20 Renny instances (2 pods per node)
+
+# Renny container image
+image: facemeproduction/renny:0.713-37d59
+
+# GPU time-slicing configuration for AKS NC16as_T4_v3
+# T4 has 16GB VRAM - can handle 2 Renny instances with 7-8GB each
+gpuTimeSlicing:
+  enabled: true
+  replicasPerGpu: 2  # 2 Renny pods per T4 GPU (time-slicing)
+
+  configMap:
+    name: renny-time-slicing-config
+    namespace: gpu-operator
+
+# Deployment scaling
+deployment:
+  nodeType: renny
+  totalReplicas: 4  # Start with 4 (2 nodes × 2 pods per GPU), can scale to 20 (10 nodes × 2 pods)
+
+# Resource requests per pod (optimized for 2 pods per NC16as_T4_v3 node)
+# NC16as_T4_v3: 16 vCPUs, 110GB RAM per node
+# With 2 pods per GPU: 8 vCPUs, 55GB RAM per pod (with headroom for OS)
+resources:
+  requests:
+    cpu: "4000m"       # 4 CPUs per pod (16 vCPUs / 4 system overhead / 2 pods)
+    memory: "7Gi"      # 7GB RAM per pod (from my-renny-values.yml)
+    nvidia.com/gpu: 1  # Request 1 GPU slot (will be shared via time-slicing)
+  limits:
+    cpu: "4000m"       # 4 CPUs per pod
+    memory: "8Gi"      # 8GB RAM limit per pod
+    nvidia.com/gpu: 1  # 1 GPU slot (shared via time-slicing)
+
+# Renny renderer configuration
+# These values are typically overridden by my-renny-values.yml in production
+renderer:
+  a2f:
+    url: "http://localhost:52000"  # A2F service URL for internal speech processing
+    audioDelayMs: 240              # A2F_AUDIO_DELAY_TIME_MS
+    audioSampleRate: 16000         # A2F_AUDIO_SAMPLE_RATE
+
+  # Required for secret template
+  cp:
+    flowiseApiKey: ""              # Optional - Flowise integration
+
+  launchDarkly:
+    key: ""                        # Optional - feature flags
+
+  # ===== REQUIRED: DHOP Configuration =====
+  # These MUST be set in my-renny-values.yml for Renny to run
+  dhop:
+    apiKey: "placeholder-dhop-api-key"        # Override in my-renny-values.yml
+    tenantId: "placeholder-dhop-tenant-id"    # Override in my-renny-values.yml
+    url: wss://api.enterprise.uneeq.io:443/signalling-service
+
+  # ===== REQUIRED: Text-to-Speech Configuration =====
+  # At least one TTS provider is required
+  tts:
+    veritoneApiKey: ""                        # Optional
+    azureRegion: "eastus"                     # Azure region for Speech service
+    azureSpeechKey: "placeholder-azure-key"   # Override in my-renny-values.yml
+    elevenlabsApiKey: "placeholder-elevenlabs-key"  # Override in my-renny-values.yml
+    gcpCredentials: ""                        # Optional - GCP service account JSON
+
+  # ===== Unreal Engine Configuration =====
+  unrealEngine:
+    config: ""  # Base64 encoded UneeQ's Unreal Engine SDK licence file
+    # Command line arguments for Unreal Engine
+    args:
+      - "/Game/Live_Levels/BlankScene"
+      - "-RenderOffScreen"
+      - "-ResX=1920"
+      - "-ResY=1080"
+      - "-NoTextureStreaming"
+
+  # Health check configuration
+  health:
+    url: "http://0.0.0.0:8081/health"
+
+  # Sleep timer configuration
+  sleepTimer:
+    seconds: 5.0
+
+  # Reconnection settings
+  reconnect:
+    backoffRate: 1.5
+    intervalSeconds: 5.0
+
+# Logging level
+logLevel: "4"
+
+# Node selector for GPU nodes
+nodeSelector:
+  uneeq.io/node-type: renny
+
+# Pod affinity to spread across nodes
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - renny
+        topologyKey: kubernetes.io/hostname
+
+# Toleration for GPU node taints
+tolerations:
+- key: nvidia.com/gpu
+  operator: Equal
+  value: "true"
+  effect: NoSchedule
+
+# Azure-specific annotations
+podAnnotations:
+  cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+
+# Health checks (tuned for Renny startup times)
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Pod disruption budget for high availability
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2  # Ensure at least 2 pods remain available during disruptions
+
+# Horizontal Pod Autoscaler for dynamic scaling based on load
+autoscaling:
+  enabled: true
+  minReplicas: 2        # Minimum 2 pods (1 per node with 2-node minimum cluster)
+  maxReplicas: 20       # Maximum 20 pods (10 nodes × 2 pods per GPU)
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+# Additional environment variables for Renny
+env:
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "all"
+  - name: NEW_SPEECH_OVERRIDE
+    value: "1"
+  - name: A2F_ADDRESS
+    value: "http://localhost:52000"
+  - name: A2F_AUDIO_DELAY_TIME_MS
+    value: "240"
+  - name: A2F_AUDIO_SAMPLE_RATE
+    value: "16000"
+  - name: CLOUD_PROVIDER
+    value: "azure"
+  - name: AZURE_REGION
+    value: "eastus"
+
+# Update service configuration with Azure annotations
+service:
+  type: ClusterIP
+  ports:
+    health: 8081
+    webrtc: 8888
+    pixelstream: 8080
+  annotations:
+    service.beta.kubernetes.io/azure-load-balancer-internal: "true"
+
+# Azure-specific storage class for persistent volumes
+persistence:
+  enabled: false  # Renny typically doesn't require persistent storage
+  storageClass: managed-premium  # Azure Premium SSD if needed
+
+# Network policy for WebRTC/TURN traffic
+networkPolicy:
+  enabled: true
+  ingress:
+  - from:
+    - namespaceSelector: {}
+    ports:
+    - protocol: TCP
+      port: 8081
+    - protocol: UDP
+      port: 8888  # WebRTC
+    - protocol: UDP
+      port: 22000-23000  # WebRTC dynamic ports
+
+# Azure Monitor integration
+monitoring:
+  enabled: true
+  prometheusOperator: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Security context (Azure best practices)
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+  capabilities:
+    drop:
+    - ALL
+
+# Image pull secrets for private registries
+# Must match the secret created by deploy-azure.sh script
+imagePullSecrets:
+- name: docker-config
+
+# Logging configuration for Azure Monitor
+logging:
+  level: "info"
+  format: "json"  # JSON format for better Azure Log Analytics integration
