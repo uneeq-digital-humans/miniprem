@@ -1644,9 +1644,10 @@ deploy_renny_application() {
     echo "🔑 Setting up Docker registry credentials..."
     local docker_user docker_pass
 
-    # Try to extract Docker credentials - more robust parsing
-    docker_user=$(grep "docker_username" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
-    docker_pass=$(grep "docker_password" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
+    # Extract Docker credentials using portable awk (works on macOS and Linux)
+    # Handles: docker_username = "value"
+    docker_user=$(grep "^docker_username" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | awk -F'"' '{print $2}')
+    docker_pass=$(grep "^docker_password" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | awk -F'"' '{print $2}')
 
     if [ -z "$docker_user" ] || [ -z "$docker_pass" ]; then
         echo -e "${YELLOW}⚠️  Docker credentials not found in terraform.tfvars, using placeholder${NC}"
