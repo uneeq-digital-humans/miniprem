@@ -4,10 +4,10 @@ This guide explains how to deploy Renny on Azure Kubernetes Service (AKS) using 
 
 ## Overview
 
-The `renny-values-aks.yaml` file provides AKS-specific configuration overrides optimized for:
+The `renny-values-aks.yaml` file provides AKS-specific configuration optimized for:
 - **NC16as_T4_v3** GPU nodes (16 vCPUs, 110GB RAM, 1x NVIDIA T4 16GB)
-- 4 Renny pods per node (no GPU time-slicing needed)
-- 10 nodes = 40 total Renny instances
+- **GPU Time-Slicing**: 2 Renny pods per T4 GPU (sharing 16GB VRAM)
+- **Scaling**: 2-20 total Renny instances (1-10 nodes with 2 pods per GPU)
 
 ## Quick Start
 
@@ -15,18 +15,38 @@ The `renny-values-aks.yaml` file provides AKS-specific configuration overrides o
 
 Ensure you have:
 - AKS cluster with GPU node pool (NC16as_T4_v3)
-- GPU operator installed and running
+- GPU Operator installed and running
+- Azure Speech Service credentials (for TTS)
+- DHOP API credentials (for digital human rendering)
 - kubectl configured to access the cluster
 - Helm 3.x installed
 
-### 2. Deploy Renny
+### 2. Create my-renny-values.yml
 
-Deploy using both base and AKS-specific values:
+Create a **local** values file with your credentials (DO NOT commit to git):
 
 ```bash
-helm install renny ./renny-chart \
-  -f renny-values.yaml \
-  -f renny-values-aks.yaml \
+# Create local values file with your credentials
+cat > kubernetes/values/my-renny-values.yml << 'EOF'
+renderer:
+  dhop:
+    apiKey: "your-dhop-api-key-here"
+    tenantId: "your-dhop-tenant-id-here"
+
+  tts:
+    azureSpeechKey: "your-azure-speech-key-here"
+    elevenlabsApiKey: "your-elevenlabs-api-key-here"
+EOF
+```
+
+### 3. Deploy Renny
+
+Deploy using both base, AKS-specific, and your credentials file:
+
+```bash
+helm install renny ./renny \
+  -f values/renny-values-aks.yaml \
+  -f values/my-renny-values.yml \
   --namespace uneeq-renderer \
   --create-namespace
 ```
@@ -61,31 +81,43 @@ renny-3      1/1     Running   0          2m    aks-gpupool-12345678-vmss000000
 ### Resource Allocation
 
 Each Renny pod requests:
-- **CPU**: 3 cores (leaves headroom for system pods)
-- **Memory**: 6GB (leaves headroom for OS and GPU drivers)
-- **GPU**: 1 full T4 GPU (16GB VRAM, no time-slicing)
+- **CPU**: 4 cores (16 vCPUs ÷ 4 system overhead ÷ 2 pods per GPU)
+- **Memory**: 7GB (from 55GB available per node ÷ 2 pods with headroom)
+- **GPU**: 1 GPU slot (shared via time-slicing, actual T4 split between 2 pods)
 
 **Node capacity:**
-- NC16as_T4_v3: 16 vCPUs, 110GB RAM, 1x T4 GPU
-- 4 pods per node = 12 vCPUs used, 24GB RAM used
+- NC16as_T4_v3: 16 vCPUs, 110GB RAM, 1x T4 GPU (16GB VRAM)
+- 2 pods per node = 8 vCPUs used, 14GB RAM used, 1 T4 GPU (shared)
 
 ### GPU Time-Slicing Configuration
 
 ```yaml
 gpuTimeSlicing:
-  replicasPerGpu: 1  # No time-slicing (full GPU per pod)
+  enabled: true
+  replicasPerGpu: 2  # 2 Renny pods per T4 GPU
 ```
 
-**Why no time-slicing?**
-- T4 has 16GB VRAM (sufficient for single Renny instance)
-- No GPU sharing needed (unlike EKS with A10G where 2-4 pods share 1 GPU)
-- Simpler configuration and better performance isolation
+**Why time-slicing?**
+- T4 has 16GB VRAM - can safely handle 2 Renny instances (7-8GB each)
+- Cost optimization: Run 2 pods on 1 GPU instead of 1 pod per GPU
+- Better resource utilization for development/testing
+- Azure T4s are more cost-effective with time-slicing
+
+**Performance notes:**
+- No kernel module compilation overhead (GPU Operator handles driver installation)
+- Time-slicing is kernel-managed, not application-managed
+- Both pods share GPU memory and compute time fairly
 
 ### Scaling Configuration
 
 ```yaml
 deployment:
-  totalReplicas: 40  # 10 nodes × 4 pods
+  totalReplicas: 4  # Start with 4 (2 nodes × 2 pods), can scale to 20 (10 nodes × 2 pods)
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
 ```
 
 **To change replica count:**

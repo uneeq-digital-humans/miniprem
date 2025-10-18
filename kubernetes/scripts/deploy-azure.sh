@@ -59,11 +59,11 @@ else
     SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
 fi
 
+# Set TERRAFORM_DIR for Azure BEFORE sourcing (so deployment-functions.sh won't override)
+readonly TERRAFORM_DIR="$(cd "$SCRIPT_DIR/../terraform/aks" && pwd)"
+
 # Source shared deployment functions (includes color definitions and utility functions)
 source "$SCRIPT_DIR/deployment-functions.sh"
-
-# Override TERRAFORM_DIR for Azure
-readonly TERRAFORM_DIR="$PROJECT_DIR/kubernetes/terraform/aks"
 
 # Parse command line arguments
 DEBUG_MODE=false
@@ -180,7 +180,7 @@ get_azure_region() {
     fi
 
     local azure_region
-    azure_region=$(awk '/^azure_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null)
+    azure_region=$(echo "var.azure_region" | terraform console 2>/dev/null | tr -d '"')
 
     cd "$original_dir"
 
@@ -203,11 +203,11 @@ load_terraform_config_azure() {
         return 1
     fi
 
-    # Parse terraform.tfvars
-    PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
-    ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
-    AZURE_REGION=$(awk '/^azure_region[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null)
-    RESOURCE_GROUP_NAME=$(awk '/^resource_group_name[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny-kubernetes")
+    # Parse terraform.tfvars using Terraform's own parser (more robust than AWK)
+    PROJECT_NAME=$(echo "var.project_name" | terraform console 2>/dev/null | tr -d '"' || echo "renny")
+    ENVIRONMENT=$(echo "var.environment" | terraform console 2>/dev/null | tr -d '"' || echo "production")
+    AZURE_REGION=$(echo "var.azure_region" | terraform console 2>/dev/null | tr -d '"')
+    RESOURCE_GROUP_NAME=$(echo "var.resource_group_name" | terraform console 2>/dev/null | tr -d '"' || echo "renny-kubernetes")
 
     if [ -z "$AZURE_REGION" ] || [ "$AZURE_REGION" = "null" ]; then
         echo -e "${RED}Error: azure_region not set in terraform.tfvars${NC}" >&2
@@ -217,15 +217,15 @@ load_terraform_config_azure() {
 
     # Check if deployment_id is already set in terraform.tfvars
     local tfvars_deployment_id
-    tfvars_deployment_id=$(awk '/^deployment_id[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "")
+    tfvars_deployment_id=$(echo "var.deployment_id" | terraform console 2>/dev/null | tr -d '"' || echo "")
 
     if [ -n "$tfvars_deployment_id" ]; then
         DEPLOYMENT_ID="$tfvars_deployment_id"
     fi
 
     # GPU node configuration
-    RENNY_DESIRED_SIZE=$(awk '/^renny_desired_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "2")
-    RENNY_VM_SIZE=$(awk '/^renny_vm_size[[:space:]]*=/ {gsub(/"/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "Standard_NC16as_T4_v3")
+    RENNY_DESIRED_SIZE=$(echo "var.renny_desired_size" | terraform console 2>/dev/null | tr -d '"' || echo "2")
+    RENNY_VM_SIZE=$(echo "var.renny_vm_size" | terraform console 2>/dev/null | tr -d '"' || echo "Standard_NC16as_T4_v3")
 
     # Calculate total nodes
     GPU_NODES=$RENNY_DESIRED_SIZE
@@ -496,39 +496,113 @@ check_required_tools() {
     echo "🔍 Checking required tools..."
 
     local missing_tools=()
+    local has_missing=false
 
     # Check Azure CLI
     if ! command -v az &> /dev/null; then
-        missing_tools+=("azure-cli (az)")
+        missing_tools+=("az")
+        has_missing=true
     fi
 
     # Check kubectl
     if ! command -v kubectl &> /dev/null; then
         missing_tools+=("kubectl")
+        has_missing=true
+    fi
+
+    # Check kubelogin (required for Azure AD authentication)
+    if ! command -v kubelogin &> /dev/null; then
+        missing_tools+=("kubelogin")
+        has_missing=true
     fi
 
     # Check Terraform
     if ! command -v terraform &> /dev/null; then
         missing_tools+=("terraform")
+        has_missing=true
     fi
 
     # Check Helm
     if ! command -v helm &> /dev/null; then
         missing_tools+=("helm")
+        has_missing=true
     fi
 
     # Check jq
     if ! command -v jq &> /dev/null; then
         missing_tools+=("jq")
+        has_missing=true
     fi
 
-    if [ ${#missing_tools[@]} -gt 0 ]; then
+    if [ "$has_missing" = true ]; then
         echo -e "${RED}❌ Missing required tools:${NC}"
         for tool in "${missing_tools[@]}"; do
             echo "  - $tool"
         done
         echo ""
-        echo "Please install missing tools and try again."
+
+        # Provide installation instructions
+        echo -e "${CYAN}Installation Instructions:${NC}"
+        echo ""
+
+        for tool in "${missing_tools[@]}"; do
+            case "$tool" in
+                az)
+                    echo -e "${YELLOW}Azure CLI (az):${NC}"
+                    echo "  macOS:   brew install azure-cli"
+                    echo "  Linux:   curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash"
+                    echo "  Windows: Download from https://aka.ms/installazurecliwindows"
+                    echo ""
+                    ;;
+                kubectl)
+                    echo -e "${YELLOW}kubectl:${NC}"
+                    echo "  macOS:   brew install kubectl"
+                    echo "  Linux:   curl -LO \"https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl\""
+                    echo "           sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl"
+                    echo "  Windows: choco install kubernetes-cli"
+                    echo "           OR download from https://kubernetes.io/docs/tasks/tools/install-kubectl-windows/"
+                    echo ""
+                    ;;
+                kubelogin)
+                    echo -e "${YELLOW}kubelogin (Azure Kubernetes Authentication):${NC}"
+                    echo "  macOS:   brew install Azure/kubelogin/kubelogin"
+                    echo "  Linux:   # Download latest release"
+                    echo "           curl -L https://github.com/Azure/kubelogin/releases/latest/download/kubelogin-linux-amd64.zip -o kubelogin.zip"
+                    echo "           unzip kubelogin.zip"
+                    echo "           sudo mv bin/linux_amd64/kubelogin /usr/local/bin/"
+                    echo "           sudo chmod +x /usr/local/bin/kubelogin"
+                    echo "  Windows: choco install kubelogin"
+                    echo "           OR download from https://github.com/Azure/kubelogin/releases"
+                    echo ""
+                    ;;
+                terraform)
+                    echo -e "${YELLOW}Terraform:${NC}"
+                    echo "  macOS:   brew install terraform"
+                    echo "  Linux:   wget -O- https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg"
+                    echo "           echo \"deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com \$(lsb_release -cs) main\" | sudo tee /etc/apt/sources.list.d/hashicorp.list"
+                    echo "           sudo apt update && sudo apt install terraform"
+                    echo "  Windows: choco install terraform"
+                    echo ""
+                    ;;
+                helm)
+                    echo -e "${YELLOW}Helm:${NC}"
+                    echo "  macOS:   brew install helm"
+                    echo "  Linux:   curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
+                    echo "  Windows: choco install kubernetes-helm"
+                    echo ""
+                    ;;
+                jq)
+                    echo -e "${YELLOW}jq (JSON processor):${NC}"
+                    echo "  macOS:   brew install jq"
+                    echo "  Linux:   sudo apt-get install jq  (Debian/Ubuntu)"
+                    echo "           sudo yum install jq      (RHEL/CentOS)"
+                    echo "  Windows: choco install jq"
+                    echo ""
+                    ;;
+            esac
+        done
+
+        echo -e "${RED}Please install all missing tools and try again.${NC}"
         exit 1
     fi
 
@@ -605,19 +679,282 @@ check_existing_cluster_azure() {
     return 0
 }
 
-# Wait for GPU operator to be ready
+# =============================================================================
+# GPU Operator Adaptive Monitoring Functions
+# =============================================================================
+
+# Global variables for GPU operator adaptive monitoring (bash 3.2 compatible)
+GPU_PROGRESS_LAST=""
+GPU_PROGRESS_LAST_CHANGE_TIME=0
+GPU_MONITORING_MODE="normal"
+
+# Display throttling controls for GPU monitoring
+LAST_GPU_DISPLAY_TIME=0
+LAST_GPU_FULL_STATUS_TIME=0
+DISPLAY_INTERVAL_GPU_NORMAL=30      # Update progress every 30 seconds
+DISPLAY_INTERVAL_GPU_DIAGNOSTIC=120 # Update in diagnostic mode every 2 minutes
+DISPLAY_INTERVAL_GPU_FULL_STATUS=120 # Show full status every 2 minutes
+GPU_INVESTIGATION_PHASE="monitoring" # monitoring|investigating|monitoring_stalled|escalated
+GPU_DIAGNOSTIC_RUN_ONCE=false       # Track if diagnostic output shown
+
+# Display throttling helper functions (bash 3.2 compatible)
+should_update_gpu_display() {
+    local interval=$1
+    local current_time=$(date +%s)
+    local time_since_last=$((current_time - LAST_GPU_DISPLAY_TIME))
+
+    if [[ $time_since_last -ge $interval ]]; then
+        LAST_GPU_DISPLAY_TIME=$current_time
+        return 0  # Should display
+    fi
+    return 1  # Skip display
+}
+
+should_show_gpu_full_status() {
+    local current_time=$(date +%s)
+    local time_since_last=$((current_time - LAST_GPU_FULL_STATUS_TIME))
+
+    if [[ $time_since_last -ge $DISPLAY_INTERVAL_GPU_FULL_STATUS ]]; then
+        LAST_GPU_FULL_STATUS_TIME=$current_time
+        return 0
+    fi
+    return 1
+}
+
+# Check GPU pod health in background (non-blocking)
+check_gpu_pod_health_background() {
+    # Get failed GPU operator pods
+    local failed_pods=$(kubectl get pods -n gpu-operator --field-selector=status.phase!=Running,status.phase!=Succeeded --no-headers 2>/dev/null)
+
+    # Check for critical failures
+    local critical_crashes=$(echo "$failed_pods" | grep -E "CrashLoopBackOff|ImagePullBackOff|Error|ErrImagePull" | wc -l | tr -d ' \n')
+
+    if [ "$critical_crashes" -gt 0 ]; then
+        # Store for diagnostic display
+        echo "$critical_crashes" > /tmp/gpu_critical_pods.count 2>/dev/null || true
+        echo "$failed_pods" > /tmp/gpu_failed_pods.txt 2>/dev/null || true
+    fi
+}
+
+# Detect if GPU operator progress has stalled (bash 3.2 compatible)
+detect_gpu_stall() {
+    local current_progress="$1"
+    local current_time
+    current_time=$(date +%s)
+
+    # Initialize on first run
+    if [[ -z "$GPU_PROGRESS_LAST" ]]; then
+        GPU_PROGRESS_LAST="$current_progress"
+        GPU_PROGRESS_LAST_CHANGE_TIME=$current_time
+        return 1  # Not stalled
+    fi
+
+    # Check if progress has changed
+    if [[ "$current_progress" != "$GPU_PROGRESS_LAST" ]]; then
+        GPU_PROGRESS_LAST="$current_progress"
+        GPU_PROGRESS_LAST_CHANGE_TIME=$current_time
+        return 1  # Making progress
+    fi
+
+    # Same progress - check time elapsed
+    local time_diff=$((current_time - GPU_PROGRESS_LAST_CHANGE_TIME))
+    if [[ $time_diff -ge 300 ]]; then
+        return 0  # Stalled (5+ minutes)
+    fi
+
+    return 1  # Not stalled
+}
+
+# Display normal GPU operator progress with throttling (bash 3.2 compatible)
+display_normal_gpu_progress() {
+    local driver_pods="$1"
+    local gpu_nodes="$2"
+    local elapsed="$3"
+    local max_timeout="$4"
+
+    # Only update if throttle interval has passed
+    if ! should_update_gpu_display "$DISPLAY_INTERVAL_GPU_NORMAL"; then
+        return 0
+    fi
+
+    local elapsed_min=$((elapsed / 60))
+    local elapsed_sec=$((elapsed % 60))
+    local remaining_time=$((max_timeout - elapsed))
+    local remaining_min=$((remaining_time / 60))
+
+    # Calculate progress percentage
+    local progress=0
+    if [ "$gpu_nodes" -gt "0" ]; then
+        progress=$((driver_pods * 100 / gpu_nodes))
+        if [ $progress -gt 100 ]; then progress=100; fi
+    fi
+
+    # Build progress bar
+    local progress_bar=$(build_progress_bar "$progress")
+
+    # Show full status every 2 minutes, otherwise just progress bar
+    if should_show_gpu_full_status; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📊 GPU Operator Status ($(date '+%H:%M:%S'))"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        local device_plugin_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-device-plugin-daemonset --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+        local toolkit_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-container-toolkit-daemonset --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+        echo "  Ready Nodes: $driver_pods/$gpu_nodes"
+        echo "  Device Plugin: $device_plugin_pods pods"
+        echo "  Toolkit: $toolkit_pods pods"
+        echo "  Progress: [$progress_bar] $progress%"
+        echo "  Elapsed: ${elapsed_min}m${elapsed_sec}s | Est. remaining: ~${remaining_min}m"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    else
+        # Just update progress bar in place
+        printf "\r⏳ GPU Installation: [$progress_bar] $progress%% ($driver_pods/$gpu_nodes nodes) | ${elapsed_min}m${elapsed_sec}s elapsed    "
+    fi
+}
+
+# Display GPU operator diagnostic information when stalled (with throttling)
+display_gpu_diagnostic_info() {
+    local driver_pods="$1"
+    local gpu_nodes="$2"
+    local elapsed="$3"
+    local stall_duration="$4"
+
+    local elapsed_min=$((elapsed / 60))
+    local elapsed_sec=$((elapsed % 60))
+    local stall_min=$((stall_duration / 60))
+    local stall_sec=$((stall_duration % 60))
+
+    # Only show full diagnostic output if throttle interval has passed
+    if should_update_gpu_display "$DISPLAY_INTERVAL_GPU_DIAGNOSTIC"; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🔍 GPU Diagnostic Mode ($(date '+%H:%M:%S'))"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  ℹ️  Installation progress: $driver_pods/$gpu_nodes GPU nodes ready"
+        echo "  ⏳ Stalled for: ${stall_min}m${stall_sec}s (elapsed: ${elapsed_min}m${elapsed_sec}s)"
+        echo ""
+
+        # Show component status
+        local device_plugin_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-device-plugin-daemonset --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+        local toolkit_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-container-toolkit-daemonset --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+        local operator_pods=$(kubectl get pods -n gpu-operator -l app=gpu-operator --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+
+        echo "  📊 Component Status:"
+        echo "     • GPU Operator: $operator_pods pods running"
+        echo "     • Device Plugin: $device_plugin_pods pods running"
+        echo "     • Container Toolkit: $toolkit_pods pods running"
+
+        # Show any pod failures
+        if [ -f /tmp/gpu_critical_pods.count ]; then
+            local critical_count=$(cat /tmp/gpu_critical_pods.count)
+            if [ "$critical_count" -gt 0 ]; then
+                echo ""
+                echo "  ⚠️  Failed GPU pods detected: $critical_count"
+                if [ -f /tmp/gpu_failed_pods.txt ]; then
+                    echo "  📋 Details:"
+                    head -3 /tmp/gpu_failed_pods.txt | sed 's/^/     /' 2>/dev/null || true
+                fi
+            fi
+        fi
+
+        echo ""
+        echo "  💡 GPU driver installation typically takes 10-15 minutes per node"
+        echo "     Background: NVIDIA drivers are being downloaded, compiled, and loaded"
+        echo "     Status: Deep diagnostics ran ${stall_min}m ago (see output above)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    else
+        # Just show minimal status line between full outputs
+        printf "\r🔍 Diagnostic Mode: $driver_pods/$gpu_nodes ready | Stalled ${stall_min}m${stall_sec}s | ${elapsed_min}m${elapsed_sec}s elapsed    "
+    fi
+}
+
+# Deep GPU diagnostics with actual log analysis (bash 3.2 compatible)
+run_gpu_deep_diagnostics() {
+    echo ""
+    echo "🔍 Running deep GPU operator diagnostics..."
+
+    # Get driver pod name
+    local driver_pod=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+
+    if [[ -z "$driver_pod" ]]; then
+        echo "  ⚠️  No GPU driver pods found"
+        echo "     💡 GPU Operator may still be initializing"
+        echo ""
+        return 1
+    fi
+
+    echo "  📊 Analyzing logs from: $driver_pod"
+
+    # Fetch recent logs (last 100 lines)
+    local logs=$(kubectl logs "$driver_pod" -n gpu-operator --tail=100 2>/dev/null)
+
+    # Pattern matching for specific issues
+    local issue_found=false
+
+    # Check for driver download failures
+    if echo "$logs" | grep -qi "failed to download\|download.*error\|curl.*failed"; then
+        echo "  ❌ Issue: Driver download failure detected"
+        echo "     💡 Solution: Check internet connectivity and NVIDIA driver repository access"
+        echo "     🔧 Command: kubectl logs $driver_pod -n gpu-operator | grep -i download"
+        issue_found=true
+    fi
+
+    # Check for kernel compilation failures
+    if echo "$logs" | grep -qi "kernel.*compilation.*failed\|make.*error\|cc1.*error"; then
+        echo "  ❌ Issue: Kernel module compilation failure"
+        echo "     💡 Solution: Kernel headers may be missing or incompatible"
+        echo "     🔧 Command: kubectl exec $driver_pod -n gpu-operator -- uname -r"
+        issue_found=true
+    fi
+
+    # Check for GPU hardware detection issues
+    if echo "$logs" | grep -qi "no nvidia gpu\|no devices found\|lspci.*empty\|no gpu found"; then
+        echo "  ❌ Issue: No NVIDIA GPUs detected on node"
+        echo "     💡 Solution: Verify GPU node pool is using correct VM size (Standard_NC16as_T4_v3)"
+        echo "     🔧 Command: kubectl describe node | grep -A 5 'instance-type'"
+        issue_found=true
+    fi
+
+    # Check for container runtime issues
+    if echo "$logs" | grep -qi "container runtime.*error\|nvidia-container-runtime.*failed\|containerd.*error"; then
+        echo "  ❌ Issue: Container runtime configuration problem"
+        echo "     💡 Solution: NVIDIA Container Toolkit may not be configured correctly"
+        echo "     🔧 Command: kubectl logs $driver_pod -n gpu-operator | grep runtime"
+        issue_found=true
+    fi
+
+    if [[ "$issue_found" = false ]]; then
+        echo "  ℹ️  Driver installation in progress - no errors detected"
+        echo "     ⏳ NVIDIA driver installation typically takes 10-15 minutes per node"
+        echo "     💡 Drivers are being downloaded, compiled, and loaded in the background"
+        echo "     📝 Current phase: Downloading, compiling, and loading kernel modules"
+    fi
+
+    echo ""
+}
+
+# Wait for GPU operator to be ready with adaptive monitoring
 wait_for_gpu_operator_ready_azure() {
     local max_timeout="${1:-2400}"
     local start_time=$(date +%s)
-    local last_status=""
+    local last_check_time=0
+    local check_interval=20
 
-    echo "⏰ Maximum wait time: $((max_timeout/60)) minutes"
+    echo "⏰ Waiting for GPU operator to be ready..."
+    echo "   Maximum wait time: $((max_timeout/60)) minutes"
+    echo ""
+
+    # Clean up old temp files
+    rm -f /tmp/gpu_critical_pods.count /tmp/gpu_failed_pods.txt 2>/dev/null || true
 
     # Wait for GPU nodes to be labeled
     local gpu_nodes=0
     local attempts=0
+    echo "🔍 Detecting GPU nodes..."
     while [ $gpu_nodes -eq 0 ] && [ $attempts -lt 60 ]; do
         gpu_nodes=$(kubectl get nodes -l nvidia.com/gpu.present=true --no-headers 2>/dev/null | wc -l || echo "0")
+        gpu_nodes=$(echo "$gpu_nodes" | tr -d ' \n' | grep -o '[0-9]*' || echo "0")
+
         if [ $gpu_nodes -eq 0 ]; then
             debug_log "Waiting for GPU nodes to be detected..."
             sleep 10
@@ -628,64 +965,403 @@ wait_for_gpu_operator_ready_azure() {
     if [ $gpu_nodes -eq 0 ]; then
         echo -e "${YELLOW}⚠️  No GPU nodes detected yet, using expected count${NC}"
         gpu_nodes=$GPU_NODES
-        echo "Using calculated GPU nodes: $gpu_nodes"
+        echo "Using expected GPU nodes: $gpu_nodes"
+    else
+        echo -e "${GREEN}✅ Detected $gpu_nodes GPU nodes${NC}"
     fi
-
-    echo "Targeting $gpu_nodes GPU nodes for driver installation"
+    echo ""
 
     while true; do
         local current_time=$(date +%s)
         local elapsed=$((current_time - start_time))
 
+        # Check timeout
         if [ $elapsed -ge $max_timeout ]; then
-            echo -e "${RED}❌ Timeout waiting for GPU operator after $((max_timeout/60)) minutes${NC}"
+            echo -e "\n${RED}❌ Timeout waiting for GPU operator after $((max_timeout/60)) minutes${NC}"
             kubectl get pods -n gpu-operator -o wide
             return 1
         fi
 
+        # Only check every N seconds
+        if [ $((current_time - last_check_time)) -lt $check_interval ]; then
+            sleep 2
+            continue
+        fi
+        last_check_time=$current_time
+
+        # Background GPU pod health check (non-blocking)
+        check_gpu_pod_health_background &
+
+        # Check if Azure pre-installed drivers (driver daemonset desired=0)
+        local driver_daemonset_desired=$(kubectl get daemonset -n gpu-operator nvidia-driver-daemonset -o jsonpath='{.status.desiredNumberScheduled}' 2>/dev/null || echo "-1")
+
         # Get GPU operator status
         local driver_pods=$(kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.phase}{" "}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null | awk '$2=="Running" && $3=="true"' | wc -l | tr -d ' \n' || echo "0")
-        local total_pods=$(kubectl get pods -n gpu-operator --no-headers 2>/dev/null | wc -l | tr -d ' \n' || echo "0")
+        driver_pods=$(echo "$driver_pods" | tr -d ' \n' | grep -o '[0-9]*' || echo "0")
 
-        local elapsed_min=$((elapsed / 60))
-        local elapsed_sec=$((elapsed % 60))
-        local remaining_time=$((max_timeout - elapsed))
-        local remaining_min=$((remaining_time / 60))
+        # Azure pre-installed driver scenario: check GPU capacity directly
+        if [ "$driver_daemonset_desired" = "0" ]; then
+            local gpu_capacity=$(kubectl get nodes -o json 2>/dev/null | jq -r '.items[] | select(.metadata.labels."nvidia.com/gpu" == "true") | .status.capacity."nvidia.com/gpu" // "0"' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
 
-        # Progress bar
-        if [ "$DEBUG_MODE" != true ]; then
-            local progress=0
-            if [ "$gpu_nodes" -gt "0" ]; then
-                progress=$((driver_pods * 100 / gpu_nodes))
-                if [ $progress -gt 100 ]; then progress=100; fi
+            if [ "$gpu_capacity" -ge "$gpu_nodes" ] && [ "$gpu_nodes" -gt "0" ]; then
+                # Get actual driver version from node labels
+                local driver_version=$(kubectl get nodes -l nvidia.com/gpu=true -o jsonpath='{.items[0].metadata.labels.nvidia\.com/cuda\.driver-version\.full}' 2>/dev/null || echo "unknown")
+
+                if [ "$DEBUG_MODE" != true ]; then
+                    echo ""
+                fi
+                echo -e "${GREEN}✅ Azure AKS detected with pre-installed NVIDIA drivers (v$driver_version)${NC}"
+                echo -e "${GREEN}✅ $gpu_capacity GPUs available across $gpu_nodes nodes${NC}"
+                echo -e "${CYAN}ℹ️  Note: To use custom driver 580+, see: kubernetes/terraform/aks/node-pools.tf${NC}"
+
+                # Clean up temp files
+                rm -f /tmp/gpu_critical_pods.count /tmp/gpu_failed_pods.txt 2>/dev/null || true
+                return 0
+            fi
+            # Set driver_pods to gpu_capacity for progress display
+            driver_pods=$gpu_capacity
+        fi
+
+        # Detect stall and switch monitoring mode
+        if detect_gpu_stall "$driver_pods"; then
+            if [ "$GPU_MONITORING_MODE" = "normal" ]; then
+                GPU_MONITORING_MODE="diagnostic"
+                check_interval=10  # Check more frequently in diagnostic mode
+                GPU_DIAGNOSTIC_RUN_ONCE=false  # Reset for diagnostic mode
+                echo -e "\n${YELLOW}⚠️  GPU driver installation stalled for 5 minutes - enabling diagnostic mode${NC}"
             fi
 
-            local progress_bar=""
-            local filled=$((progress / 5))
-            for ((i=1; i<=20; i++)); do
-                if [ $i -le $filled ]; then
-                    progress_bar+="█"
-                else
-                    progress_bar+="░"
-                fi
-            done
-            echo -ne "\r🎮 Installing GPU drivers... [$progress_bar] $driver_pods/$gpu_nodes ready (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)"
+            # Run deep diagnostics ONCE per stall period
+            if [[ "$GPU_DIAGNOSTIC_RUN_ONCE" = false ]]; then
+                run_gpu_deep_diagnostics
+                GPU_DIAGNOSTIC_RUN_ONCE=true
+            fi
+        else
+            GPU_MONITORING_MODE="normal"
+        fi
+
+        # Display based on monitoring mode
+        if [ "$DEBUG_MODE" != true ]; then
+            case "$GPU_MONITORING_MODE" in
+                normal)
+                    display_normal_gpu_progress "$driver_pods" "$gpu_nodes" "$elapsed" "$max_timeout"
+                    ;;
+                diagnostic)
+                    local stall_duration=$((current_time - GPU_PROGRESS_LAST_CHANGE_TIME))
+                    display_gpu_diagnostic_info "$driver_pods" "$gpu_nodes" "$elapsed" "$stall_duration"
+                    ;;
+            esac
+        elif [ "$DEBUG_MODE" = true ]; then
+            echo "   GPU Driver Pods: $driver_pods/$gpu_nodes ready"
         fi
 
         # Success condition
         if [ "$driver_pods" -ge "$gpu_nodes" ] && [ "$gpu_nodes" -gt "0" ]; then
-            local gpu_capacity=$(kubectl get nodes -o json | jq -r '.items[] | select(.metadata.labels."nvidia.com/gpu" == "true") | .status.capacity."nvidia.com/gpu" // "0"' | awk '{sum += $1} END {print sum+0}')
+            local gpu_capacity=$(kubectl get nodes -o json 2>/dev/null | jq -r '.items[] | select(.metadata.labels."nvidia.com/gpu" == "true") | .status.capacity."nvidia.com/gpu" // "0"' 2>/dev/null | awk '{sum += $1} END {print sum+0}')
 
             if [ "$gpu_capacity" -gt "0" ]; then
                 if [ "$DEBUG_MODE" != true ]; then
                     echo ""
                 fi
-                echo -e "${GREEN}✓ GPU drivers installed on all $gpu_nodes GPU nodes ($gpu_capacity total GPUs available)${NC}"
+                echo -e "${GREEN}✅ GPU drivers installed on all $gpu_nodes GPU nodes ($gpu_capacity total GPUs available)${NC}"
+
+                # Clean up temp files
+                rm -f /tmp/gpu_critical_pods.count /tmp/gpu_failed_pods.txt 2>/dev/null || true
                 return 0
             fi
         fi
 
-        sleep 20
+        sleep 2
+    done
+}
+
+# =============================================================================
+# Adaptive Monitoring Functions (Cluster Provisioning)
+# =============================================================================
+
+# Global variables for adaptive monitoring (bash 3.2 compatible)
+PROGRESS_LAST=""
+PROGRESS_LAST_CHANGE_TIME=0
+MONITORING_MODE="normal"
+
+# Check pod health in background (non-blocking)
+check_pod_health_background() {
+    # Get failed pods across all namespaces
+    local failed_pods=$(kubectl get pods -A --field-selector=status.phase!=Running,status.phase!=Succeeded --no-headers 2>/dev/null)
+
+    # Check for critical failures (CrashLoopBackOff, ImagePullBackOff)
+    local critical_crashes=$(echo "$failed_pods" | grep -E "CrashLoopBackOff|ImagePullBackOff|Error|ErrImagePull" | wc -l | tr -d ' \n')
+
+    if [ "$critical_crashes" -gt 0 ]; then
+        # Store for diagnostic display
+        echo "$critical_crashes" > /tmp/k8s_critical_pods.count 2>/dev/null || true
+        echo "$failed_pods" > /tmp/k8s_failed_pods.txt 2>/dev/null || true
+    fi
+}
+
+# Detect if progress has stalled (bash 3.2 compatible)
+detect_stall() {
+    local current_progress="$1"
+    local current_time
+    current_time=$(date +%s)
+
+    # Initialize on first run
+    if [[ -z "$PROGRESS_LAST" ]]; then
+        PROGRESS_LAST="$current_progress"
+        PROGRESS_LAST_CHANGE_TIME=$current_time
+        return 1  # Not stalled
+    fi
+
+    # Check if progress has changed
+    if [[ "$current_progress" != "$PROGRESS_LAST" ]]; then
+        PROGRESS_LAST="$current_progress"
+        PROGRESS_LAST_CHANGE_TIME=$current_time
+        return 1  # Making progress
+    fi
+
+    # Same progress - check time elapsed
+    local time_diff=$((current_time - PROGRESS_LAST_CHANGE_TIME))
+    if [[ $time_diff -ge 300 ]]; then
+        return 0  # Stalled (5+ minutes)
+    fi
+
+    return 1  # Not stalled
+}
+
+# Build progress bar string
+build_progress_bar() {
+    local progress="$1"
+    local progress_bar=""
+    local filled=$((progress / 5))
+
+    for ((i=1; i<=20; i++)); do
+        if [ $i -le $filled ]; then
+            progress_bar+="█"
+        else
+            progress_bar+="░"
+        fi
+    done
+
+    echo "$progress_bar"
+}
+
+# Display normal progress with periodic status updates
+display_normal_progress() {
+    local progress="$1"
+    local elapsed="$2"
+    local max_timeout="$3"
+    local cluster_state="$4"
+    local system_state="$5"
+    local gpu_state="$6"
+    local ready_nodes="$7"
+
+    local elapsed_min=$((elapsed / 60))
+    local elapsed_sec=$((elapsed % 60))
+    local remaining_time=$((max_timeout - elapsed))
+    local remaining_min=$((remaining_time / 60))
+
+    # Build progress bar
+    local progress_bar=$(build_progress_bar "$progress")
+
+    # Main progress line (always shown)
+    echo -ne "\r⏰ Provisioning cluster... [$progress_bar] $progress% (${elapsed_min}m${elapsed_sec}s, ~${remaining_min}m left)    "
+
+    # Show detailed status every 60 seconds
+    if [ $((elapsed % 60)) -lt 15 ]; then
+        echo ""
+        echo "  📊 Status: Cluster=$cluster_state | System=$system_state | GPU=$gpu_state | Nodes=$ready_nodes"
+    fi
+}
+
+# Display diagnostic information when stalled
+display_diagnostic_info() {
+    local progress="$1"
+    local elapsed="$2"
+    local stall_duration="$3"
+    local cluster_state="$4"
+    local system_state="$5"
+    local gpu_state="$6"
+    local ready_nodes="$7"
+
+    local elapsed_min=$((elapsed / 60))
+    local elapsed_sec=$((elapsed % 60))
+    local stall_min=$((stall_duration / 60))
+    local stall_sec=$((stall_duration % 60))
+
+    echo -ne "\r🔍 Diagnostic mode: $progress% (${elapsed_min}m${elapsed_sec}s) - Stalled ${stall_min}m${stall_sec}s    "
+    echo ""
+    echo "  🔴 Cluster: $cluster_state"
+    echo "  🔴 System Pool: $system_state"
+    echo "  🔴 GPU Pool: $gpu_state"
+    echo "  🔴 Kubernetes Nodes: $ready_nodes ready"
+
+    # Show any pod failures
+    if [ -f /tmp/k8s_critical_pods.count ]; then
+        local critical_count=$(cat /tmp/k8s_critical_pods.count)
+        if [ "$critical_count" -gt 0 ]; then
+            echo "  ⚠️  Failed pods detected: $critical_count"
+            if [ -f /tmp/k8s_failed_pods.txt ]; then
+                echo "  📋 Top failed pods:"
+                head -3 /tmp/k8s_failed_pods.txt | sed 's/^/    /' 2>/dev/null || true
+            fi
+        fi
+    fi
+}
+
+# Run smart diagnostics to identify common issues
+run_smart_diagnostics() {
+    echo ""
+    echo "🔍 Running smart diagnostics..."
+
+    # Get recent events
+    local events=$(kubectl get events -A --sort-by='.lastTimestamp' 2>/dev/null | tail -20)
+
+    # Pattern matching for common failures
+    local found_issues=false
+
+    # Check for image pull issues
+    if echo "$events" | grep -q "ImagePullBackOff\|ErrImagePull"; then
+        echo "  💡 Issue: Cannot pull container images"
+        echo "     Suggestion: Check Docker registry credentials or network connectivity"
+        found_issues=true
+    fi
+
+    # Check for scheduling issues
+    if echo "$events" | grep -q "FailedScheduling"; then
+        echo "  💡 Issue: Pods cannot be scheduled"
+        echo "     Suggestion: Check node resources, taints, and pod requirements"
+        found_issues=true
+    fi
+
+    # Check for network issues
+    if echo "$events" | grep -q "NetworkNotReady\|CNI"; then
+        echo "  💡 Issue: Network configuration problems"
+        echo "     Suggestion: Check Azure CNI configuration and subnet capacity"
+        found_issues=true
+    fi
+
+    # Check for volume mount issues
+    if echo "$events" | grep -q "FailedMount\|VolumeMount"; then
+        echo "  💡 Issue: Volume mounting failures"
+        echo "     Suggestion: Check persistent volume claims and storage classes"
+        found_issues=true
+    fi
+
+    if [ "$found_issues" = false ]; then
+        echo "  ℹ️  No obvious issues detected - cluster may just need more time"
+        echo "     Tip: Use --debug flag for more detailed output"
+    fi
+
+    echo ""
+}
+
+# Wait for AKS cluster to be fully ready with adaptive monitoring
+wait_for_cluster_ready_azure() {
+    local cluster_name="$1"
+    local resource_group="$2"
+    local max_timeout="${3:-1800}"  # 30 min default
+
+    echo "⏰ Waiting for cluster to be fully provisioned..."
+    echo "   Maximum wait time: $((max_timeout/60)) minutes"
+    echo ""
+
+    local start_time=$(date +%s)
+    local last_check_time=0
+    local check_interval=15
+
+    # Clean up old temp files
+    rm -f /tmp/k8s_critical_pods.count /tmp/k8s_failed_pods.txt 2>/dev/null || true
+
+    while true; do
+        local current_time=$(date +%s)
+        local elapsed=$((current_time - start_time))
+
+        # Check timeout
+        if [ $elapsed -ge $max_timeout ]; then
+            echo -e "\n${RED}❌ Timeout waiting for cluster after $((max_timeout/60)) minutes${NC}"
+            return 1
+        fi
+
+        # Only check every N seconds
+        if [ $((current_time - last_check_time)) -lt $check_interval ]; then
+            sleep 2
+            continue
+        fi
+        last_check_time=$current_time
+
+        # Background pod health check (non-blocking)
+        check_pod_health_background &
+
+        # Get cluster provisioning state
+        local cluster_state=$(az aks show --name "$cluster_name" --resource-group "$resource_group" --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+
+        # Get node pool states
+        local system_pool_state=$(az aks nodepool show --cluster-name "$cluster_name" --resource-group "$resource_group" --name "system" --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+        local gpu_pool_state=$(az aks nodepool show --cluster-name "$cluster_name" --resource-group "$resource_group" --name "rennygpu" --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+
+        # Get ready nodes count
+        local ready_nodes=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" 2>/dev/null || echo "0")
+        ready_nodes=$(echo "$ready_nodes" | tr -d ' \n' | grep -o '[0-9]*' || echo "0")
+
+        # Calculate progress percentage
+        local progress=0
+        if [ "$cluster_state" = "Succeeded" ]; then progress=$((progress + 33)); fi
+        if [ "$system_pool_state" = "Succeeded" ]; then progress=$((progress + 33)); fi
+        if [ "$gpu_pool_state" = "Succeeded" ]; then progress=$((progress + 34)); fi
+
+        # Detect stall and switch monitoring mode
+        if detect_stall "$progress"; then
+            if [ "$MONITORING_MODE" = "normal" ]; then
+                MONITORING_MODE="diagnostic"
+                check_interval=10  # Check more frequently in diagnostic mode
+                echo -e "\n${YELLOW}⚠️  Progress stalled for 5 minutes - enabling diagnostic mode${NC}"
+                run_smart_diagnostics
+            fi
+        else
+            MONITORING_MODE="normal"
+        fi
+
+        # Display based on monitoring mode
+        if [ "$DEBUG_MODE" != true ]; then
+            case "$MONITORING_MODE" in
+                normal)
+                    display_normal_progress "$progress" "$elapsed" "$max_timeout" "$cluster_state" "$system_pool_state" "$gpu_pool_state" "$ready_nodes"
+                    ;;
+                diagnostic)
+                    local stall_duration=$((current_time - PROGRESS_LAST_CHANGE_TIME))
+                    display_diagnostic_info "$progress" "$elapsed" "$stall_duration" "$cluster_state" "$system_pool_state" "$gpu_pool_state" "$ready_nodes"
+                    ;;
+            esac
+        elif [ "$DEBUG_MODE" = true ]; then
+            echo "   Cluster: $cluster_state | System Pool: $system_pool_state | GPU Pool: $gpu_pool_state | Nodes: $ready_nodes"
+        fi
+
+        # Success condition: all components ready
+        if [ "$cluster_state" = "Succeeded" ] && [ "$system_pool_state" = "Succeeded" ] && [ "$gpu_pool_state" = "Succeeded" ]; then
+            # Wait for nodes to register with Kubernetes (if not already)
+            if [ "$ready_nodes" -eq 0 ]; then
+                local attempts=0
+                while [ "$ready_nodes" -eq 0 ] && [ "$attempts" -lt 30 ]; do
+                    ready_nodes=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" 2>/dev/null || echo "0")
+                    ready_nodes=$(echo "$ready_nodes" | tr -d ' \n' | grep -o '[0-9]*' || echo "0")
+                    if [ "$ready_nodes" -eq 0 ]; then
+                        sleep 10
+                        ((attempts++))
+                    fi
+                done
+            fi
+
+            if [ "$DEBUG_MODE" != true ]; then
+                echo ""
+            fi
+            echo -e "${GREEN}✅ Cluster fully provisioned with $ready_nodes ready nodes${NC}"
+
+            # Clean up temp files
+            rm -f /tmp/k8s_critical_pods.count /tmp/k8s_failed_pods.txt 2>/dev/null || true
+            return 0
+        fi
+
+        sleep 2
     done
 }
 
@@ -710,7 +1386,7 @@ deploy_infrastructure() {
     # Plan
     echo ""
     echo "📋 Planning infrastructure changes..."
-    if ! terraform plan -out=tfplan 2>&1; then
+    if ! terraform plan -var="deployment_id=$DEPLOYMENT_ID" -out=tfplan 2>&1; then
         echo -e "${RED}❌ Terraform plan failed${NC}"
         return 1
     fi
@@ -734,32 +1410,99 @@ deploy_infrastructure() {
     local rg=$(terraform output -raw resource_group_name 2>/dev/null || echo "$RESOURCE_GROUP_NAME")
     local cluster=$(terraform output -raw cluster_name 2>/dev/null || echo "$CLUSTER_NAME")
 
-    if ! az aks get-credentials --resource-group "$rg" --name "$cluster" --overwrite-existing 2>&1; then
+    if ! az aks get-credentials --resource-group "$rg" --name "$cluster" --admin --overwrite-existing 2>&1; then
         echo -e "${RED}❌ Failed to get AKS credentials${NC}"
         return 1
     fi
 
-    echo -e "${GREEN}✅ Kubectl configured for cluster: $cluster${NC}"
+    # Fix kubeconfig permissions (security best practice)
+    chmod 600 ~/.kube/config 2>/dev/null || true
+    echo -e "${GREEN}✅ Kubectl configured for cluster: $cluster (admin credentials)${NC}"
+    echo -e "${GREEN}✅ Kubeconfig permissions secured (600)${NC}"
 
-    # Wait for cluster to be ready
+    # Wait for cluster to be ready with progress bar (system node pool only)
     echo ""
-    echo "⏳ Waiting for cluster to be ready..."
-    local ready_nodes=0
-    local attempts=0
-    while [ $ready_nodes -eq 0 ] && [ $attempts -lt 30 ]; do
-        ready_nodes=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || echo "0")
-        if [ $ready_nodes -eq 0 ]; then
-            sleep 10
-            ((attempts++))
-        fi
-    done
+    echo "⏳ Waiting for system node pool to be ready..."
+    sleep 30  # Give system pool time to initialize
 
-    if [ $ready_nodes -eq 0 ]; then
-        echo -e "${YELLOW}⚠️  No nodes ready yet, but continuing...${NC}"
+    # Create GPU node pool with --gpu-driver None
+    echo ""
+    echo "🎮 Creating GPU node pool with driver 580+ support..."
+    echo ""
+
+    # Get configuration from terraform.tfvars using Terraform's own parser (more robust than AWK)
+    cd "$TERRAFORM_DIR"
+    local renny_min_size=$(echo "var.renny_min_size" | terraform console 2>/dev/null | tr -d '"' || echo "2")
+    local renny_max_size=$(echo "var.renny_max_size" | terraform console 2>/dev/null | tr -d '"' || echo "4")
+    local renny_desired_size=$(echo "var.renny_desired_size" | terraform console 2>/dev/null | tr -d '"' || echo "2")
+    local renny_vm_size=$(echo "var.renny_vm_size" | terraform console 2>/dev/null | tr -d '"' || echo "Standard_NC16as_T4_v3")
+
+    echo "  VM Size: $renny_vm_size"
+    echo "  Node Count: $renny_desired_size (min: $renny_min_size, max: $renny_max_size)"
+    echo "  GPU Driver: None (GPU Operator will install driver 580+)"
+    echo ""
+
+    # Check if node pool already exists
+    local nodepool_exists=$(az aks nodepool show --cluster-name "$cluster" --resource-group "$rg" --name "rennygpu" --query "name" -o tsv 2>/dev/null || echo "")
+
+    if [ -n "$nodepool_exists" ]; then
+        echo -e "${CYAN}ℹ️  GPU node pool 'rennygpu' already exists - skipping creation${NC}"
     else
-        echo -e "${GREEN}✅ Cluster has $ready_nodes ready nodes${NC}"
+        echo "Creating GPU node pool (this will take 5-10 minutes)..."
+
+        if ! az aks nodepool add \
+            --resource-group "$rg" \
+            --cluster-name "$cluster" \
+            --name "rennygpu" \
+            --node-count "$renny_desired_size" \
+            --min-count "$renny_min_size" \
+            --max-count "$renny_max_size" \
+            --enable-cluster-autoscaler \
+            --gpu-driver None \
+            --node-vm-size "$renny_vm_size" \
+            --node-taints "nvidia.com/gpu=true:NoSchedule" \
+            --labels "uneeq.io/node-type=renny" "workload-type=gpu" "nvidia.com/gpu=true" \
+            --node-osdisk-size 256 \
+            --no-wait 2>&1; then
+            echo -e "${RED}❌ Failed to create GPU node pool${NC}"
+            echo ""
+            echo "Troubleshooting:"
+            echo "  1. Check GPU quota: az vm list-usage --location $AZURE_REGION | grep NCasT4_v3"
+            echo "  2. Verify aks-preview extension: az extension list | grep aks-preview"
+            echo "  3. Check Azure CLI version: az version (need 2.72.2+)"
+            return 1
+        fi
+
+        echo -e "${GREEN}✅ GPU node pool creation initiated${NC}"
+        echo ""
+        echo "⏳ Waiting for GPU node pool to be ready..."
+
+        # Wait for node pool to be ready
+        local attempts=0
+        local max_attempts=60
+        while [ $attempts -lt $max_attempts ]; do
+            local pool_state=$(az aks nodepool show --cluster-name "$cluster" --resource-group "$rg" --name "rennygpu" --query "provisioningState" -o tsv 2>/dev/null || echo "Unknown")
+
+            if [ "$pool_state" = "Succeeded" ]; then
+                echo -e "${GREEN}✅ GPU node pool ready${NC}"
+                break
+            elif [ "$pool_state" = "Failed" ]; then
+                echo -e "${RED}❌ GPU node pool creation failed${NC}"
+                return 1
+            else
+                echo -ne "\r   Node pool status: $pool_state (attempt $((attempts + 1))/$max_attempts)"
+                sleep 10
+                ((attempts++))
+            fi
+        done
+
+        if [ $attempts -ge $max_attempts ]; then
+            echo -e "\n${YELLOW}⚠️  Timeout waiting for GPU node pool, but continuing...${NC}"
+        fi
     fi
 
+    echo ""
+    echo -e "${GREEN}✅ Infrastructure deployment complete${NC}"
     return 0
 }
 
@@ -789,10 +1532,11 @@ install_gpu_operator() {
     kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
 
     # Install/upgrade GPU Operator
+    # Note: driver.version not specified - GPU Operator will automatically select
+    # the latest compatible NVIDIA driver (580+ series) for the hardware
     if ! helm upgrade --install gpu-operator nvidia/gpu-operator \
         --namespace gpu-operator \
         --set driver.enabled=true \
-        --set driver.version="580.13.01" \
         --set toolkit.enabled=true \
         --set devicePlugin.enabled=true \
         --set mig.strategy=single \
@@ -874,59 +1618,109 @@ deploy_renny_application() {
     echo -e "${BLUE}═══════════════════════════════════════════${NC}"
     echo ""
 
-    local manifests_dir="$KUBERNETES_DIR/manifests"
+    local helm_chart_dir="$KUBERNETES_DIR/renny"
     local values_file="$KUBERNETES_DIR/values/renny-values.yaml"
 
-    # Create namespace
-    kubectl create namespace uneeq-renderer --dry-run=client -o yaml | kubectl apply -f -
+    # Validate prerequisites
+    if [ ! -f "$values_file" ]; then
+        echo -e "${RED}❌ Values file not found: $values_file${NC}"
+        return 1
+    fi
 
-    # Apply manifests
-    echo "📦 Applying Kubernetes manifests..."
+    if [ ! -d "$helm_chart_dir" ]; then
+        echo -e "${RED}❌ Helm chart directory not found: $helm_chart_dir${NC}"
+        echo "Expected location: $helm_chart_dir"
+        return 1
+    fi
+
+    # Create namespace
+    echo "📦 Creating Kubernetes namespace..."
+    if ! kubectl create namespace uneeq-renderer --dry-run=client -o yaml | kubectl apply -f - 2>&1; then
+        echo -e "${RED}❌ Failed to create namespace${NC}"
+        return 1
+    fi
+
+    # Extract Docker credentials from terraform.tfvars
+    echo "🔑 Setting up Docker registry credentials..."
+    local docker_user docker_pass
+
+    # Try to extract Docker credentials - more robust parsing
+    docker_user=$(grep "docker_username" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
+    docker_pass=$(grep "docker_password" "$TERRAFORM_DIR/terraform.tfvars" 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
+
+    if [ -z "$docker_user" ] || [ -z "$docker_pass" ]; then
+        echo -e "${YELLOW}⚠️  Docker credentials not found in terraform.tfvars, using placeholder${NC}"
+        docker_user="${docker_user:-docker-user}"
+        docker_pass="${docker_pass:-docker-pass}"
+    fi
 
     # Create Docker registry secret
-    local docker_user=$(grep "docker_username" "$TERRAFORM_DIR/terraform.tfvars" | awk -F'"' '{print $2}')
-    local docker_pass=$(grep "docker_password" "$TERRAFORM_DIR/terraform.tfvars" | awk -F'"' '{print $2}')
-
-    kubectl create secret docker-registry regcred \
+    if ! kubectl create secret docker-registry regcred \
         --docker-server=https://index.docker.io/v1/ \
         --docker-username="$docker_user" \
         --docker-password="$docker_pass" \
         --namespace=uneeq-renderer \
-        --dry-run=client -o yaml | kubectl apply -f -
-
-    # Deploy Renny using Helm (if Helm chart exists) or kubectl
-    if [ -d "$KUBERNETES_DIR/charts/renny" ]; then
-        echo "Using Helm chart for Renny deployment..."
-        helm upgrade --install renny "$KUBERNETES_DIR/charts/renny" \
-            --namespace uneeq-renderer \
-            --values "$values_file" \
-            --timeout 25m \
-            --wait
-    else
-        echo "Applying Renny manifests with kubectl..."
-        kubectl apply -f "$manifests_dir/" -n uneeq-renderer
+        --dry-run=client -o yaml | kubectl apply -f - 2>&1; then
+        echo -e "${RED}❌ Failed to create Docker registry secret${NC}"
+        return 1
     fi
 
-    echo -e "${GREEN}✅ Renny application deployed${NC}"
+    # Deploy Renny using Helm chart (MUST use Helm - not kubectl apply)
+    echo ""
+    echo "🚀 Deploying Renny application with Helm..."
 
-    # Wait for pods to be ready
+    if ! helm upgrade --install renny "$helm_chart_dir" \
+        --namespace uneeq-renderer \
+        --values "$values_file" \
+        --timeout 25m \
+        --wait 2>&1; then
+        echo -e "${RED}❌ Helm deployment failed${NC}"
+        echo ""
+        echo "Debugging information:"
+        kubectl get pods -n uneeq-renderer -o wide 2>/dev/null || true
+        kubectl describe deployment renny -n uneeq-renderer 2>/dev/null || true
+        return 1
+    fi
+
+    echo -e "${GREEN}✅ Helm deployment successful${NC}"
+
+    # Wait for pods to be ready with extended timeout and better validation
     echo ""
     echo "⏳ Waiting for Renny pods to be ready..."
 
     local ready_pods=0
-    local total_pods=$(grep "totalReplicas:" "$values_file" | awk '{print $2}' || echo "2")
+    local total_pods=0
     local attempts=0
+    local max_attempts=120  # 20 minutes (120 * 10 seconds)
 
-    while [ $ready_pods -lt $total_pods ] && [ $attempts -lt 60 ]; do
-        ready_pods=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    # Get expected replicas from deployment
+    local get_attempts=0
+    while [ $get_attempts -lt 30 ] && [ $total_pods -eq 0 ]; do
+        total_pods=$(kubectl get deployment renny -n uneeq-renderer -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+        if [ "$total_pods" -eq 0 ]; then
+            sleep 5
+            ((get_attempts++))
+        fi
+    done
+
+    if [ $total_pods -eq 0 ]; then
+        total_pods=$(grep "totalReplicas:" "$values_file" 2>/dev/null | awk '{print $2}' || echo "2")
+    fi
+
+    attempts=0
+    while [ $ready_pods -lt $total_pods ] && [ $attempts -lt $max_attempts ]; do
+        ready_pods=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | awk '$3 == "Running"' | wc -l)
+        local pod_count=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | wc -l)
 
         if [ "$DEBUG_MODE" != true ]; then
-            echo -ne "\r   Renny pods ready: $ready_pods/$total_pods"
+            echo -ne "\r   Renny pods ready: $ready_pods/$total_pods (total created: $pod_count)"
         fi
 
         if [ $ready_pods -lt $total_pods ]; then
             sleep 10
             ((attempts++))
+        else
+            break
         fi
     done
 
@@ -934,14 +1728,26 @@ deploy_renny_application() {
         echo ""
     fi
 
-    if [ $ready_pods -eq $total_pods ]; then
+    # Final validation - MUST return error if pods didn't deploy
+    if [ $ready_pods -ge $total_pods ] && [ $ready_pods -gt 0 ]; then
         echo -e "${GREEN}✅ All Renny pods are ready ($ready_pods/$total_pods)${NC}"
+        return 0
     else
-        echo -e "${YELLOW}⚠️  Only $ready_pods/$total_pods Renny pods are ready${NC}"
-        echo "Check pod status with: kubectl get pods -n uneeq-renderer"
+        echo -e "${RED}❌ Deployment FAILED: Only $ready_pods/$total_pods Renny pods are running (expected $total_pods)${NC}"
+        echo ""
+        echo "Pod status:"
+        kubectl get pods -n uneeq-renderer -l app=renny -o wide 2>/dev/null || true
+        echo ""
+        echo "Pod events:"
+        kubectl describe pods -n uneeq-renderer -l app=renny 2>/dev/null | grep -A 5 "Events:" || true
+        echo ""
+        echo "Troubleshooting:"
+        echo "  1. Check pod logs: kubectl logs -n uneeq-renderer -l app=renny --all-containers=true"
+        echo "  2. Check deployment status: kubectl describe deployment renny -n uneeq-renderer"
+        echo "  3. Check resource availability: kubectl describe nodes"
+        echo "  4. Check namespace events: kubectl get events -n uneeq-renderer"
+        return 1
     fi
-
-    return 0
 }
 
 # Setup monitoring
@@ -1003,7 +1809,7 @@ show_deployment_summary() {
     echo ""
 
     # Get pod information
-    local renny_pods=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | grep -c "Running" || echo "0")
+    local renny_pods=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | awk '$3 == "Running"' | wc -l || echo "0")
     local total_pods=$(kubectl get pods -n uneeq-renderer --no-headers 2>/dev/null | wc -l || echo "0")
 
     echo -e "${CYAN}Application Status:${NC}"
@@ -1114,7 +1920,9 @@ main() {
 
         # Still need to get kubeconfig
         echo "🔑 Ensuring kubectl access..."
-        az aks get-credentials --resource-group "$RESOURCE_GROUP_NAME" --name "$CLUSTER_NAME" --overwrite-existing
+        az aks get-credentials --resource-group "$RESOURCE_GROUP_NAME" --name "$CLUSTER_NAME" --admin --overwrite-existing
+        chmod 600 ~/.kube/config 2>/dev/null || true
+        echo -e "${GREEN}✅ Kubeconfig permissions secured (600)${NC}"
     fi
 
     # Install GPU Operator
@@ -1129,13 +1937,24 @@ main() {
         exit 1
     fi
 
-    # Deploy Renny application
+    # Deploy Renny application (MUST succeed before continuing)
     if ! deploy_renny_application; then
-        echo -e "${RED}❌ Renny application deployment failed${NC}"
+        echo -e "${RED}❌ Renny application deployment FAILED - aborting deployment${NC}"
+        echo ""
+        echo "The cluster infrastructure is running but Renny pods could not be deployed."
+        echo "To troubleshoot:"
+        echo "  1. Run: kubectl get pods -n uneeq-renderer -o wide"
+        echo "  2. Run: kubectl describe deployment renny -n uneeq-renderer"
+        echo "  3. Check pod logs: kubectl logs -n uneeq-renderer -l app=renny"
+        echo ""
+        echo "To retry deployment:"
+        echo "  1. Ensure renny-values.yaml is configured correctly"
+        echo "  2. Ensure docker credentials are in terraform.tfvars"
+        echo "  3. Run this script again"
         exit 1
     fi
 
-    # Setup monitoring
+    # Setup monitoring (optional - don't fail if this has issues)
     if ! setup_monitoring; then
         echo -e "${YELLOW}⚠️  Monitoring setup had issues, but continuing...${NC}"
     fi

@@ -250,10 +250,10 @@ check_cli_tool() {
             aws --version 2>&1 | head -1
             ;;
         az)
-            az version --output tsv 2>&1 | grep azure-cli | head -1
+            az --version 2>&1 | head -1
             ;;
         gcloud)
-            gcloud version 2>&1 | grep "Google Cloud SDK" | head -1
+            gcloud --version 2>&1 | head -1
             ;;
     esac
 

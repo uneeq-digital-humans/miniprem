@@ -2,8 +2,13 @@
 # Note: NOT using 'set -e' to allow script to continue on kubectl errors
 # when cluster control plane is already being destroyed
 
-# Source deployment functions
+# Set script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Set TERRAFORM_DIR for Azure BEFORE sourcing (to prevent readonly conflict)
+readonly TERRAFORM_DIR="$(cd "$SCRIPT_DIR/../terraform/aks" && pwd)"
+
+# Source deployment functions
 source "$SCRIPT_DIR/deployment-functions.sh"
 
 # Parse command line arguments
@@ -71,9 +76,6 @@ if [ -z "${BLUE:-}" ]; then BLUE='\033[0;34m'; fi
 if [ -z "${CYAN:-}" ]; then CYAN='\033[0;36m'; fi
 if [ -z "${NC:-}" ]; then NC='\033[0m'; fi
 
-# Override TERRAFORM_DIR for Azure
-TERRAFORM_DIR="$PROJECT_DIR/kubernetes/terraform/aks"
-
 # Timing
 START_TIME=$(date +%s)
 
@@ -93,14 +95,16 @@ debug_log() {
 cd "$TERRAFORM_DIR"
 if [ "$LIST_ONLY" = "true" ]; then
     echo "📋 Listing all deployments..."
-    load_terraform_config
+    # Load Azure-specific configuration
+    PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
+    ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
     list_all_deployments_azure
     exit 0
 fi
 
 if [ "$DESTROY_ALL" = "true" ]; then
     echo -e "${RED}⚠️  WARNING: --all flag specified - this will destroy ALL deployments!${NC}"
-    load_terraform_config
+    # Configuration will be loaded in the "elif [ "$DESTROY_ALL" = "true" ]" block above
     if [ "$FORCE_DESTROY" != "true" ]; then
         if ! confirm_action "Are you sure you want to destroy ALL deployments?" "n"; then
             echo "Cancelled."
@@ -113,24 +117,44 @@ fi
 if [ -n "$TARGET_DEPLOYMENT_ID" ]; then
     # Target specific deployment ID
     echo "🎯 Targeting deployment ID: $TARGET_DEPLOYMENT_ID"
-    load_terraform_config
+    # Load Azure-specific configuration
+    cd "$TERRAFORM_DIR"
+    PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
+    ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
     DEPLOYMENT_ID="$TARGET_DEPLOYMENT_ID"
     if [ -n "$DEPLOYMENT_ID" ]; then
         CLUSTER_NAME="$PROJECT_NAME-$ENVIRONMENT-$DEPLOYMENT_ID"
     else
         CLUSTER_NAME="$PROJECT_NAME-$ENVIRONMENT"
     fi
-    # Update terraform.tfvars to target this deployment
-    save_deployment_id "$DEPLOYMENT_ID"
+    # Update terraform.tfvars to target this deployment (skip save_deployment_id as it's AWS-specific)
+    if grep -q "^deployment_id[[:space:]]*=" terraform.tfvars; then
+        sed -i.bak "s/^deployment_id[[:space:]]*=.*/deployment_id = \"$DEPLOYMENT_ID\"/" terraform.tfvars
+    else
+        echo "" >> terraform.tfvars
+        echo "deployment_id = \"$DEPLOYMENT_ID\"" >> terraform.tfvars
+    fi
     export PROJECT_NAME ENVIRONMENT DEPLOYMENT_ID CLUSTER_NAME AZURE_REGION RESOURCE_GROUP_NAME
 elif [ "$DESTROY_ALL" = "true" ]; then
     # Will handle multiple deployments in destroy logic
-    load_terraform_config
+    cd "$TERRAFORM_DIR"
+    PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
+    ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
     DEPLOYMENT_ID=""
     CLUSTER_NAME="" # Will be set per deployment in loop
 else
     # Use current deployment (from .deployment_id file or terraform.tfvars)
-    init_deployment_config "false" ""
+    cd "$TERRAFORM_DIR"
+    PROJECT_NAME=$(awk '/^project_name[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "renny")
+    ENVIRONMENT=$(awk '/^environment[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "production")
+    DEPLOYMENT_ID=$(awk '/^deployment_id[[:space:]]*=/ {gsub(/[" ]/, "", $3); print $3}' terraform.tfvars 2>/dev/null || echo "")
+
+    if [ -n "$DEPLOYMENT_ID" ]; then
+        CLUSTER_NAME="$PROJECT_NAME-$ENVIRONMENT-$DEPLOYMENT_ID"
+    else
+        CLUSTER_NAME="$PROJECT_NAME-$ENVIRONMENT"
+    fi
+    export PROJECT_NAME ENVIRONMENT DEPLOYMENT_ID CLUSTER_NAME
 fi
 
 # Get Azure region from terraform.tfvars
@@ -564,10 +588,29 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
     echo "Current node pools:"
     az aks nodepool list --cluster-name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP_NAME" -o table 2>/dev/null || true
 
-    # Delete node pools (exclude system pool as it will be deleted with cluster)
-    echo "Initiating node pool deletion..."
+    # Delete GPU node pool first (created via Azure CLI in deploy-azure.sh)
+    echo ""
+    echo "🎮 Checking for CLI-created GPU node pool..."
+    GPU_POOL_EXISTS=$(az aks nodepool show --cluster-name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP_NAME" --name "rennygpu" --query "name" -o tsv 2>/dev/null || echo "")
 
-    ACTUAL_NODEPOOLS=$(az aks nodepool list --cluster-name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP_NAME" --query "[?mode!='System'].name" -o tsv 2>/dev/null || echo "")
+    if [ -n "$GPU_POOL_EXISTS" ]; then
+        echo "  Found GPU node pool: rennygpu"
+        echo "  - Deleting rennygpu node pool (driver 580+ configuration)..."
+        az aks nodepool delete \
+            --cluster-name "$CLUSTER_NAME" \
+            --resource-group "$RESOURCE_GROUP_NAME" \
+            --name "rennygpu" \
+            --no-wait 2>/dev/null || true
+        echo -e "${GREEN}✓ GPU node pool deletion initiated${NC}"
+    else
+        echo "  No GPU node pool found (may have been deleted already)"
+    fi
+
+    # Delete remaining node pools (exclude system pool as it will be deleted with cluster)
+    echo ""
+    echo "Checking for other user node pools..."
+
+    ACTUAL_NODEPOOLS=$(az aks nodepool list --cluster-name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP_NAME" --query "[?mode!='System' && name!='rennygpu'].name" -o tsv 2>/dev/null || echo "")
 
     if [ -n "$ACTUAL_NODEPOOLS" ]; then
         for nodepool in $ACTUAL_NODEPOOLS; do
@@ -579,7 +622,7 @@ if [ "$CLUSTER_NAME" != "unknown" ]; then
                 --no-wait 2>/dev/null || true
         done
     else
-        echo "  No user node pools found (only system pool)"
+        echo "  No additional user node pools found"
     fi
 
     # Wait for all user node pools to be deleted

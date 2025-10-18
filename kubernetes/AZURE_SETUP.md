@@ -553,6 +553,71 @@ az role assignment list --assignee "12345678-1234-1234-1234-123456789012" --outp
 # Expected: Should show "Contributor" role on your subscription
 ```
 
+### Step 5: Understanding Kubernetes RBAC vs Azure IAM
+
+**Critical Distinction:**
+
+The service principal you created has **Azure IAM permissions** but needs **Kubernetes RBAC permissions** to manage resources inside the cluster.
+
+| Permission Type | Purpose | Granted By |
+|----------------|---------|------------|
+| **Azure IAM (Contributor)** | Create/manage Azure resources (AKS clusters, VMs, networks) | `az role assignment create` |
+| **Kubernetes RBAC** | Manage resources INSIDE the cluster (pods, secrets, namespaces) | Kubernetes role bindings OR `--admin` credentials |
+
+**What This Means:**
+- Your service principal can CREATE the AKS cluster ✅
+- But it CANNOT manage resources inside the cluster (create namespaces, deploy pods) ❌
+
+**The Solution:**
+The deployment script automatically uses `--admin` flag when fetching credentials, which bypasses this issue by using the cluster's built-in admin certificate instead of Azure AD authentication.
+
+### Step 6: Choose Authentication Method for kubectl
+
+**Option A: Use Admin Credentials (Recommended for Automation) ✅**
+
+The deployment script automatically uses this method:
+```bash
+az aks get-credentials --resource-group rg --name cluster --admin
+```
+
+**Pros:**
+- Works immediately (no additional configuration)
+- Uses cluster's built-in admin certificate
+- Standard practice for CI/CD and automation
+- No additional role assignments needed
+- Avoids Azure AD authentication complexity
+
+**Cons:**
+- Bypasses Azure AD audit logging
+- Not recommended for interactive/multi-user scenarios
+- All operations performed as cluster-admin
+
+**Option B: Grant Kubernetes RBAC Role to Service Principal**
+
+For production environments with multiple users, assign Kubernetes RBAC permissions:
+```bash
+# After cluster creation, grant cluster-admin permissions
+az role assignment create \
+  --role "Azure Kubernetes Service RBAC Cluster Admin" \
+  --assignee "$CLIENT_ID" \
+  --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/renny-kubernetes/providers/Microsoft.ContainerService/managedClusters/renny-production"
+```
+
+**Pros:**
+- Full Azure AD integration
+- Better audit logging
+- Supports multiple users with different permissions
+- Fine-grained access control (cluster-admin, namespace-scoped, etc.)
+
+**Cons:**
+- Requires additional configuration after cluster creation
+- Can have authentication delays
+- More complex troubleshooting
+- Service principal needs to authenticate before kubectl commands work
+
+**For Renny Deployment:**
+The script uses **Option A** (`--admin`) for reliability and simplicity. This is the recommended approach for automated deployments and single-user scenarios.
+
 **Step 4: Add to Terraform Configuration**
 
 Copy `kubernetes/terraform/aks/terraform.tfvars.local` from the example and fill in your values:
@@ -662,6 +727,43 @@ data "azurerm_key_vault_secret" "client_secret" {
 ```bash
 # Add conditional access policy to limit SP usage to specific IPs
 # Via Azure Portal > Azure AD > Security > Conditional Access
+```
+
+**5. Kubeconfig Security**
+
+The deployment script automatically sets secure permissions on kubeconfig:
+```bash
+chmod 600 ~/.kube/config
+```
+
+**What this does:**
+- Owner: Read + Write (you)
+- Group: No access
+- Others: No access
+
+**Why it matters:**
+- Prevents unauthorized users from accessing your cluster
+- Required by Kubernetes security best practices
+- Blocks malware from exfiltrating credentials
+- Satisfies compliance requirements (SOC 2, HIPAA, etc.)
+
+**Azure CLI Warning:**
+When you run `az aks get-credentials`, you may see:
+```
+/Users/username/.kube/config has permissions "644".
+It should be readable and writable only by its owner.
+```
+
+**This is automatically fixed by the deployment script** with `chmod 600`, so you can safely ignore this warning.
+
+**Manual Fix (if needed):**
+```bash
+# Set secure permissions
+chmod 600 ~/.kube/config
+
+# Verify permissions
+ls -l ~/.kube/config
+# Expected: -rw------- (600)
 ```
 
 ## Critical Warnings

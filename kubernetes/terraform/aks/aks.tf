@@ -59,7 +59,7 @@ resource "azurerm_kubernetes_cluster" "main" {
 
   # Automatic upgrades disabled for production stability
   # Manual upgrades allow testing and validation first
-  automatic_channel_upgrade = "none"
+  # (Omitting automatic_channel_upgrade leaves it disabled by default)
 
   # HTTP application routing addon (disabled)
   # Not recommended for production - use ingress controller instead

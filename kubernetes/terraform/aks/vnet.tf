@@ -24,23 +24,12 @@ resource "azurerm_virtual_network" "main" {
 # All cluster nodes (system and GPU) are deployed in this subnet
 # Must be large enough to accommodate all pods when using Azure CNI
 # With Azure CNI, each pod gets an IP from this subnet
+# Note: AKS handles subnet delegation automatically - do not pre-delegate
 resource "azurerm_subnet" "nodes" {
   name                 = "${local.cluster_name}-nodes-subnet"
   resource_group_name  = azurerm_resource_group.main.name
   virtual_network_name = azurerm_virtual_network.main.name
   address_prefixes     = [var.subnet_cidr]
-
-  # Delegate subnet to AKS for automatic configuration
-  delegation {
-    name = "aks-delegation"
-
-    service_delegation {
-      name = "Microsoft.ContainerService/managedClusters"
-      actions = [
-        "Microsoft.Network/virtualNetworks/subnets/join/action",
-      ]
-    }
-  }
 }
 
 # Public IP for NAT Gateway
