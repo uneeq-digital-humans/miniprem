@@ -252,8 +252,9 @@ securityContext:
     - ALL
 
 # Image pull secrets for private registries
+# Must match the secret created by deploy-azure.sh script
 imagePullSecrets:
-- name: regcred
+- name: docker-config
 
 # Logging configuration for Azure Monitor
 logging:

@@ -1655,8 +1655,8 @@ deploy_renny_application() {
         docker_pass="${docker_pass:-docker-pass}"
     fi
 
-    # Create Docker registry secret
-    if ! kubectl create secret docker-registry regcred \
+    # Create Docker registry secret with name "docker-config" (matching Helm template)
+    if ! kubectl create secret docker-registry docker-config \
         --docker-server=https://index.docker.io/v1/ \
         --docker-username="$docker_user" \
         --docker-password="$docker_pass" \
@@ -1715,6 +1715,43 @@ deploy_renny_application() {
 
         if [ "$DEBUG_MODE" != true ]; then
             echo -ne "\r   Renny pods ready: $ready_pods/$total_pods (total created: $pod_count)"
+        fi
+
+        # Check for image pull failures every 30 seconds
+        if [ $((attempts % 3)) -eq 0 ] && [ $attempts -gt 0 ]; then
+            local image_pull_errors=$(kubectl get pods -n uneeq-renderer -l app=renny -o jsonpath='{range .items[*]}{.status.containerStatuses[0].state.waiting.reason}{"\n"}{end}' 2>/dev/null | grep -c "ImagePull" || echo "0")
+
+            if [ "$image_pull_errors" -gt 0 ]; then
+                echo ""
+                echo -e "${RED}❌ Image pull failure detected!${NC}"
+                echo ""
+                echo "Troubleshooting Information:"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+                # Show pod events
+                echo ""
+                echo "Pod Events:"
+                kubectl describe pods -n uneeq-renderer -l app=renny 2>/dev/null | grep -A 5 "ImagePull" | head -10
+
+                # Check secret exists
+                echo ""
+                echo "Docker Registry Secret Status:"
+                if kubectl get secret docker-config -n uneeq-renderer >/dev/null 2>&1; then
+                    echo "✓ Secret 'docker-config' exists"
+                else
+                    echo "✗ Secret 'docker-config' NOT found"
+                fi
+
+                echo ""
+                echo "Common Issues:"
+                echo "1. Docker credentials in terraform.tfvars are incorrect"
+                echo "2. Docker Hub repository may require authentication"
+                echo "3. Check: kubectl describe secret docker-config -n uneeq-renderer"
+                echo "4. Verify credentials: cat kubernetes/terraform/aks/terraform.tfvars | grep docker_"
+                echo ""
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                return 1
+            fi
         fi
 
         if [ $ready_pods -lt $total_pods ]; then
