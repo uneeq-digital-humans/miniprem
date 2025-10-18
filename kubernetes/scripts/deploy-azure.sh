@@ -1564,8 +1564,8 @@ configure_gpu_time_slicing() {
     echo -e "${BLUE}═══════════════════════════════════════════${NC}"
     echo ""
 
-    # Read time-slicing config from renny-values.yaml
-    local values_file="$KUBERNETES_DIR/values/renny-values.yaml"
+    # Read time-slicing config from renny-values-aks.yaml
+    local values_file="$KUBERNETES_DIR/values/renny-values-aks.yaml"
     local replicas_per_gpu=$(grep "replicasPerGpu:" "$values_file" | awk '{print $2}' || echo "2")
 
     echo "Configuring GPU time-slicing: $replicas_per_gpu pods per GPU"
@@ -1619,11 +1619,11 @@ deploy_renny_application() {
     echo ""
 
     local helm_chart_dir="$KUBERNETES_DIR/renny"
-    local values_file="$KUBERNETES_DIR/values/renny-values.yaml"
+    local values_file="$KUBERNETES_DIR/values/renny-values-aks.yaml"
 
     # Validate prerequisites
     if [ ! -f "$values_file" ]; then
-        echo -e "${RED}❌ Values file not found: $values_file${NC}"
+        echo -e "${RED}❌ AKS values file not found: $values_file${NC}"
         return 1
     fi
 
@@ -1670,6 +1670,11 @@ deploy_renny_application() {
     echo ""
     echo "🚀 Deploying Renny application with Helm..."
 
+    # Clean up any previous failed deployments
+    if kubectl get deployment renny -n uneeq-renderer >/dev/null 2>&1; then
+        echo "ℹ️  Updating existing deployment..."
+    fi
+
     if ! helm upgrade --install renny "$helm_chart_dir" \
         --namespace uneeq-renderer \
         --values "$values_file" \
@@ -1684,6 +1689,48 @@ deploy_renny_application() {
     fi
 
     echo -e "${GREEN}✅ Helm deployment successful${NC}"
+
+    # Validate and fix renderer secret - ensure all required keys exist
+    echo ""
+    echo "🔍 Validating renderer secret..."
+
+    local required_keys=("dhop-api-key" "cp-flowise-api-key" "launch-darkly-key" "tts-azure-speech-key" "tts-elevenlabs-api-key" "tts-veritone-api-key" "tts-gcp-creds")
+    local missing_keys=()
+
+    for key in "${required_keys[@]}"; do
+        if ! kubectl get secret renderer -n uneeq-renderer -o jsonpath="{.data.$key}" >/dev/null 2>&1; then
+            missing_keys+=("$key")
+        fi
+    done
+
+    if [ ${#missing_keys[@]} -gt 0 ]; then
+        echo "⚠️  Missing secret keys: ${missing_keys[*]}"
+        echo "ℹ️  Patching secret with empty values for optional keys..."
+
+        # Create patch with empty base64-encoded values for missing keys
+        local patch_json="{"
+        for key in "${missing_keys[@]}"; do
+            patch_json="$patch_json\"$key\":\"$(echo -n '' | base64)\","
+        done
+        patch_json="${patch_json%,}}"  # Remove trailing comma
+        patch_json="{\"data\":$patch_json}"
+
+        if ! kubectl patch secret renderer -n uneeq-renderer -p "$patch_json" --type=merge >/dev/null 2>&1; then
+            echo -e "${RED}❌ Failed to patch renderer secret${NC}"
+            echo "Please verify secret has all required keys:"
+            kubectl get secret renderer -n uneeq-renderer -o jsonpath='{.data}' | jq 'keys'
+            return 1
+        fi
+
+        echo -e "${GREEN}✅ Secret patched successfully${NC}"
+
+        # Restart pods to pick up the updated secret
+        echo "ℹ️  Restarting pods to apply updated secret..."
+        kubectl rollout restart deployment renny -n uneeq-renderer >/dev/null 2>&1 || true
+        sleep 2
+    else
+        echo -e "${GREEN}✅ All required secret keys present${NC}"
+    fi
 
     # Wait for pods to be ready with extended timeout and better validation
     echo ""
@@ -1710,8 +1757,8 @@ deploy_renny_application() {
 
     attempts=0
     while [ $ready_pods -lt $total_pods ] && [ $attempts -lt $max_attempts ]; do
-        ready_pods=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | awk '$3 == "Running"' | wc -l)
-        local pod_count=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | wc -l)
+        ready_pods=$(kubectl get pods -n uneeq-renderer -l app=renderer --no-headers 2>/dev/null | awk '$3 == "Running"' | wc -l)
+        local pod_count=$(kubectl get pods -n uneeq-renderer -l app=renderer --no-headers 2>/dev/null | wc -l)
 
         if [ "$DEBUG_MODE" != true ]; then
             echo -ne "\r   Renny pods ready: $ready_pods/$total_pods (total created: $pod_count)"
@@ -1719,7 +1766,7 @@ deploy_renny_application() {
 
         # Check for image pull failures every 30 seconds
         if [ $((attempts % 3)) -eq 0 ] && [ $attempts -gt 0 ]; then
-            local image_pull_errors=$(kubectl get pods -n uneeq-renderer -l app=renny -o jsonpath='{range .items[*]}{.status.containerStatuses[0].state.waiting.reason}{"\n"}{end}' 2>/dev/null | grep -c "ImagePull" || echo "0")
+            local image_pull_errors=$(kubectl get pods -n uneeq-renderer -l app=renderer -o jsonpath='{range .items[*]}{.status.containerStatuses[0].state.waiting.reason}{"\n"}{end}' 2>/dev/null | grep -c "ImagePull" || echo "0")
 
             if [ "$image_pull_errors" -gt 0 ]; then
                 echo ""
@@ -1731,7 +1778,7 @@ deploy_renny_application() {
                 # Show pod events
                 echo ""
                 echo "Pod Events:"
-                kubectl describe pods -n uneeq-renderer -l app=renny 2>/dev/null | grep -A 5 "ImagePull" | head -10
+                kubectl describe pods -n uneeq-renderer -l app=renderer 2>/dev/null | grep -A 5 "ImagePull" | head -10
 
                 # Check secret exists
                 echo ""
@@ -1774,13 +1821,13 @@ deploy_renny_application() {
         echo -e "${RED}❌ Deployment FAILED: Only $ready_pods/$total_pods Renny pods are running (expected $total_pods)${NC}"
         echo ""
         echo "Pod status:"
-        kubectl get pods -n uneeq-renderer -l app=renny -o wide 2>/dev/null || true
+        kubectl get pods -n uneeq-renderer -l app=renderer -o wide 2>/dev/null || true
         echo ""
         echo "Pod events:"
-        kubectl describe pods -n uneeq-renderer -l app=renny 2>/dev/null | grep -A 5 "Events:" || true
+        kubectl describe pods -n uneeq-renderer -l app=renderer 2>/dev/null | grep -A 5 "Events:" || true
         echo ""
         echo "Troubleshooting:"
-        echo "  1. Check pod logs: kubectl logs -n uneeq-renderer -l app=renny --all-containers=true"
+        echo "  1. Check pod logs: kubectl logs -n uneeq-renderer -l app=renderer --all-containers=true"
         echo "  2. Check deployment status: kubectl describe deployment renny -n uneeq-renderer"
         echo "  3. Check resource availability: kubectl describe nodes"
         echo "  4. Check namespace events: kubectl get events -n uneeq-renderer"
@@ -1847,7 +1894,7 @@ show_deployment_summary() {
     echo ""
 
     # Get pod information
-    local renny_pods=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | awk '$3 == "Running"' | wc -l || echo "0")
+    local renny_pods=$(kubectl get pods -n uneeq-renderer -l app=renderer --no-headers 2>/dev/null | awk '$3 == "Running"' | wc -l || echo "0")
     local total_pods=$(kubectl get pods -n uneeq-renderer --no-headers 2>/dev/null | wc -l || echo "0")
 
     echo -e "${CYAN}Application Status:${NC}"
@@ -1869,7 +1916,7 @@ show_deployment_summary() {
     echo "  kubectl get pods -n uneeq-renderer"
     echo ""
     echo "  # View pod logs"
-    echo "  kubectl logs -n uneeq-renderer -l app=renny -f"
+    echo "  kubectl logs -n uneeq-renderer -l app=renderer -f"
     echo ""
     echo "  # Test GPU"
     echo "  kubectl run gpu-test --rm -it --restart=Never \\"
@@ -1983,7 +2030,7 @@ main() {
         echo "To troubleshoot:"
         echo "  1. Run: kubectl get pods -n uneeq-renderer -o wide"
         echo "  2. Run: kubectl describe deployment renny -n uneeq-renderer"
-        echo "  3. Check pod logs: kubectl logs -n uneeq-renderer -l app=renny"
+        echo "  3. Check pod logs: kubectl logs -n uneeq-renderer -l app=renderer"
         echo ""
         echo "To retry deployment:"
         echo "  1. Ensure renny-values.yaml is configured correctly"
