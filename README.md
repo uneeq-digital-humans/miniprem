@@ -11,6 +11,9 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Architecture Diagrams](#architecture-diagrams)
+  - [Cloud-Based Architecture (UneeQ Hosted TURN)](#cloud-based-architecture-uneeq-hosted-turn)
+  - [Kiosk Architecture (Same-Machine Deployment)](#kiosk-architecture-same-machine-deployment)
 - [Features](#features)
 - [Quick Start](#quick-start)
   - [Prerequisites](#prerequisites)
@@ -27,6 +30,55 @@
 ## Overview
 
 MiniPrem is an integrated platform that combines a digital human interface (Renny) with advanced internal speech processing, LLM capabilities (vLLM), workflow automation (Flowise), and comprehensive monitoring tools (Prometheus + Grafana). This setup allows you to deploy and manage advanced AI interactions through a virtual human interface with simplified, more reliable speech generation.
+
+## Architecture Diagrams
+
+MiniPrem supports multiple deployment architectures to fit different use cases:
+
+### Cloud-Based Architecture (UneeQ Hosted TURN)
+
+This architecture leverages UneeQ's hosted TURN servers for optimal network traversal and WebRTC connectivity. Ideal for production deployments where the MiniPrem server is hosted in a data center or cloud environment.
+
+![MiniPrem with UneeQ Hosted TURN](miniprem-with-turn.png)
+
+**Key Characteristics:**
+- 🌐 **UneeQ Hosted TURN**: Reliable WebRTC connectivity through UneeQ's global TURN infrastructure
+- 🖥️ **Remote Server Deployment**: MiniPrem components run on dedicated server hardware or cloud instances
+- 🔄 **Scalable Architecture**: Supports multiple concurrent users with load balancing
+- 📡 **Network Traversal**: TURN servers handle NAT traversal and firewall complexities
+- 🔒 **Secure Communication**: End-to-end encrypted WebRTC streams
+
+**Use Cases:**
+- Production deployments with multiple concurrent users
+- Enterprise installations requiring high availability
+- Remote access scenarios with complex network topologies
+- Multi-location deployments with centralized infrastructure
+
+### Kiosk Architecture (Same-Machine Deployment)
+
+This architecture is optimized for kiosk deployments where the user's browser and MiniPrem services run on the same physical machine. This configuration provides the lowest possible latency for real-time digital human interactions.
+
+![MiniPrem Kiosk Setup](miniprem-kiosk.png)
+
+**Key Characteristics:**
+- 🖥️ **Single Machine**: Browser and MiniPrem services run locally on the same hardware
+- ⚡ **Ultra-Low Latency**: Direct localhost communication eliminates network latency
+- 🎯 **Simplified Network**: No TURN servers required - direct peer connection
+- 💻 **Standalone Operation**: Can operate without internet connectivity (after initial setup)
+- 🔧 **Easy Maintenance**: Single point of management for updates and troubleshooting
+
+**Use Cases:**
+- Trade show kiosks and exhibition booths
+- Retail environments with customer-facing terminals
+- Public spaces (museums, airports, shopping centers)
+- Offline or limited-connectivity scenarios
+- Demo and testing environments
+
+**Technical Considerations:**
+- Recommended: Dedicated GPU for optimal rendering performance
+- Display should face the user, with optional external camera placement
+- Audio system calibration important for speech recognition accuracy
+- Consider touchscreen interface for accessibility
 
 ## Features
 
