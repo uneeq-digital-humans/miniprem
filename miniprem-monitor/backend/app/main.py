@@ -17,6 +17,7 @@ from .services.aws_region_manager import AwsRegionManager
 from .services.terminal_manager import terminal_manager, TerminalManager
 from .services.snapshot_manager import get_snapshot_manager, close_snapshot_manager
 from .services.prometheus_client import PrometheusMetrics
+from .services.telemetry import get_telemetry_service, close_telemetry_service
 from .security.command_executor import CommandExecutor
 from .integrations.aws_sns_sender import AwsSnsSender
 from .models.schemas import (
@@ -1646,6 +1647,19 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Failed to initialize snapshot manager: {e}")
 
+    # Initialize telemetry service
+    try:
+        telemetry_service = get_telemetry_service()
+        # Send installation event (idempotent - only sends once)
+        await telemetry_service.send_installation_event()
+        # Send immediate first heartbeat (makes dashboard show "online" within 1 second)
+        await telemetry_service.send_heartbeat()
+        # Start heartbeat loop (15 minutes interval to save on API costs)
+        await telemetry_service.start_heartbeat_loop(interval_seconds=900)
+        logger.info("Telemetry service initialized with immediate heartbeat and 15-min loop")
+    except Exception as e:
+        logger.warning(f"Telemetry service initialization failed (non-critical): {e}")
+
     logger.info("All backend services started successfully")
 
 
@@ -1663,6 +1677,13 @@ async def shutdown_event():
         logger.info("Snapshot manager stopped")
     except Exception as e:
         logger.error(f"Error stopping snapshot manager: {e}")
+
+    # Stop telemetry service
+    try:
+        await close_telemetry_service()
+        logger.info("Telemetry service stopped")
+    except Exception as e:
+        logger.warning(f"Error stopping telemetry service: {e}")
 
     logger.info("All backend services stopped successfully")
 

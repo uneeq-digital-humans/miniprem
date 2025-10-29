@@ -23,10 +23,8 @@ spec:
       nodeSelector:
         uneeq.io/node-type: {{ .Values.deployment.nodeType }}
       terminationGracePeriodSeconds: 18000
-      {{- if .Values.imagePullSecrets }}
       imagePullSecrets:
-      {{- toYaml .Values.imagePullSecrets | nindent 6 }}
-      {{- end }}
+      - name: docker-config
       containers:
       - name: renderer
         image: {{ .Values.image }}
@@ -45,9 +43,11 @@ spec:
         args: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "{{ .Values.renderer.extraCmdArgs }}"]
         env:
         - name: A2F_ADDRESS
-          value: "http://a2f.uneeq-renderer.svc.cluster.local:52000"
-        - name: NEW_SPEECH_OVERRIDE
-          value: "1"
+          value: {{ .Values.renderer.a2f.url }}
+        - name: A2F_AUDIO_DELAY_TIME_MS
+          value: "240"
+        - name: A2F_AUDIO_SAMPLE_RATE
+          value: "16000"
         - name: AZURE_REGION
           value: {{ .Values.renderer.tts.azureRegion }}
         - name: AZURE_SPEECH_KEY
@@ -106,6 +106,8 @@ spec:
           value: "info"
         - name: HEALTH_URL
           value: "http://0.0.0.0:8082/health"
+        - name: NEW_SPEECH_OVERRIDE
+          value: "1"
         volumeMounts:
         - name: gcp-creds
           readOnly: true
@@ -124,6 +126,41 @@ spec:
           failureThreshold: 6
           timeoutSeconds: 2
         tty: true
+{{- if .Values.telemetry.enabled }}
+      - name: telemetry
+        image: curlimages/curl:8.1.0
+        command: ["/bin/sh", "/scripts/telemetry-client.sh"]
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "kill -TERM 1; sleep 2"]
+        env:
+        - name: TELEMETRY_ENABLED
+          value: "{{ .Values.telemetry.enabled }}"
+        - name: TELEMETRY_BACKEND_URL
+          value: "{{ .Values.telemetry.backendUrl }}"
+        - name: HEARTBEAT_INTERVAL_SECONDS
+          value: "{{ .Values.telemetry.heartbeatInterval }}"
+        - name: PLATFORM
+          value: "{{ .Values.telemetry.platform }}"
+        - name: DEPLOYMENT_ID
+          value: "{{ .Values.telemetry.deploymentId }}"
+        - name: VERSION
+          value: "{{ .Values.image }}"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        volumeMounts:
+        - name: telemetry-script
+          mountPath: /scripts
+        - name: installation-id
+          mountPath: /tmp
+{{- end }}
       volumes:
         - name: gcp-creds
           secret:
@@ -131,3 +168,11 @@ spec:
             items:
             - path: GoogleAuth.json
               key: tts-gcp-creds
+{{- if .Values.telemetry.enabled }}
+        - name: telemetry-script
+          configMap:
+            name: renny-telemetry
+            defaultMode: 0755
+        - name: installation-id
+          emptyDir: {}
+{{- end }}

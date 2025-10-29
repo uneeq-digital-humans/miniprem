@@ -35,11 +35,36 @@ renderer:
     url: wss://api.enterprise.uneeq.io:443/signalling-service
   
   tts:
-    veritoneApiKey: ""       # Optional
-    azureRegion: "eastus"    # Azure region where your Speech service is deployed
-    azureSpeechKey: "your-azure-speech-key-here"       # Plain text API key
-    elevenlabsApiKey: "your-elevenlabs-api-key-here"     # Plain text  
-    gcpCredentials: ""       # Plain text GCP service account JSON
+    # ⚠️  CRITICAL: AT LEAST ONE TTS provider must be configured or Renny will not start properly.
+    # Choose ONE provider below and fill in ALL required fields for that provider.
+    # The deploy script validates that all required fields are present.
+
+    # OPTION 1: Azure Speech Services
+    # Get credentials: portal.azure.com → Create "Speech Service" → Keys and Endpoint
+    # REQUIRED: BOTH azureRegion AND azureSpeechKey
+    azureRegion: "eastus"                           # Your Azure region (e.g., eastus, westus2)
+    azureSpeechKey: "your-azure-speech-key-here"   # API key from Azure portal (Key 1)
+
+    # OPTION 2: ElevenLabs
+    # Get credentials: elevenlabs.io → Profile → API Keys
+    # REQUIRED: BOTH elevenlabsApiKey AND elevenlabsModelId
+    elevenlabsApiKey: "your-elevenlabs-api-key-here"  # API key (starts with sk_)
+    elevenlabsModelId: "eleven_turbo_v2"               # Model: eleven_turbo_v2 or eleven_multilingual_v2
+    elevenlabsOptimizeLatencyLevel: "1"                # Latency setting 0-4 (lower = faster)
+
+    # OPTION 3: Google Cloud TTS
+    # Get credentials: console.cloud.google.com → IAM → Service Accounts → Create Key (JSON)
+    # REQUIRED: gcpCredentials (full service account JSON as single-line string)
+    gcpCredentials: ""  # Full JSON: {"type": "service_account", "project_id": "...", ...}
+
+    # OPTION 4: Veritone TTS
+    # Get credentials: Contact Veritone for API access
+    # REQUIRED: veritoneApiKey
+    veritoneApiKey: ""
+
+    # OPTION 5: Custom TTS Proxy
+    # REQUIRED: proxyUrl for your custom TTS endpoint
+    proxyUrl: ""
   
   unrealEngine:
     config: ""  # Base64 encoded UneeQ's Unreal Engine SDK licence file
@@ -133,7 +158,7 @@ readinessProbe:
 autoscaling:
   enabled: true
   minReplicas: 2
-  maxReplicas: 4
+  maxReplicas: 3
   metrics:
     - type: Resource
       resource:
@@ -161,6 +186,14 @@ autoscaling:
 #         port: 8080
 #       - protocol: UDP
 #         port: 8888
+
+# Telemetry configuration for heartbeat monitoring
+telemetry:
+  enabled: true
+  backendUrl: "https://renny.services.uneeq.io"
+  heartbeatInterval: 900  # Seconds between heartbeats (15 minutes)
+  platform: "eks"  # Change to "aks" for Azure, "gke" for Google Cloud
+  deploymentId: ""  # Unique identifier for customer deployment (populated by deployment scripts)
 
 # Additional environment variables
 env:

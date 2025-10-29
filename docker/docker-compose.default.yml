@@ -9,16 +9,24 @@ services:
       context: ../miniprem-monitor
       dockerfile: Dockerfile
     container_name: miniprem-monitor
+    runtime: nvidia  # GPU access for machine_id generation via nvidia-smi
     network_mode: host  # Direct access to Docker daemon and localhost services
     volumes:
       # Docker socket for container monitoring (required)
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Kubernetes config for cluster monitoring (optional)
       - ~/.kube:/root/.kube:ro
+      # Installation ID for telemetry (optional, created during install)
+      - /tmp/miniprem_installation_id:/app/data/installation_id:ro
+      # Telemetry state directory (persistent across restarts)
+      - /tmp/miniprem_telemetry_state:/app/telemetry_state
     restart: unless-stopped
     environment:
       - MONITOR_MODE=default
       - LOG_LEVEL=info
+      - MINIPREM_TELEMETRY_ENDPOINT=https://renny.services.uneeq.io/telemetry/heartbeat
+      - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
+      - NVIDIA_VISIBLE_DEVICES=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -37,10 +45,16 @@ services:
   renny:
     container_name: renny
     command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
+    entrypoint: ["/opt/renny/renny-entrypoint.sh"]
     env_file:
       - docker-compose.env
     environment:
       - NEW_SPEECH_OVERRIDE=1
+      - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
+      - TELEMETRY_BACKEND_URL=https://renny.services.uneeq.io
+      - HEARTBEAT_INTERVAL_SECONDS=900
+      - PLATFORM=docker
+      - INSTALLATION_ID_FILE=/app/data/installation_id
     image: "facemeproduction/renny:0.713-37d59"
     network_mode: "host"
     runtime: nvidia
@@ -48,6 +62,10 @@ services:
     tty: true
     volumes:
       - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
+      - ./renny-entrypoint.sh:/opt/renny/renny-entrypoint.sh:ro
+      - ./renny-telemetry-client.sh:/opt/renny/telemetry-client.sh:ro
+      - /tmp/miniprem_installation_id:/app/data/installation_id
+      - /tmp/miniprem_telemetry_state:/app/telemetry_state
     healthcheck:
       test: "curl -f http://localhost:8081/health"
       interval: 10s

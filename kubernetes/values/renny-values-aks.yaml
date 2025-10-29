@@ -74,13 +74,36 @@ renderer:
     url: wss://api.enterprise.uneeq.io:443/signalling-service
 
   # ===== REQUIRED: Text-to-Speech Configuration =====
-  # At least one TTS provider is required
+  # ⚠️  CRITICAL: AT LEAST ONE TTS provider must be configured or Renny will not start properly.
+  # Choose ONE provider below and fill in ALL required fields for that provider.
+  # The deploy script validates that all required fields are present.
   tts:
-    veritoneApiKey: ""                        # Optional
-    azureRegion: "eastus"                     # Azure region for Speech service
-    azureSpeechKey: "placeholder-azure-key"   # Override in my-renny-values.yml
+    # OPTION 1: Azure Speech Services
+    # Get credentials: portal.azure.com → Create "Speech Service" → Keys and Endpoint
+    # REQUIRED: BOTH azureRegion AND azureSpeechKey
+    azureRegion: "eastus"                           # Your Azure region (e.g., eastus, westus2)
+    azureSpeechKey: "placeholder-azure-key"         # Override in my-renny-values.yml
+
+    # OPTION 2: ElevenLabs
+    # Get credentials: elevenlabs.io → Profile → API Keys
+    # REQUIRED: BOTH elevenlabsApiKey AND elevenlabsModelId
     elevenlabsApiKey: "placeholder-elevenlabs-key"  # Override in my-renny-values.yml
-    gcpCredentials: ""                        # Optional - GCP service account JSON
+    elevenlabsModelId: "eleven_turbo_v2"             # Model: eleven_turbo_v2 or eleven_multilingual_v2
+    elevenlabsOptimizeLatencyLevel: "1"              # Latency setting 0-4 (lower = faster)
+
+    # OPTION 3: Google Cloud TTS
+    # Get credentials: console.cloud.google.com → IAM → Service Accounts → Create Key (JSON)
+    # REQUIRED: gcpCredentials (full service account JSON as single-line string)
+    gcpCredentials: ""  # Full JSON: {"type": "service_account", "project_id": "...", ...}
+
+    # OPTION 4: Veritone TTS
+    # Get credentials: Contact Veritone for API access
+    # REQUIRED: veritoneApiKey
+    veritoneApiKey: ""
+
+    # OPTION 5: Custom TTS Proxy
+    # REQUIRED: proxyUrl for your custom TTS endpoint
+    proxyUrl: ""
 
   # ===== Unreal Engine Configuration =====
   unrealEngine:
@@ -255,6 +278,14 @@ securityContext:
 # Must match the secret created by deploy-azure.sh script
 imagePullSecrets:
 - name: docker-config
+
+# Telemetry configuration for heartbeat monitoring
+telemetry:
+  enabled: true
+  backendUrl: "https://renny.services.uneeq.io"
+  heartbeatInterval: 900  # Seconds between heartbeats (15 minutes)
+  platform: "aks"  # Azure Kubernetes Service
+  deploymentId: ""  # Unique identifier for customer deployment (populated by deployment scripts)
 
 # Logging configuration for Azure Monitor
 logging:

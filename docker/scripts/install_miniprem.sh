@@ -1526,13 +1526,196 @@ pull_docker_with_tts_provider() {
     pull_docker_images
 }
 
+# Function to show telemetry consent dialog and handle user response
+prompt_for_telemetry_consent() {
+    log_section "MiniPrem Telemetry Notice"
+
+    # Display consent dialog
+    cat << 'EOF'
+┌─────────────────────────────────────────────────────────────────┐
+│                    MiniPrem Telemetry Notice                    │
+├─────────────────────────────────────────────────────────────────┤
+│ This installation sends anonymous usage data to UneeQ:         │
+│                                                                 │
+│ ✓ Installation notification (one-time)                         │
+│ ✓ Heartbeat every 15 minutes to monitor uptime                 │
+│                                                                 │
+│ Data collected (NO personally identifiable information):       │
+│   • Anonymous installation ID (generated locally)               │
+│   • GPU hardware identifier (one-way SHA-256 hash)              │
+│   • MiniPrem version and deployment type                        │
+│   • System uptime and health status                             │
+│                                                                 │
+│ We DO NOT collect:                                              │
+│   ✗ IP addresses, hostnames, or network identifiers             │
+│   ✗ UneeQ credentials, API keys, or tokens                      │
+│   ✗ Conversation data or chat history                           │
+│   ✗ Any content processed by Renny                              │
+│   ✗ Customer information                                         │
+│                                                                 │
+│ Privacy: See docs/TELEMETRY.md for full details               │
+└─────────────────────────────────────────────────────────────────┘
+EOF
+
+    # Prompt for consent
+    echo ""
+    read -p "Do you consent to anonymous telemetry? [Y/n] " telemetry_consent
+
+    # Default to yes if user just presses enter
+    if [[ -z "$telemetry_consent" ]]; then
+        telemetry_consent="y"
+    fi
+
+    # Handle response
+    if [[ "$telemetry_consent" =~ ^[Yy]$ ]]; then
+        # Check if installation ID already exists (reuse for reinstalls/upgrades)
+        if [ -f "/tmp/miniprem_installation_id" ] && [ -s "/tmp/miniprem_installation_id" ]; then
+            INSTALLATION_ID=$(cat /tmp/miniprem_installation_id 2>/dev/null | tr -d '[:space:]')
+            if [ -n "$INSTALLATION_ID" ]; then
+                success "$CHECKMARK Reusing existing installation ID: ${INSTALLATION_ID:0:8}..."
+            else
+                # File exists but is invalid, generate new one
+                INSTALLATION_ID=""
+            fi
+        fi
+
+        # Generate new installation ID if none exists
+        if [ -z "$INSTALLATION_ID" ]; then
+            # Remove if it exists as a directory (Docker may have created it)
+            if [ -d "/tmp/miniprem_installation_id" ]; then
+                sudo rm -rf /tmp/miniprem_installation_id 2>/dev/null || rm -rf /tmp/miniprem_installation_id
+            fi
+
+            # Generate using uuidgen (POSIX-compatible)
+            if command -v uuidgen >/dev/null 2>&1; then
+                INSTALLATION_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+            else
+                # Fallback: use random data if uuidgen not available
+                INSTALLATION_ID=$(cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
+                INSTALLATION_ID="${INSTALLATION_ID:0:8}-${INSTALLATION_ID:8:4}-${INSTALLATION_ID:12:4}-${INSTALLATION_ID:16:4}-${INSTALLATION_ID:20:12}"
+            fi
+
+            # Save installation ID to /tmp (will be mounted into container)
+            # Always use sudo tee to avoid permission errors
+            echo "$INSTALLATION_ID" | sudo tee /tmp/miniprem_installation_id > /dev/null
+            sudo chmod 644 /tmp/miniprem_installation_id
+
+            success "$CHECKMARK Installation ID generated: ${INSTALLATION_ID:0:8}..."
+        fi
+
+        # Send initial installation event via curl (best-effort, non-blocking)
+        info "Sending installation notification..."
+
+        # Build JSON payload
+        local payload=$(cat <<PAYLOAD_EOF
+{
+  "installation_id": "$INSTALLATION_ID",
+  "event_type": "installation",
+  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+  "version": "2.1.0",
+  "platform": "docker",
+  "os": "$(uname -s | tr '[:upper:]' '[:lower:]')",
+  "platform_arch": "$(uname -m)",
+  "status": "installing"
+}
+PAYLOAD_EOF
+)
+
+        # Send with curl (5-second timeout, silent failure)
+        if curl -X POST -H "Content-Type: application/json" \
+                -d "$payload" \
+                --max-time 5 \
+                --silent \
+                --show-error \
+                --fail \
+                https://renny.services.uneeq.io/telemetry >/dev/null 2>&1; then
+            success "$CHECKMARK Installation notification sent"
+        else
+            info "Installation notification will be sent when container starts"
+        fi
+
+    else
+        warning "Telemetry disabled - you can re-enable later by removing MINIPREM_TELEMETRY_DISABLED from docker/docker-compose.env"
+
+        # Set telemetry disabled flag in env file
+        update_env_variable "MINIPREM_TELEMETRY_DISABLED" "1"
+
+        # Don't create installation ID file
+        sudo rm -f /tmp/miniprem_installation_id 2>/dev/null || rm -f /tmp/miniprem_installation_id 2>/dev/null || true
+
+        info "Telemetry disabled - continuing with installation"
+    fi
+
+    echo ""
+}
+
+# Function to create desktop shortcut for Ubuntu Desktop users
+create_desktop_shortcut() {
+    # Only create shortcut if running Ubuntu Desktop (has desktop environment)
+    if [ ! -d "$HOME/Desktop" ] || [ -z "$XDG_CURRENT_DESKTOP" ]; then
+        log_debug "Desktop environment not detected, skipping shortcut creation"
+        return 0
+    fi
+
+    log_section "Creating Desktop Shortcut"
+
+    local desktop_file="$HOME/Desktop/Start-MiniPrem.desktop"
+    local miniprem_script="$PROJECT_ROOT/miniprem.sh"
+
+    # Check if shortcut already exists and points to the correct location
+    if [ -f "$desktop_file" ]; then
+        # Check if existing shortcut points to same PROJECT_ROOT
+        if grep -q "Path=$PROJECT_ROOT" "$desktop_file" 2>/dev/null; then
+            info "Desktop shortcut already exists and is up-to-date"
+            return 0
+        else
+            # Update existing shortcut with new path
+            info "Updating existing desktop shortcut with new path"
+        fi
+    fi
+
+    # Create or update the .desktop file
+    cat > "$desktop_file" << EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Start MiniPrem
+Comment=Start UneeQ MiniPrem Server
+Exec=bash -c 'cd $PROJECT_ROOT && ./miniprem.sh start; read -p "Press Enter to close..."'
+Icon=utilities-terminal
+Terminal=true
+Categories=Development;Utility;
+Keywords=miniprem;renny;digital-human;
+Path=$PROJECT_ROOT
+StartupNotify=false
+EOF
+
+    # Set proper permissions
+    chmod +x "$desktop_file"
+
+    # Mark as trusted (bypasses "Allow Launching" prompt in Ubuntu)
+    # This uses gio set command which is available in GNOME/Ubuntu Desktop
+    if command -v gio >/dev/null 2>&1; then
+        gio set "$desktop_file" metadata::trusted true 2>/dev/null || true
+    fi
+
+    # Alternative method: set execute bit on the file (older Ubuntu versions)
+    chmod u+x "$desktop_file"
+
+    success "$CHECKMARK Desktop shortcut created: ~/Desktop/Start-MiniPrem.desktop"
+    info "Double-click 'Start MiniPrem' on your desktop to launch after reboot"
+}
+
 main() {
     print_logo
 
     check_environment
 
     check_duplicate_installations
-    
+
+    # Telemetry consent dialog (BEFORE installation starts)
+    prompt_for_telemetry_consent
+
     # Install type
     prompt_for_install_type
 
@@ -1754,6 +1937,9 @@ main() {
     if [ "$INSTALL_TYPE" = "full" ]; then
         setup_flowise_chatflow
     fi
+
+    # Create desktop shortcut for easy launching (Ubuntu Desktop only)
+    create_desktop_shortcut
 
     success "$CHECKMARK Installation and configuration complete."
     info "Miniprem is now running. You can access:"

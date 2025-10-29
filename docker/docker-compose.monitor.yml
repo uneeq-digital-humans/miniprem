@@ -13,6 +13,7 @@ services:
       context: ../miniprem-monitor
       dockerfile: Dockerfile
     container_name: miniprem-monitor
+    runtime: nvidia
     # Network Mode:
     # - Linux: Can use 'host' for optimal performance (direct port binding)
     # - macOS/Windows: Must use bridge mode (host networking not supported)
@@ -27,10 +28,17 @@ services:
       - ~/.kube:/root/.kube:ro
       # AWS credentials for EKS authentication (optional)
       - ~/.aws:/root/.aws:ro
+      # Installation ID for telemetry (optional, created during install)
+      - /tmp/miniprem_installation_id:/app/data/installation_id:ro
+      # Telemetry state directory (persistent across restarts)
+      - /tmp/miniprem_telemetry_state:/app/telemetry_state
     restart: unless-stopped
     environment:
       - MONITOR_MODE=standalone
       - LOG_LEVEL=info
+      - MINIPREM_TELEMETRY_ENDPOINT=https://renny.services.uneeq.io/telemetry/heartbeat
+      - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
+      - NVIDIA_VISIBLE_DEVICES=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

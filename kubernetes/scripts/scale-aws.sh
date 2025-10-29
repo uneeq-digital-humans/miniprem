@@ -60,7 +60,7 @@ if [ "$SHOW_HELP" = true ] || [ -z "${DESIRED_COUNT:-}" ]; then
 fi
 
 # Get configuration limits from terraform.tfvars
-cd "$PROJECT_DIR/terraform/eks"
+cd "$PROJECT_DIR/kubernetes/terraform/eks"
 if [ "$COMPONENT" = "renny" ]; then
     MAX_COUNT=$(awk '/^renny_max_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "20")
     MIN_COUNT=$(awk '/^renny_min_size[[:space:]]*=/ {gsub(/[^0-9]/, "", $3); print $3}' terraform.tfvars || echo "10")
@@ -86,7 +86,7 @@ if [ $DESIRED_COUNT -lt $MIN_COUNT ] || [ $DESIRED_COUNT -gt $MAX_COUNT ]; then
 fi
 
 # Load deployment configuration
-cd "$PROJECT_DIR/terraform/eks"
+cd "$PROJECT_DIR/kubernetes/terraform/eks"
 if ! init_deployment_config "false" ""; then
     echo -e "${RED}❌ Could not load deployment configuration${NC}"
     echo "Please ensure the infrastructure has been deployed and .deployment_id exists"
