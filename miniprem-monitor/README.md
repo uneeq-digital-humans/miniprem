@@ -56,7 +56,7 @@ Digital human service with monitoring (no AI/LLM services):
 
 ```bash
 cd docker
-docker-compose -f docker-compose.default.yml up -d
+docker-compose -f docker-compose.yml up -d
 ```
 
 **Access:** http://localhost:3001
@@ -331,7 +331,7 @@ miniprem-monitor/
 
 ### Scenario 1: Complete Platform Team
 **Use Case:** Full digital human platform for customer demos
-**Command:** `docker-compose up -d`
+**Command:** `docker-compose -f docker-compose.full.yml up -d`
 **Services:** All MiniPrem services + monitoring
 **Best For:** Internal demos, development, testing
 
@@ -343,7 +343,7 @@ miniprem-monitor/
 
 ### Scenario 3: DevOps Team
 **Use Case:** Minimal footprint with just Renny and monitoring
-**Command:** `docker-compose -f docker-compose.default.yml up -d`
+**Command:** `docker-compose up -d`
 **Services:** Renny + Monitor
 **Best For:** Resource-constrained environments
 

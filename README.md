@@ -354,8 +354,8 @@ This represents a significant architectural improvement, moving from a multi-ser
 
 MiniPrem uses two main Docker Compose files:
 
-* `docker/docker-compose.default.yml` - Used for Default Install (Renny only)
-* `docker/docker-compose.yml` - Used for Full Install (all services)
+* `docker/docker-compose.yml` - Used for Default Install (Renny only)
+* `docker/docker-compose.full.yml` - Used for Full Install (all services)
 
 The appropriate file is automatically selected based on your installation type.
 

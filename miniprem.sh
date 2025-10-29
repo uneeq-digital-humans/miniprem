@@ -19,9 +19,9 @@ fi
 
 # Set the compose file based on install type
 if [ "$INSTALL_TYPE" = "default" ]; then
-    COMPOSE_FILE="-f $PROJECT_ROOT/docker/docker-compose.default.yml"
-else
     COMPOSE_FILE="-f $PROJECT_ROOT/docker/docker-compose.yml"
+else
+    COMPOSE_FILE="-f $PROJECT_ROOT/docker/docker-compose.full.yml"
 fi
 
 # Function to display usage

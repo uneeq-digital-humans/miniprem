@@ -900,14 +900,14 @@ start_miniprem() {
             fatal "Failed to start support services"
         fi
     else
-        # Default install: start monitor for container monitoring
+        # Full install: start monitor for container monitoring
         info "Starting MiniPrem Monitor for container monitoring..."
         $DOCKER_CMD $COMPOSE_FILES up -d miniprem-monitor
         if [ $? -ne 0 ]; then
             warning "Failed to start MiniPrem Monitor"
         fi
 
-        # If using RIME in default install, start the RIME services
+        # If using RIME in full install, start the RIME services
         if [ "$TTS_PROVIDER" = "rime" ]; then
             info "Starting RIME services..."
             $DOCKER_CMD $COMPOSE_FILES up -d rime-model rime-api
@@ -1742,9 +1742,9 @@ main() {
 
     # In all docker compose commands, use the correct compose files
     if [ "$INSTALL_TYPE" = "default" ]; then
-        COMPOSE_FILES="-f $PROJECT_ROOT/docker/docker-compose.default.yml"
-    else
         COMPOSE_FILES="-f $PROJECT_ROOT/docker/docker-compose.yml"
+    else
+        COMPOSE_FILES="-f $PROJECT_ROOT/docker/docker-compose.full.yml"
     fi
 
     # Update docker-compose.yml based on TTS provider

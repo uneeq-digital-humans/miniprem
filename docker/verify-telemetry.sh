@@ -25,7 +25,7 @@ if [[ "$CONTAINER_STATUS" == *"Up"* ]]; then
     echo -e "${GREEN}✓${NC} Container is running: $CONTAINER_STATUS"
 else
     echo -e "${RED}✗${NC} Container not running: $CONTAINER_STATUS"
-    echo "   Fix: sudo docker compose -f docker-compose.default.yml up -d renny"
+    echo "   Fix: sudo docker compose -f docker-compose.yml up -d renny"
     exit 1
 fi
 echo ""
@@ -190,9 +190,9 @@ elif sudo docker logs renny 2>&1 | grep -q "HTTP 403"; then
     echo "     git pull origin feat/add-heartbeat"
     echo "  2. Recreate container:"
     echo "     cd docker"
-    echo "     sudo docker compose -f docker-compose.default.yml stop renny"
-    echo "     sudo docker compose -f docker-compose.default.yml rm -f renny"
-    echo "     sudo docker compose -f docker-compose.default.yml up -d renny"
+    echo "     sudo docker compose -f docker-compose.yml stop renny"
+    echo "     sudo docker compose -f docker-compose.yml rm -f renny"
+    echo "     sudo docker compose -f docker-compose.yml up -d renny"
 else
     echo -e "${YELLOW}⚠ Telemetry client may not be sending requests${NC}"
     echo "  Check full logs:"
