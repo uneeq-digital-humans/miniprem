@@ -18,16 +18,21 @@
    - [Configure Credentials](#step-1-configure-credentials)
    - [Place Helm Chart](#step-2-place-helm-chart)
    - [Deploy](#step-3-deploy)
-4. [Architecture](#-architecture)
-5. [Text-to-Speech Configuration](#-text-to-speech-configuration)
-6. [Operations](#-operations)
-7. [Troubleshooting & Debugging](#-troubleshooting--debugging)
-8. [Kubernetes Debugging & Monitoring](#-kubernetes-debugging--monitoring)
-9. [CloudWatch Logs](#-cloudwatch-logs---application-error-monitoring)
-10. [Security Considerations](#-security-considerations)
-11. [Cost Optimization](#-cost-optimization)
-12. [Support](#-support)
-13. [Updates and Maintenance](#-updates-and-maintenance)
+4. [Understanding Configuration Layers](#-understanding-configuration-layers)
+   - [Infrastructure vs Application](#layer-1-infrastructure-physical-nodes)
+   - [Nodes vs Pods vs Sessions](#nodes-vs-pods-vs-sessions)
+   - [Scaling Scenarios](#scaling-scenarios)
+   - [Cost Optimization Strategy](#cost-optimization-strategy)
+5. [Architecture](#-architecture)
+6. [Text-to-Speech Configuration](#-text-to-speech-configuration)
+7. [Operations](#-operations)
+8. [Troubleshooting & Debugging](#-troubleshooting--debugging)
+9. [Kubernetes Debugging & Monitoring](#-kubernetes-debugging--monitoring)
+10. [CloudWatch Logs](#-cloudwatch-logs---application-error-monitoring)
+11. [Security Considerations](#-security-considerations)
+12. [Cost Optimization](#-cost-optimization)
+13. [Support](#-support)
+14. [Updates and Maintenance](#-updates-and-maintenance)
 
 This folder contains a complete one-click deployment solution for Renny on AWS EKS with GPU support.
 
@@ -339,9 +344,24 @@ aws_region = "us-east-2"  # Change to your preferred region
 
 The region will be used by all scripts automatically. You can also override other settings like instance types and scaling parameters - see `terraform.tfvars.example` for all options.
 
-### Step 2: Place Helm Chart
+### Step 2: Helm Chart Setup
 
-Place your `renny-chart.tgz` file in the `kubernetes/` directory.
+The Renny Helm chart is stored as source files in `kubernetes/renny/` directory. The deployment script will automatically package it for you.
+
+**Automatic Packaging** (Recommended):
+The deployment script automatically detects if `renny-chart.tgz` is missing and will package the chart from the `kubernetes/renny/` source directory. No manual steps required!
+
+**Manual Packaging** (Optional):
+If you prefer to build the chart manually before deployment:
+
+```bash
+cd kubernetes
+helm package renny/
+mv renny-*.tgz renny-chart.tgz
+```
+
+**Pre-built Chart** (Alternative):
+If you have a pre-built `renny-chart.tgz` file from UneeQ, place it directly in the `kubernetes/` directory and the deployment script will use it.
 
 ### Step 3: Deploy
 
@@ -375,6 +395,129 @@ This will:
 **Total deployment time: ~30-45 minutes**
 
 **Key Improvement**: Ubuntu nodes join the cluster quickly (~3 minutes) without waiting for NVIDIA driver compilation, then GPU Operator installs drivers automatically in the background.
+
+## 🎯 Understanding Configuration Layers
+
+MiniPrem uses a **two-layer configuration** model to separate infrastructure from application concerns. Understanding this distinction is critical for proper scaling and cost optimization.
+
+### Layer 1: Infrastructure (Physical Nodes)
+**File**: `terraform/eks/terraform.tfvars` or `terraform/aks/terraform.tfvars`
+**Controls**: Physical GPU nodes (hardware/VMs)
+
+```hcl
+# How many GPU nodes (physical machines) to provision
+renny_min_size     = 2   # Minimum nodes (for auto-scaling)
+renny_max_size     = 4   # Maximum nodes (for auto-scaling)
+renny_desired_size = 2   # Current active nodes
+```
+
+### Layer 2: Application (Renny Pods)
+**File**: `values/renny-values.yaml` (EKS) or `values/renny-values-aks.yaml` (AKS)
+**Controls**: How many Renny pods (containers) run per GPU
+
+```yaml
+gpuTimeSlicing:
+  enabled: true
+  replicasPerGpu: 2  # How many pods share 1 physical GPU
+
+deployment:
+  totalReplicas: 4   # Total pods across all nodes
+```
+
+### How They Work Together
+
+**Example Calculation:**
+```
+Infrastructure Layer:  2 physical GPU nodes  (terraform.tfvars: renny_desired_size = 2)
+Application Layer:     2 pods per GPU        (renny-values.yaml: replicasPerGpu = 2)
+Result:               2 nodes × 2 pods = 4 total Renny instances
+```
+
+Each Renny pod can handle **1 active user session** at a time.
+
+### Nodes vs Pods vs Sessions
+
+| Concept | Definition | Example | Cost Impact |
+|---------|-----------|---------|-------------|
+| **Physical Node** | GPU-enabled VM/server | g5.4xlarge (AWS) or NC16as_T4_v3 (Azure) | ~$1.20-1.50/hour per node |
+| **Renny Pod** | Container running Renny renderer | 1 pod = 1 digital human instance | No additional cost (shares GPU) |
+| **User Session** | Active video call with digital human | 1 session = 1 concurrent user | No additional cost (uses existing pod) |
+
+**Capacity Calculation:**
+- **2 nodes × 2 pods per GPU = 4 Renny instances = 4 concurrent sessions**
+- **10 nodes × 2 pods per GPU = 20 Renny instances = 20 concurrent sessions**
+
+### Scaling Scenarios
+
+| Nodes (Infrastructure) | Pods per GPU (Application) | Total Renny Instances | Max Concurrent Users |
+|----------------------|---------------------------|----------------------|---------------------|
+| 2 nodes | 2 pods/GPU | 4 instances | 4 sessions |
+| 2 nodes | 4 pods/GPU | 8 instances | 8 sessions (more cost-efficient) |
+| 4 nodes | 2 pods/GPU | 8 instances | 8 sessions (more resilient) |
+| 10 nodes | 2 pods/GPU | 20 instances | 20 sessions |
+
+### When to Change Each Layer
+
+**Change `renny_desired_size` (Infrastructure)** when you need more physical hardware capacity:
+- **Use case**: Scaling from 2 to 4 GPU nodes for better availability or to handle more concurrent sessions
+- **Cost impact**: ~$1.20/hour per node (AWS) or ~$1.50/hour per node (Azure)
+- **Pros**: Better fault tolerance, higher total capacity
+- **Cons**: Higher infrastructure costs
+
+**Change `replicasPerGpu` (Application)** when you want more pods without adding hardware:
+- **Use case**: Increasing from 2 to 4 pods per GPU (50% cost savings by sharing GPUs more efficiently)
+- **Requirement**: GPU utilization must be low enough (<50% per pod). Typical Renny workloads use ~30% GPU.
+- **Pros**: Lower cost per session, better resource utilization
+- **Cons**: Slightly higher GPU contention during peak loads
+
+**Change `totalReplicas` (Application)** when using Horizontal Pod Autoscaler (HPA):
+- **Requirement**: Must be a multiple of `replicasPerGpu` for proper distribution
+- **Example**: 8 total replicas ÷ 2 per GPU = 4 GPUs needed (4 physical nodes)
+
+### Quick Commands
+
+```bash
+# Check current physical nodes
+kubectl get nodes -l uneeq.io/node-type=renny
+
+# Check current Renny pods (instances)
+kubectl get pods -n uneeq-renderer -l app=renderer
+
+# Check GPU capacity per node
+kubectl describe nodes -l uneeq.io/node-type=renny | grep nvidia.com/gpu
+
+# Scale physical nodes (Infrastructure - requires Terraform)
+cd kubernetes/terraform/eks  # or aks
+# Edit terraform.tfvars: renny_desired_size = 4
+terraform apply
+
+# Scale pods per GPU (Application - updates ConfigMap)
+cd kubernetes/
+# Edit values/renny-values.yaml:
+#   replicasPerGpu = 4
+#   totalReplicas = 8
+./scripts/deploy.sh  # Updates GPU operator ConfigMap and restarts device plugins
+```
+
+### Cost Optimization Strategy
+
+**Scenario: Need to support 20 concurrent users**
+
+**Option A: More Nodes, Fewer Pods per GPU (Higher Cost, Better Performance)**
+```
+10 nodes × 2 pods per GPU = 20 instances
+Cost: 10 × $1.20/hour = $12/hour (~$8,640/month)
+GPU contention: Low (2 pods share each GPU)
+```
+
+**Option B: Fewer Nodes, More Pods per GPU (Lower Cost, Acceptable Performance)**
+```
+5 nodes × 4 pods per GPU = 20 instances
+Cost: 5 × $1.20/hour = $6/hour (~$4,320/month) - 50% savings!
+GPU contention: Moderate (4 pods share each GPU)
+```
+
+**Recommendation**: Start with 2 pods per GPU (replicasPerGpu: 2), then increase to 3-4 if monitoring shows GPU utilization remains below 60%.
 
 ## 📊 Architecture Diagrams
 
@@ -664,26 +807,78 @@ Internet → ALB/NLB → EKS Cluster
 
 ## 🗣️ Text-to-Speech Configuration
 
-Renny supports multiple TTS providers. All API keys should be provided as **plain text** (not base64 encoded) in `values/renny-values.yaml`:
+⚠️ **CRITICAL**: Renny **REQUIRES** at least ONE TTS provider to be configured. Without TTS, Renny pods will enter an endless restart loop and never become ready.
 
-### Azure Speech Services
+### Supported TTS Providers
+
+Configure at least ONE of the following providers in `values/renny-values.yaml`. All API keys must be **plain text** (not base64 encoded).
+
+#### Azure Speech Services
 ```yaml
 tts:
-  azureRegion: "eastus"  # Your Azure region
-  azureSpeechKey: "your-azure-api-key"  # Plain text API key
+  azureRegion: "eastus"               # Required: Your Azure region
+  azureSpeechKey: "your-api-key"      # Required: Azure Speech API key
 ```
 
-### ElevenLabs
+**How to get Azure Speech credentials:**
+1. Go to [Azure Portal](https://portal.azure.com/)
+2. Create a new "Speech Service" resource
+3. After creation, go to "Keys and Endpoint"
+4. Copy "Key 1" (this is your `azureSpeechKey`)
+5. Note the "Location/Region" (e.g., eastus, westus2) - this is your `azureRegion`
+
+#### ElevenLabs
 ```yaml
 tts:
-  elevenlabsApiKey: "sk_your-elevenlabs-api-key"  # Plain text API key starting with 'sk_'
+  elevenlabsApiKey: "sk_your-api-key"  # Required: API key starting with 'sk_'
+  elevenlabsModelId: "eleven_turbo_v2" # Required: Model name
+  elevenlabsOptimizeLatencyLevel: "1"  # Latency optimization (0-4)
 ```
 
-### Google Cloud TTS
+**How to get ElevenLabs credentials:**
+1. Go to [ElevenLabs](https://elevenlabs.io/)
+2. Create an account (free tier available)
+3. Click your profile → "API Keys"
+4. Copy your API key (starts with `sk_`) - this is your `elevenlabsApiKey`
+5. Choose a model:
+   - `eleven_turbo_v2` - Lower latency
+   - `eleven_multilingual_v2` - Supports multiple languages
+   - `eleven_monolingual_v1` - English only
+
+#### Google Cloud TTS
 ```yaml
 tts:
-  gcpCredentials: "{\"type\": \"service_account\", ...}"  # JSON service account key as string
+  gcpCredentials: '{"type": "service_account", "project_id": "...", ...}'  # Required
 ```
+
+**How to get GCP credentials:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable "Cloud Text-to-Speech API" for your project
+3. Go to "IAM & Admin" → "Service Accounts"
+4. Click "Create Service Account"
+5. Give it the "Cloud Text-to-Speech API User" role
+6. Click "Keys" → "Add Key" → "Create new key" → Choose "JSON"
+7. Download the JSON file
+8. Copy the **entire JSON content** as a single-line string into `gcpCredentials`
+
+#### Veritone
+```yaml
+tts:
+  veritoneApiKey: "your-veritone-api-key"
+```
+
+**How to get Veritone API key:**
+1. Contact Veritone for API access
+2. Copy your API key into `veritoneApiKey`
+
+#### Custom TTS Proxy
+```yaml
+tts:
+  proxyUrl: "https://your-tts-proxy.example.com"
+```
+
+**For custom TTS implementations:**
+Enter your TTS proxy URL that implements the expected API interface.
 
 **Apply changes:**
 ```bash
@@ -692,11 +887,44 @@ helm upgrade renny ./renny-chart.tgz -n uneeq-renderer -f values/renny-values.ya
 
 **Note:** The Helm template automatically base64-encodes these values when creating Kubernetes secrets. You don't need to encode them manually.
 
+### Troubleshooting TTS Issues
+
+If Renny pods are stuck in `CrashLoopBackOff`:
+
+```bash
+# Check pod status
+kubectl get pods -n uneeq-renderer
+
+# View logs for TTS errors
+kubectl logs -n uneeq-renderer -l app=renny --tail=100 | grep -i "tts\|speech\|azure\|elevenlabs"
+
+# Common error messages:
+# "No TTS auth API key has been set" → TTS not configured
+# "Authentication failed" → Invalid API key
+# "Failed to connect to" → Network or endpoint issue
+```
+
+**Fix and restart:**
+```bash
+# 1. Edit TTS configuration
+vi kubernetes/values/renny-values.yaml
+
+# 2. Update Renny deployment
+helm upgrade renny kubernetes/renny-chart.tgz \
+  -f kubernetes/values/renny-values.yaml \
+  -n uneeq-renderer
+
+# 3. Restart pods
+kubectl delete pods -n uneeq-renderer -l app=renny
+```
+
 ## 🔧 Operations
 
 ### Configuring GPU Time-Slicing
 
 GPU time-slicing allows multiple Renny pods to share a single physical GPU, significantly reducing costs. All GPU time-slicing configuration is managed in a **single location**: [values/renny-values.yaml](values/renny-values.yaml).
+
+**📖 New to MiniPrem?** See [Understanding Configuration Layers](#-understanding-configuration-layers) for a complete explanation of how physical nodes, Renny pods, and user sessions relate to each other.
 
 **Configuration Structure:**
 
@@ -711,6 +939,7 @@ deployment:
   totalReplicas: 4   # Total number of Renny pods to deploy
   # Note: totalReplicas should be a multiple of replicasPerGpu
   # Example: 4 total pods ÷ 2 pods per GPU = 2 physical GPUs needed
+  # Physical GPU count is controlled by renny_desired_size in terraform/eks/terraform.tfvars (or aks)
 
 resources:
   limits:
@@ -1464,7 +1693,7 @@ kubectl logs <renny-pod> -n uneeq-renderer | grep -i "speech\|NEW_SPEECH_OVERRID
 
 ⚠️ **Warning signs**:
 ```
-"No TTS auth API key has been set" - TTS not configured (optional)
+"No TTS auth API key has been set" - TTS not configured (CRITICAL - Renny will crash)
 "Failed to connect to" - Network connectivity issues
 "Authentication failed" - Invalid DHOP credentials
 "Can't increase MaxChannels" - Audio warnings (usually harmless)

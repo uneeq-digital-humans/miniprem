@@ -54,8 +54,8 @@ gcloud container clusters get-credentials <cluster-name> --region <region>
 ### Cloud Platform Utilities
 ```bash
 # AWS-specific utilities
-./scripts/check-aws-prerequisites.sh [--profile <profile>]
-./scripts/check-vpc-usage.sh [--region <region>] [--vpc <vpc-id>]
+./scripts/eks/check-aws-prerequisites.sh [--profile <profile>]
+./scripts/eks/check-vpc-usage.sh [--region <region>] [--vpc <vpc-id>]
 
 # Multi-cloud deployment uses:
 # - AWS CLI (aws) for EKS deployments
@@ -494,6 +494,86 @@ EOF
 kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 ```
 
+## Telemetry System
+
+### Overview
+MiniPrem includes a telemetry system that tracks deployment health and usage across Docker and Kubernetes environments. The telemetry backend is deployed at https://renny.services.uneeq.io and stores data in DynamoDB.
+
+### Key Concepts
+- **Installation ID**: Unique identifier per pod/container instance (e.g., `eks-1761285734-14a65718b9c3c36e`)
+- **Machine ID**: SHA-256 hash representing the physical machine/node
+  - **Kubernetes**: Hash of NODE_NAME (ensures pods on same node report same machine_id)
+  - **Docker with GPU**: Hash of GPU UUID from nvidia-smi
+  - **Docker fallback**: Hash of hostname
+- **Deployment ID**: Fixed identifier grouping all instances of a deployment
+- **Event Types**: `installation` (startup) and `heartbeat` (every 5 minutes)
+
+### Telemetry Client Script
+Location: `kubernetes/renny/scripts/renny-telemetry-client.sh`
+
+**Critical Fix (October 2024)**: The `get_machine_id()` function was fixed to prioritize Kubernetes NODE_NAME over pod hostname. This ensures multiple pods on the same physical node correctly report as one machine.
+
+**Machine ID Priority (Kubernetes)**:
+1. **NODE_NAME** (env var from `spec.nodeName`) → SHA-256 hash
+2. GPU UUID from nvidia-smi → SHA-256 hash
+3. Hostname fallback → SHA-256 hash
+
+**Example Log Output (Correct)**:
+```
+[2025-10-24 06:02:14] INFO: Machine ID from Kubernetes node: ip-10-17-2-248.ec.internal
+[2025-10-24 06:02:14] INFO: Machine ID: 9e49480eab3b03dc...
+```
+
+### Dashboard Metrics
+The telemetry dashboard (https://renny.services.uneeq.io) displays:
+- **MiniPrem Deployments**: Count of unique deployment_ids
+- **Active Machines**: Count of unique machine_ids (physical nodes)
+- **Active Rennys**: Count of unique installation_ids (running pods)
+
+**Expected Behavior for 2 pods on 1 node**:
+- 1 Machine (same machine_id)
+- 2 Active Rennys (different installation_ids)
+
+### Troubleshooting Telemetry
+
+**Check telemetry logs**:
+```bash
+kubectl logs <pod-name> -c telemetry -n uneeq-renderer --tail=50
+```
+
+**Verify machine_id matches across pods**:
+```bash
+# Both pods on same node should show identical machine_id
+kubectl logs renderer-abc123-pod1 -c telemetry -n uneeq-renderer | grep "Machine ID"
+kubectl logs renderer-abc123-pod2 -c telemetry -n uneeq-renderer | grep "Machine ID"
+```
+
+**Query DynamoDB directly**:
+```bash
+aws dynamodb scan --table-name miniprem-telemetry --region us-east-1 \
+  --filter-expression "deployment_id = :did" \
+  --expression-attribute-values '{":did":{"S":"YOUR_DEPLOYMENT_ID"}}'
+```
+
+**Common Issues**:
+- **Multiple machines for pods on same node**: Old bug where hostname was used instead of NODE_NAME. Fixed in renny-telemetry-client.sh:get_machine_id()
+- **Stale heartbeats after pod restart**: Delete old entries from DynamoDB using installation_id + timestamp keys
+- **No telemetry data**: Check that telemetry.enabled=true in renny-values.yaml and ConfigMap is up to date
+
+### Updating Telemetry Script
+```bash
+# 1. Edit the script
+vim kubernetes/renny/scripts/renny-telemetry-client.sh
+
+# 2. Update ConfigMap in cluster
+kubectl create configmap renny-telemetry -n uneeq-renderer \
+  --from-file=telemetry-client.sh=renny/scripts/renny-telemetry-client.sh \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 3. Restart pods to apply changes
+kubectl delete pods --all -n uneeq-renderer
+```
+
 ## Troubleshooting
 
 ### Docker Issues
@@ -502,7 +582,7 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 - Verify GPU: `nvidia-smi`
 - Check UneeQ config: `cat docker/configuration.dat`
 
-### Kubernetes Issues  
+### Kubernetes Issues
 - Check pod status: `kubectl get pods -n uneeq-renderer`
 - View detailed events: `kubectl describe pod <pod-name> -n uneeq-renderer`
 - GPU operator status: `kubectl get pods -n gpu-operator`
@@ -512,7 +592,7 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 
 **AWS/EKS:**
 - Profile detection: Scripts auto-detect AWS profile/region from environment
-- VPC limits: Use `./scripts/check-vpc-usage.sh` before deployment
+- VPC limits: Use `./scripts/eks/check-vpc-usage.sh` before deployment
 - Region config: Scripts read region from `kubernetes/terraform/eks/terraform.tfvars`
 - Authentication: `aws sts get-caller-identity` must succeed
 - IAM permissions: Ensure EKS/EC2/VPC permissions configured
