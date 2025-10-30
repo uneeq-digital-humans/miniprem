@@ -28,6 +28,26 @@ check_docker_installed() {
 
     docker_version=$(docker --version | awk '{print $3}' | sed 's/,//')
     success "$CHECKMARK Docker version: $docker_version"
+
+    # Check for docker-compose (v1) or docker compose (v2)
+    if ! command_exists docker-compose && ! docker compose version >/dev/null 2>&1; then
+        fatal "docker-compose is not installed. Please install Docker Compose."
+        fatal "Visit https://docs.docker.com/compose/install/ for installation instructions."
+    fi
+
+    # Determine which docker-compose command to use
+    if command_exists docker-compose; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+        compose_version=$(docker-compose --version | awk '{print $3}' | sed 's/,//')
+        success "$CHECKMARK Docker Compose (v1) version: $compose_version"
+    else
+        DOCKER_COMPOSE_CMD="docker compose"
+        compose_version=$(docker compose version | awk '{print $4}')
+        success "$CHECKMARK Docker Compose (v2) version: $compose_version"
+    fi
+
+    # Export for use in other functions
+    export DOCKER_COMPOSE_CMD
 }
 
 check_nvidia_toolkit() {
