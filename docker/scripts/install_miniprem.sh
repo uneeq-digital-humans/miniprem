@@ -1742,9 +1742,9 @@ main() {
 
     # In all docker compose commands, use the correct compose files
     if [ "$INSTALL_TYPE" = "default" ]; then
-        COMPOSE_FILES="-f $PROJECT_ROOT/docker/docker-compose.default.yml"
-    else
         COMPOSE_FILES="-f $PROJECT_ROOT/docker/docker-compose.yml"
+    else
+        COMPOSE_FILES="-f $PROJECT_ROOT/docker/docker-compose.full.yml"
     fi
 
     # Update docker-compose.yml based on TTS provider

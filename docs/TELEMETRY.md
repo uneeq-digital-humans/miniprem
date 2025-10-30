@@ -150,7 +150,7 @@ We will respond within 30 days.
 
 - **Backend Service**: `miniprem-monitor/backend/app/services/telemetry.py`
 - **Installation Script**: `docker/scripts/install_miniprem.sh`
-- **Docker Compose**: `docker/docker-compose.yml` and `docker/docker-compose.default.yml`
+- **Docker Compose**: `docker/docker-compose.full.yml` and `docker/docker-compose.yml`
 - **Integration**: `miniprem-monitor/backend/app/main.py`
 
 ### Testing

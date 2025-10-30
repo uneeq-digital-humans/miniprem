@@ -68,7 +68,7 @@ renderer:
   
   unrealEngine:
     config: ""  # Base64 encoded UneeQ's Unreal Engine SDK licence file
-    # Command line arguments for Unreal Engine (from docker-compose.default.yml)
+    # Command line arguments for Unreal Engine (from docker-compose.yml)
     args:
       - "/Game/Live_Levels/BlankScene"
       - "-RenderOffScreen"
@@ -76,7 +76,7 @@ renderer:
       - "-ResY=1080"
       - "-NoTextureStreaming"
   
-  # Health check configuration (from docker-compose.default.yml)
+  # Health check configuration (from docker-compose.yml)
   health:
     url: "http://0.0.0.0:8081/health"
   

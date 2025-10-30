@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL EFFICIENCY RULES
+
+- Before reading any file: Check if already read in last 10 messages. If yes, use buffer memory.
+- Before executing any plan item: Evaluate if actually needed. If code already satisfies goal, propose skip.
+- Choose most direct implementation: MultiEdit batch operations, no temp scripts for simple tasks.
+- Concise by default: No preambles, no postambles, minimal explanation unless asked.
+
+## File Read Optimization Protocol
+
+Before ANY Read Tool Call:
+- Check conversation buffer: "Have I read this file in last 10 messages?"
+- If YES and no user edits mentioned: Use cached memory, do NOT re-read
+- If uncertain about file state: Check git status or ask user
+
+Exception: User explicitly says "check file again"
+
 ## Quick Commands
 
 ### MiniPrem Management (Docker)
@@ -275,14 +291,6 @@ cd docker/
 docker compose -f docker-compose.monitor.yml up -d
 ```
 
-### Next Development Steps
-1. ✅ ~~Install AWS CLI v2 in Dockerfile~~ - Completed
-2. ✅ ~~Mount AWS credentials in docker-compose~~ - Completed
-3. ✅ ~~Test Kubernetes authentication with EKS~~ - Completed (requires SSO login)
-4. ⏳ Implement AWS SSO login modal component (Tailwind)
-5. ⏳ Add Docker sudo password modal for privileged operations
-6. ⏳ Design terminal shell component with xterm.js + WebSocket PTY
-
 ## Architecture Overview
 
 MiniPrem is a multi-deployment digital human platform with two main architectures:
@@ -327,8 +335,8 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ## Key Configuration Files
 
 ### Docker Configuration
-- `docker/docker-compose.yml`: Full install services (all services including monitor)
-- `docker/docker-compose.default.yml`: Default install services (Renny + monitor)
+- `docker/docker-compose.full.yml`: Full install services (all services including monitor)
+- `docker/docker-compose.yml`: Default install services (Renny + monitor)
 - `docker/docker-compose.monitor.yml`: Standalone monitor for Kubernetes monitoring
 - `docker/configuration.dat`: UneeQ platform credentials (JSON format)
 - `.miniprem_install_type`: Current installation type (default/full)
@@ -358,8 +366,8 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ```
 miniprem-2025/
 ├── docker/                 # Docker-based local deployment
-│   ├── docker-compose.yml  # Full services stack
-│   ├── docker-compose.default.yml  # Basic services
+│   ├── docker-compose.full.yml  # Full services stack
+│   ├── docker-compose.yml  # Basic services
 │   ├── docker-compose.monitor.yml  # Standalone monitor
 │   └── configuration.dat   # UneeQ credentials
 ├── miniprem-monitor/       # Monitoring application
@@ -731,20 +739,6 @@ When user says `/build-mode` or "let's build this", switch to build mode:
 - Threshold 0.3 handles minor rendering differences
 - Wait for layout stabilization before screenshots
 
-### Agent Usage Policy
-
-**🎯 DEFAULT BEHAVIOR: Use agents proactively for all non-trivial tasks**
-
-**Always use agents for:**
-- **Testing tasks**: `playwright-tdd-expert` or `api-backend-tester`
-- **Python development**: `python-backend-dev` for backend code, APIs, data processing
-- **React/TypeScript**: `typescript-pro` for frontend components and type safety
-- **Next.js features**: `nextjs-expert` for App Router, server components, dynamic routes
-- **Large searches**: `general-purpose` agent for multi-file codebase analysis
-- **Architecture decisions**: `system-architect` for design and planning
-- **OpenAI integration**: `chatgpt-expert` for sentiment analysis, prompt engineering
-- **Markdown documentation**: `markdown-expert` for README improvements, TOC generation, formatting fixes
-
 **Threshold for agent use: If a task has 3+ steps or spans multiple files, use an agent.**
 
 **When to work directly (without agents):**
@@ -784,31 +778,3 @@ When user says `/build-mode` or "let's build this", switch to build mode:
 **See**: `.claude/agents/shared/gemini-cli-reference.md` for complete Gemini CLI usage patterns and examples.
 
 All agents must use Gemini CLI proactively for large research tasks that exceed context limits or involve analyzing entire codebases.
-
-## Cost Optimization
-
-### Kubernetes Production Costs
-
-**AWS EKS (us-east-1):**
-- Base infrastructure: ~$8,640/month (10 GPU nodes @ $1.20/hour each)
-- System nodes: ~$280/month (2x Standard nodes)
-- NAT Gateway: ~$32/month
-- **Total (10 nodes)**: ~$8,952/month
-- **Total (20 nodes)**: ~$17,592/month
-- Scales with instance count (10-20 supported)
-
-**Azure AKS (westus3):**
-- Base infrastructure: ~$10,800/month (10 GPU nodes @ $1.50/hour each)
-- System nodes: ~$280/month (2x Standard nodes)
-- NAT Gateway: ~$32/month
-- **Total (10 nodes)**: ~$11,112/month
-- **Total (20 nodes)**: ~$21,792/month
-- Scales with instance count (10-20 supported)
-
-### Cost-Saving Options (All Platforms)
-- **Autoscaling**: Scale down GPU nodes during off-hours (50-80% savings)
-- **Time-slicing**: 2-4 pods per GPU reduces node count by 50-75%
-- **Reserved instances**: Up to 72% savings with 3-year commitment (AWS/Azure)
-- **Spot instances**: 60-90% savings for dev/test workloads (availability not guaranteed)
-- **Resource destruction**: Use `./scripts/destroy.sh` when not in use
-- **Single NAT gateway**: Save ~$32/month for dev/test (reduces HA)

@@ -21,7 +21,7 @@
 ### 3. ✅ Fixed Telemetry Domain (All Deployments)
 **Files**:
 - `docker/renny-telemetry-client.sh` (default URL, line 13)
-- `docker/docker-compose.default.yml` (environment variable, line 53)
+- `docker/docker-compose.yml` (environment variable, line 53)
 - `kubernetes/renny/scripts/renny-telemetry-client.sh` (default URL, line 13)
 - `kubernetes/values/renny-values.yaml` (Helm values, line 168)
 
@@ -56,7 +56,7 @@ Line 13: TELEMETRY_BACKEND_URL="${TELEMETRY_BACKEND_URL:-https://renny.services.
 Line 142: local url="${TELEMETRY_BACKEND_URL}/telemetry/heartbeat"
 ```
 
-### Docker Compose (`docker/docker-compose.default.yml`)
+### Docker Compose (`docker/docker-compose.yml`)
 ```yaml
 environment:
   - TELEMETRY_ENABLED=true
@@ -154,9 +154,9 @@ curl -X POST https://renny.services.uneeq.io/telemetry/heartbeat \
 ```bash
 # Sometimes volume-mounted files need full container recreation
 cd /path/to/miniprem-2025/docker
-sudo docker compose -f docker-compose.default.yml stop renny
-sudo docker compose -f docker-compose.default.yml rm -f renny
-sudo docker compose -f docker-compose.default.yml up -d renny
+sudo docker compose -f docker-compose.yml stop renny
+sudo docker compose -f docker-compose.yml rm -f renny
+sudo docker compose -f docker-compose.yml up -d renny
 
 # Wait 10 seconds, then check logs
 sleep 10
