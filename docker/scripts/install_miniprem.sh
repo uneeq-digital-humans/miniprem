@@ -900,14 +900,14 @@ start_miniprem() {
             fatal "Failed to start support services"
         fi
     else
-        # Full install: start monitor for container monitoring
+        # Default install: start monitor for container monitoring
         info "Starting MiniPrem Monitor for container monitoring..."
         $DOCKER_CMD $COMPOSE_FILES up -d miniprem-monitor
         if [ $? -ne 0 ]; then
             warning "Failed to start MiniPrem Monitor"
         fi
 
-        # If using RIME in full install, start the RIME services
+        # If using RIME in default install, start the RIME services
         if [ "$TTS_PROVIDER" = "rime" ]; then
             info "Starting RIME services..."
             $DOCKER_CMD $COMPOSE_FILES up -d rime-model rime-api
