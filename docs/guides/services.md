@@ -1,7 +1,7 @@
 <div align="center">
 
-<img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png" alt="UneeQ Logo" class="logo-light-mode" />
-<img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+Rev+White.png" alt="UneeQ Logo" class="logo-dark-mode" />
+<img src="images/logos/logo-horizontal-color.png" alt="UneeQ Logo" class="logo-light-mode" />
+<img src="images/logos/logo-white.png" alt="UneeQ Logo" class="logo-dark-mode" />
 
 # MiniPrem Services Overview
 
@@ -140,8 +140,8 @@ This guide is part of the MiniPrem platform, licensed under the MIT License - se
 
 **© 2025 UneeQ. All rights reserved.**
 
-<img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png" alt="UneeQ Logo" class="logo-light-mode" />
-<img src="https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+Rev+White.png" alt="UneeQ Logo" class="logo-dark-mode" />
+<img src="images/logos/logo-horizontal-color.png" alt="UneeQ Logo" class="logo-light-mode" />
+<img src="images/logos/logo-white.png" alt="UneeQ Logo" class="logo-dark-mode" />
 
 **Digital Humans. Unlimited Possibilities.**
 

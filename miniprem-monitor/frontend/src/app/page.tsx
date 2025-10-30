@@ -744,9 +744,9 @@ Available Clusters: ${availableClusters.length}`;
               <div className="flex items-center space-x-2" data-testid="app-branding">
                 <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center" data-testid="app-logo">
                   <img
-                    src="https://cdn.uneeq.io/hosted-experience/assets/favicon.png"
+                    src="/assets/logos/logo-white.png"
                     alt="UneeQ Logo"
-                    className="w-6 h-6"
+                    className="w-8 h-8"
                   />
                 </div>
                 <h1 className="text-2xl font-bold text-white" data-testid="app-title">

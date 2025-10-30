@@ -4,6 +4,53 @@
 @tailwind utilities;
 
 @layer base {
+  /* ===== CSS CUSTOM PROPERTIES ===== */
+  :root {
+    /* Brand Colors (Official - March 2023) */
+    --uneeq-orange: #F47C6A;
+    --uneeq-blue: #5F56DA;
+    --uneeq-pink: #FF1888;
+    --uneeq-yellow: #FFB648;
+    --uneeq-liquorice: #232236;
+    --uneeq-gradient-start: #0E0B33;
+    --uneeq-gradient-end: #0D0B5D;
+    --uneeq-white: #FFFFFF;
+
+    /* Light Mode */
+    --bg-primary-light: #FFFFFF;
+    --bg-secondary-light: #F9FAFB;
+    --bg-tertiary-light: #F3F4F6;
+    --text-primary-light: #232236;
+    --text-secondary-light: #6B7280;
+    --text-tertiary-light: #9CA3AF;
+    --border-primary-light: #E5E7EB;
+    --border-secondary-light: #D1D5DB;
+
+    /* Dark Mode */
+    --bg-primary-dark: #232236;
+    --bg-secondary-dark: #2D2A47;
+    --bg-tertiary-dark: #38354E;
+    --bg-gradient-dark: linear-gradient(to bottom, #0E0B33, #0D0B5D);
+    --text-primary-dark: #F8F9FA;
+    --text-secondary-dark: #E5E7EB;
+    --text-tertiary-dark: #D1D5DB;
+    --text-muted-dark: #9CA3AF;
+    --border-primary-dark: rgba(255, 255, 255, 0.08);
+    --border-secondary-dark: rgba(255, 255, 255, 0.12);
+
+    /* Dark Mode Accent Variants */
+    --uneeq-blue-dark: #7B73E1;
+    --uneeq-orange-dark: #FF8C7A;
+
+    /* Status Colors */
+    --success-light: #10B981;
+    --success-dark: #34D399;
+    --warning-light: #F59E0B;
+    --warning-dark: #FBBF24;
+    --error-light: #EF4444;
+    --error-dark: #F87171;
+  }
+
   html {
     font-family: 'Manrope', 'Inter', system-ui, sans-serif;
   }
@@ -14,10 +61,10 @@
 }
 
 @layer components {
-  /* Custom scrollbar */
+  /* Custom scrollbar with brand blue */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: #5F56D9 #e5e7eb;
+    scrollbar-color: var(--uneeq-blue) #e5e7eb;
   }
 
   .custom-scrollbar::-webkit-scrollbar {
@@ -29,11 +76,12 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-uneeq-primary rounded;
+    background-color: var(--uneeq-blue);
+    border-radius: 3px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    @apply bg-uneeq-pink;
+    background-color: var(--uneeq-pink);
   }
 
   /* Status indicators */
@@ -66,9 +114,14 @@
     @apply bg-gradient-to-br from-white to-gray-50 dark:from-gray-800 dark:to-gray-900 rounded-lg shadow-md border border-gray-200 dark:border-gray-700 hover:shadow-lg dark:hover:shadow-xl transition-all duration-200;
   }
 
-  /* Button styles */
+  /* Button styles - using official brand colors */
   .btn-primary {
-    @apply bg-uneeq-primary text-white px-4 py-2 rounded-md hover:bg-uneeq-pink transition-colors duration-200 font-semibold;
+    background-color: var(--uneeq-blue);
+    @apply text-white px-4 py-2 rounded-md transition-colors duration-200 font-semibold;
+  }
+
+  .btn-primary:hover {
+    background-color: var(--uneeq-pink);
   }
 
   .btn-secondary {
@@ -84,9 +137,9 @@
     @apply p-2 rounded-md text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-gray-200 transition-colors duration-200;
   }
 
-  /* Header gradient */
+  /* Header gradient - using official brand colors */
   .header-gradient {
-    background: linear-gradient(135deg, #5F56D9 0%, #F41788 50%, #EB7466 100%);
+    background: linear-gradient(135deg, var(--uneeq-blue) 0%, var(--uneeq-pink) 50%, var(--uneeq-orange) 100%);
   }
 
   /* Metrics cards */
@@ -103,7 +156,8 @@
   }
 
   .metric-icon {
-    @apply w-8 h-8 text-uneeq-primary;
+    color: var(--uneeq-blue);
+    @apply w-8 h-8;
   }
 
   /* Log container */
@@ -118,21 +172,23 @@
   }
 
   .loading-dots span {
-    @apply w-2 h-2 bg-uneeq-primary rounded-full animate-bounce;
+    background-color: var(--uneeq-blue);
+    @apply w-2 h-2 rounded-full animate-bounce;
     animation-delay: var(--delay);
   }
 }
 
 @layer utilities {
+  /* Gradient text utilities - using official brand colors */
   .text-gradient {
-    background: linear-gradient(135deg, #5F56D9 0%, #F41788 100%);
+    background: linear-gradient(135deg, var(--uneeq-blue) 0%, var(--uneeq-pink) 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
   .border-gradient {
-    border-image: linear-gradient(135deg, #5F56D9 0%, #F41788 100%) 1;
+    border-image: linear-gradient(135deg, var(--uneeq-blue) 0%, var(--uneeq-pink) 100%) 1;
   }
 
   /* Common dark mode text utilities */
@@ -174,8 +230,13 @@
     @apply border-gray-300 dark:border-gray-600;
   }
 
-  /* Input field styling */
+  /* Input field styling with brand focus colors */
   .input-field {
-    @apply bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400 focus:border-uneeq-primary dark:focus:border-uneeq-primary focus:ring-uneeq-primary dark:focus:ring-uneeq-primary;
+    @apply bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-gray-100 placeholder-gray-500 dark:placeholder-gray-400;
+  }
+
+  .input-field:focus {
+    border-color: var(--uneeq-blue);
+    --tw-ring-color: var(--uneeq-blue);
   }
 }
