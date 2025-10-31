@@ -279,7 +279,7 @@ read -t 300 -p "Enter choice [1-2]: " install_choice || {
 # Define path constants at the top
 readonly DOCKER_DIR="$PROJECT_ROOT/docker"
 readonly COMPOSE_FILE="$DOCKER_DIR/docker-compose.yml"
-readonly COMPOSE_DEFAULT_FILE="$DOCKER_DIR/docker-compose.default.yml"
+readonly COMPOSE_DEFAULT_FILE="$DOCKER_DIR/docker-compose.yml"
 readonly ENV_FILE="$DOCKER_DIR/docker-compose.env"
 readonly ENV_EXAMPLE_FILE="$DOCKER_DIR/docker-compose.env.example"
 

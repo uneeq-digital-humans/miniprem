@@ -124,9 +124,9 @@ pull_docker_images() {
     
     # Use the correct path for the docker-compose file
     if [ "$install_type" = "full" ]; then
-        compose_file="-f $current_dir/docker/docker-compose.yml"
+        compose_file="-f $current_dir/docker/docker-compose.full.yml"
     else
-        compose_file="-f $current_dir/docker/docker-compose.default.yml"
+        compose_file="-f $current_dir/docker/docker-compose.yml"
     fi
 
     DOCKER_CMD=$(get_docker_command)
@@ -205,7 +205,12 @@ stop_docker_compose() {
 
 update_docker_compose_image() {
     local image_name=$1
+    local install_type=$(cat "$PROJECT_ROOT/.miniprem_install_type" 2>/dev/null || echo "default")
     local compose_file="docker/docker-compose.yml"
+
+    if [ "$install_type" = "full" ]; then
+        compose_file="docker/docker-compose.full.yml"
+    fi
 
     if [[ -f "$compose_file" ]]; then
         if yq eval ".services.renny.image = \"$image_name\"" -i "$compose_file"; then
@@ -221,7 +226,12 @@ update_docker_compose_image() {
 # Function to read the current image value from the docker-compose.yml file
 read_docker_compose_value() {
     local key=$1
+    local install_type=$(cat "$PROJECT_ROOT/.miniprem_install_type" 2>/dev/null || echo "default")
     local compose_file="docker/docker-compose.yml"
+
+    if [ "$install_type" = "full" ]; then
+        compose_file="docker/docker-compose.full.yml"
+    fi
 
     if [[ -f "$compose_file" ]]; then
         yq eval ".services.renny.$key" "$compose_file"

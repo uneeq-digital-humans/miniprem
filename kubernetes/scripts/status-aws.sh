@@ -44,14 +44,14 @@ echo "======================================"
 echo ""
 
 # Check if terraform state exists
-if [ ! -f "$PROJECT_DIR/terraform/eks/terraform.tfstate" ]; then
+if [ ! -f "$PROJECT_DIR/kubernetes/terraform/eks/terraform.tfstate" ]; then
     echo -e "${RED}❌ No deployment found${NC}"
     echo "Run ./scripts/deploy.sh to create a deployment"
     exit 1
 fi
 
 # Load deployment configuration
-cd "$PROJECT_DIR/terraform/eks"
+cd "$PROJECT_DIR/kubernetes/terraform/eks"
 init_deployment_config "false" ""
 REGION="$AWS_REGION"
 
@@ -116,8 +116,8 @@ echo -e "${BLUE}🚀 Application Status${NC}"
 echo "===================="
 
 # Renny pods
-RENNY_RUNNING=$(kubectl get pods -n uneeq-renderer -l app=renny --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
-RENNY_TOTAL=$(kubectl get pods -n uneeq-renderer -l app=renny --no-headers 2>/dev/null | wc -l || echo "0")
+RENNY_RUNNING=$(kubectl get pods -n uneeq-renderer -l app=renderer --field-selector=status.phase=Running --no-headers 2>/dev/null | wc -l || echo "0")
+RENNY_TOTAL=$(kubectl get pods -n uneeq-renderer -l app=renderer --no-headers 2>/dev/null | wc -l || echo "0")
 
 if [ "$RENNY_TOTAL" -gt 0 ]; then
     if [ "$RENNY_RUNNING" -eq "$RENNY_TOTAL" ]; then
@@ -220,4 +220,4 @@ echo ""
 echo "Commands:"
 echo "  Scale Renny: ./scripts/scale.sh <count>"
 echo "  Destroy: ./scripts/destroy.sh"
-echo "  Logs (Renny): kubectl logs -n uneeq-renderer -l app=renny --tail=50"
+echo "  Logs (Renny): kubectl logs -n uneeq-renderer -l app=renderer --tail=50"

@@ -82,15 +82,18 @@ This architecture is optimized for kiosk deployments where the user's browser an
 
 ## Features
 
+### Core Features (Default & Full Install)
 - **Digital Human Interface**: Powered by Renny, with internal speech processing and real-time facial animation
-- **LLM Integration**: vLLM running Gemma3 for natural language understanding
-- **LLM Integration**: vLLM running Mistral-7B-Instruct-v0.3 for natural language understanding
+- **MiniPrem Monitor**: Real-time container and Kubernetes cluster monitoring dashboard
+- **Internal Speech Processing**: Advanced speech system with NEW_SPEECH_OVERRIDE for enhanced performance
+
+### Additional Features (Full Install Only)
+- **LLM Integration**: vLLM running Gemma3/Mistral-7B-Instruct-v0.3 for natural language understanding
 - **Workflow Automation**: Flowise for building and managing AI workflows
 - **Metrics & Monitoring**: Prometheus and Grafana for real-time performance tracking
 - **Queue Management**: Redis for reliable message processing
-- **RIME AI**: High-quality text-to-speech via a simple API
-- **Whisper**: OpenAI's speech recognition for accurate audio transcription
-- **Internal Speech Processing**: Advanced speech system with NEW_SPEECH_OVERRIDE for enhanced performance
+- **RIME AI**: High-quality text-to-speech via a simple API (optional)
+- **FastWhisper**: GPU-accelerated speech-to-text for accurate audio transcription
 
 ## Quick Start
 
@@ -117,9 +120,31 @@ This architecture is optimized for kiosk deployments where the user's browser an
    ./docker/scripts/install_miniprem.sh
    ```
 
-   The installer will prompt you to select either a **Default Install** (Renny only) or a **Full Install** (all services: Renny, Flowise, vLLM, Grafana, Prometheus, RIME, etc.).
+   The installer will prompt you to select either a **Default Install** or a **Full Install**:
+
+   - **Default Install**: Lightweight production-ready deployment with Renny digital human and MiniPrem Monitor (2 containers, ~8GB GPU RAM)
+   - **Full Install**: Complete AI stack with LLM, workflow automation, and metrics monitoring (8-9 containers, ~16GB GPU RAM)
 
    You can re-run the installer at any time to upgrade from Default to Full, or to change your selection.
+
+#### Installation Type Comparison
+
+| Component | Default Install | Full Install | Purpose |
+|-----------|----------------|--------------|---------|
+| **Renny** | ✅ | ✅ | Digital human renderer with internal speech processing |
+| **MiniPrem Monitor** | ✅ | ✅ | Real-time container and Kubernetes monitoring dashboard |
+| **vLLM** | ❌ | ✅ | LLM inference server (Gemma3/Mistral models) |
+| **Flowise** | ❌ | ✅ | Workflow automation and LLM integration |
+| **Grafana** | ❌ | ✅ | Metrics visualization dashboard |
+| **Prometheus** | ❌ | ✅ | Metrics collection and monitoring |
+| **Redis** | ❌ | ✅ | Message queue and caching |
+| **FastWhisper** | ❌ | ✅ | GPU-accelerated speech-to-text (STT) |
+| **RIME** (optional) | ❌ | ✅ | High-quality text-to-speech (TTS) API |
+| **Total Containers** | 2 | 8-9 | |
+| **GPU Memory Required** | ~8GB | ~16GB | Approximate VRAM usage |
+| **Use Case** | Production deployments, kiosks | Development, testing, AI workflows |
+
+**Recommendation**: Start with **Default Install** for production use. Only choose **Full Install** if you need LLM capabilities, workflow automation, or comprehensive metrics monitoring.
 
 3. The script will prompt you for the following required information:
 
@@ -354,8 +379,8 @@ This represents a significant architectural improvement, moving from a multi-ser
 
 MiniPrem uses two main Docker Compose files:
 
-* `docker/docker-compose.default.yml` - Used for Default Install (Renny only)
-* `docker/docker-compose.yml` - Used for Full Install (all services)
+* `docker/docker-compose.yml` - Used for Default Install (Renny only)
+* `docker/docker-compose.full.yml` - Used for Full Install (all services)
 
 The appropriate file is automatically selected based on your installation type.
 

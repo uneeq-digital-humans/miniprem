@@ -96,7 +96,7 @@ nvidia-smi
 
 ## <div class="step-container"><div class="step-number">2</div><div class="step-content">Update Docker Image Version</div></div>
 
-Locate and edit your `docker-compose.yml` or `docker-compose.default.yml` file.
+Locate and edit your `docker-compose.yml` or `docker-compose.full.yml` file.
 
 ### Find the image property and update it:
 

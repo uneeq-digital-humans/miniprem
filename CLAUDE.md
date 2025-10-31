@@ -2,6 +2,22 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CRITICAL EFFICIENCY RULES
+
+- Before reading any file: Check if already read in last 10 messages. If yes, use buffer memory.
+- Before executing any plan item: Evaluate if actually needed. If code already satisfies goal, propose skip.
+- Choose most direct implementation: MultiEdit batch operations, no temp scripts for simple tasks.
+- Concise by default: No preambles, no postambles, minimal explanation unless asked.
+
+## File Read Optimization Protocol
+
+Before ANY Read Tool Call:
+- Check conversation buffer: "Have I read this file in last 10 messages?"
+- If YES and no user edits mentioned: Use cached memory, do NOT re-read
+- If uncertain about file state: Check git status or ask user
+
+Exception: User explicitly says "check file again"
+
 ## Quick Commands
 
 ### MiniPrem Management (Docker)
@@ -54,8 +70,8 @@ gcloud container clusters get-credentials <cluster-name> --region <region>
 ### Cloud Platform Utilities
 ```bash
 # AWS-specific utilities
-./scripts/check-aws-prerequisites.sh [--profile <profile>]
-./scripts/check-vpc-usage.sh [--region <region>] [--vpc <vpc-id>]
+./scripts/eks/check-aws-prerequisites.sh [--profile <profile>]
+./scripts/eks/check-vpc-usage.sh [--region <region>] [--vpc <vpc-id>]
 
 # Multi-cloud deployment uses:
 # - AWS CLI (aws) for EKS deployments
@@ -275,14 +291,6 @@ cd docker/
 docker compose -f docker-compose.monitor.yml up -d
 ```
 
-### Next Development Steps
-1. ✅ ~~Install AWS CLI v2 in Dockerfile~~ - Completed
-2. ✅ ~~Mount AWS credentials in docker-compose~~ - Completed
-3. ✅ ~~Test Kubernetes authentication with EKS~~ - Completed (requires SSO login)
-4. ⏳ Implement AWS SSO login modal component (Tailwind)
-5. ⏳ Add Docker sudo password modal for privileged operations
-6. ⏳ Design terminal shell component with xterm.js + WebSocket PTY
-
 ## Architecture Overview
 
 MiniPrem is a multi-deployment digital human platform with two main architectures:
@@ -327,8 +335,8 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ## Key Configuration Files
 
 ### Docker Configuration
-- `docker/docker-compose.yml`: Full install services (all services including monitor)
-- `docker/docker-compose.default.yml`: Default install services (Renny + monitor)
+- `docker/docker-compose.full.yml`: Full install services (all services including monitor)
+- `docker/docker-compose.yml`: Default install services (Renny + monitor)
 - `docker/docker-compose.monitor.yml`: Standalone monitor for Kubernetes monitoring
 - `docker/configuration.dat`: UneeQ platform credentials (JSON format)
 - `.miniprem_install_type`: Current installation type (default/full)
@@ -358,8 +366,8 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ```
 miniprem-2025/
 ├── docker/                 # Docker-based local deployment
-│   ├── docker-compose.yml  # Full services stack
-│   ├── docker-compose.default.yml  # Basic services
+│   ├── docker-compose.full.yml  # Full services stack
+│   ├── docker-compose.yml  # Basic services
 │   ├── docker-compose.monitor.yml  # Standalone monitor
 │   └── configuration.dat   # UneeQ credentials
 ├── miniprem-monitor/       # Monitoring application
@@ -494,6 +502,86 @@ EOF
 kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 ```
 
+## Telemetry System
+
+### Overview
+MiniPrem includes a telemetry system that tracks deployment health and usage across Docker and Kubernetes environments. The telemetry backend is deployed at https://renny.services.uneeq.io and stores data in DynamoDB.
+
+### Key Concepts
+- **Installation ID**: Unique identifier per pod/container instance (e.g., `eks-1761285734-14a65718b9c3c36e`)
+- **Machine ID**: SHA-256 hash representing the physical machine/node
+  - **Kubernetes**: Hash of NODE_NAME (ensures pods on same node report same machine_id)
+  - **Docker with GPU**: Hash of GPU UUID from nvidia-smi
+  - **Docker fallback**: Hash of hostname
+- **Deployment ID**: Fixed identifier grouping all instances of a deployment
+- **Event Types**: `installation` (startup) and `heartbeat` (every 5 minutes)
+
+### Telemetry Client Script
+Location: `kubernetes/renny/scripts/renny-telemetry-client.sh`
+
+**Critical Fix (October 2024)**: The `get_machine_id()` function was fixed to prioritize Kubernetes NODE_NAME over pod hostname. This ensures multiple pods on the same physical node correctly report as one machine.
+
+**Machine ID Priority (Kubernetes)**:
+1. **NODE_NAME** (env var from `spec.nodeName`) → SHA-256 hash
+2. GPU UUID from nvidia-smi → SHA-256 hash
+3. Hostname fallback → SHA-256 hash
+
+**Example Log Output (Correct)**:
+```
+[2025-10-24 06:02:14] INFO: Machine ID from Kubernetes node: ip-10-17-2-248.ec.internal
+[2025-10-24 06:02:14] INFO: Machine ID: 9e49480eab3b03dc...
+```
+
+### Dashboard Metrics
+The telemetry dashboard (https://renny.services.uneeq.io) displays:
+- **MiniPrem Deployments**: Count of unique deployment_ids
+- **Active Machines**: Count of unique machine_ids (physical nodes)
+- **Active Rennys**: Count of unique installation_ids (running pods)
+
+**Expected Behavior for 2 pods on 1 node**:
+- 1 Machine (same machine_id)
+- 2 Active Rennys (different installation_ids)
+
+### Troubleshooting Telemetry
+
+**Check telemetry logs**:
+```bash
+kubectl logs <pod-name> -c telemetry -n uneeq-renderer --tail=50
+```
+
+**Verify machine_id matches across pods**:
+```bash
+# Both pods on same node should show identical machine_id
+kubectl logs renderer-abc123-pod1 -c telemetry -n uneeq-renderer | grep "Machine ID"
+kubectl logs renderer-abc123-pod2 -c telemetry -n uneeq-renderer | grep "Machine ID"
+```
+
+**Query DynamoDB directly**:
+```bash
+aws dynamodb scan --table-name miniprem-telemetry --region us-east-1 \
+  --filter-expression "deployment_id = :did" \
+  --expression-attribute-values '{":did":{"S":"YOUR_DEPLOYMENT_ID"}}'
+```
+
+**Common Issues**:
+- **Multiple machines for pods on same node**: Old bug where hostname was used instead of NODE_NAME. Fixed in renny-telemetry-client.sh:get_machine_id()
+- **Stale heartbeats after pod restart**: Delete old entries from DynamoDB using installation_id + timestamp keys
+- **No telemetry data**: Check that telemetry.enabled=true in renny-values.yaml and ConfigMap is up to date
+
+### Updating Telemetry Script
+```bash
+# 1. Edit the script
+vim kubernetes/renny/scripts/renny-telemetry-client.sh
+
+# 2. Update ConfigMap in cluster
+kubectl create configmap renny-telemetry -n uneeq-renderer \
+  --from-file=telemetry-client.sh=renny/scripts/renny-telemetry-client.sh \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 3. Restart pods to apply changes
+kubectl delete pods --all -n uneeq-renderer
+```
+
 ## Troubleshooting
 
 ### Docker Issues
@@ -502,7 +590,7 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 - Verify GPU: `nvidia-smi`
 - Check UneeQ config: `cat docker/configuration.dat`
 
-### Kubernetes Issues  
+### Kubernetes Issues
 - Check pod status: `kubectl get pods -n uneeq-renderer`
 - View detailed events: `kubectl describe pod <pod-name> -n uneeq-renderer`
 - GPU operator status: `kubectl get pods -n gpu-operator`
@@ -512,7 +600,7 @@ kubectl delete pods -n gpu-operator -l app=nvidia-device-plugin-daemonset
 
 **AWS/EKS:**
 - Profile detection: Scripts auto-detect AWS profile/region from environment
-- VPC limits: Use `./scripts/check-vpc-usage.sh` before deployment
+- VPC limits: Use `./scripts/eks/check-vpc-usage.sh` before deployment
 - Region config: Scripts read region from `kubernetes/terraform/eks/terraform.tfvars`
 - Authentication: `aws sts get-caller-identity` must succeed
 - IAM permissions: Ensure EKS/EC2/VPC permissions configured
@@ -651,20 +739,6 @@ When user says `/build-mode` or "let's build this", switch to build mode:
 - Threshold 0.3 handles minor rendering differences
 - Wait for layout stabilization before screenshots
 
-### Agent Usage Policy
-
-**🎯 DEFAULT BEHAVIOR: Use agents proactively for all non-trivial tasks**
-
-**Always use agents for:**
-- **Testing tasks**: `playwright-tdd-expert` or `api-backend-tester`
-- **Python development**: `python-backend-dev` for backend code, APIs, data processing
-- **React/TypeScript**: `typescript-pro` for frontend components and type safety
-- **Next.js features**: `nextjs-expert` for App Router, server components, dynamic routes
-- **Large searches**: `general-purpose` agent for multi-file codebase analysis
-- **Architecture decisions**: `system-architect` for design and planning
-- **OpenAI integration**: `chatgpt-expert` for sentiment analysis, prompt engineering
-- **Markdown documentation**: `markdown-expert` for README improvements, TOC generation, formatting fixes
-
 **Threshold for agent use: If a task has 3+ steps or spans multiple files, use an agent.**
 
 **When to work directly (without agents):**
@@ -704,31 +778,3 @@ When user says `/build-mode` or "let's build this", switch to build mode:
 **See**: `.claude/agents/shared/gemini-cli-reference.md` for complete Gemini CLI usage patterns and examples.
 
 All agents must use Gemini CLI proactively for large research tasks that exceed context limits or involve analyzing entire codebases.
-
-## Cost Optimization
-
-### Kubernetes Production Costs
-
-**AWS EKS (us-east-1):**
-- Base infrastructure: ~$8,640/month (10 GPU nodes @ $1.20/hour each)
-- System nodes: ~$280/month (2x Standard nodes)
-- NAT Gateway: ~$32/month
-- **Total (10 nodes)**: ~$8,952/month
-- **Total (20 nodes)**: ~$17,592/month
-- Scales with instance count (10-20 supported)
-
-**Azure AKS (westus3):**
-- Base infrastructure: ~$10,800/month (10 GPU nodes @ $1.50/hour each)
-- System nodes: ~$280/month (2x Standard nodes)
-- NAT Gateway: ~$32/month
-- **Total (10 nodes)**: ~$11,112/month
-- **Total (20 nodes)**: ~$21,792/month
-- Scales with instance count (10-20 supported)
-
-### Cost-Saving Options (All Platforms)
-- **Autoscaling**: Scale down GPU nodes during off-hours (50-80% savings)
-- **Time-slicing**: 2-4 pods per GPU reduces node count by 50-75%
-- **Reserved instances**: Up to 72% savings with 3-year commitment (AWS/Azure)
-- **Spot instances**: 60-90% savings for dev/test workloads (availability not guaranteed)
-- **Resource destruction**: Use `./scripts/destroy.sh` when not in use
-- **Single NAT gateway**: Save ~$32/month for dev/test (reduces HA)

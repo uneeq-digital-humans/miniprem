@@ -1506,6 +1506,158 @@ deploy_infrastructure() {
     return 0
 }
 
+# Check available container/registry tools
+check_container_tools() {
+    local has_tools=false
+
+    echo "🔍 Checking available container/registry tools..."
+    echo ""
+
+    if command -v docker &>/dev/null; then
+        echo "  ✓ Found: docker (can verify driver availability)"
+        has_tools=true
+    fi
+
+    if command -v podman &>/dev/null; then
+        echo "  ✓ Found: podman (can verify driver availability)"
+        has_tools=true
+    fi
+
+    if command -v skopeo &>/dev/null; then
+        echo "  ✓ Found: skopeo (can verify driver availability)"
+        has_tools=true
+    fi
+
+    if command -v curl &>/dev/null; then
+        echo "  ✓ Found: curl (can verify driver availability with limited reliability)"
+        has_tools=true
+    fi
+
+    if [ "$has_tools" = false ]; then
+        echo "  ⚠️  WARNING: No container tools found (docker/podman/skopeo/curl)"
+        echo "  Driver verification will use known versions only (cannot verify availability)"
+        echo ""
+        read -p "Continue anyway? [y/N]: " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            echo "Installation cancelled."
+            return 1
+        fi
+    fi
+
+    echo ""
+    return 0
+}
+
+# Show platform-specific manual driver installation commands
+show_manual_driver_commands() {
+    local platform="${1:-aks}"  # eks or aks
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}📋 Manual NVIDIA Driver Installation Guide (AKS)${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    # Search commands (adapt based on available tools)
+    echo -e "${YELLOW}1. SEARCH for available 580.x drivers (⭐ UneeQ recommended):${NC}"
+    if command -v skopeo &>/dev/null; then
+        echo "   skopeo list-tags docker://nvcr.io/nvidia/driver | grep 580 | grep ubuntu22.04"
+    elif command -v curl &>/dev/null; then
+        echo "   # Using curl (basic check):"
+        echo "   curl -s https://nvcr.io/v2/nvidia/driver/tags/list | jq -r '.tags[]' | grep 580 | grep ubuntu22.04"
+    else
+        echo "   # Install skopeo first:"
+        echo "   brew install skopeo  # macOS"
+        echo "   apt-get install skopeo  # Ubuntu"
+    fi
+
+    echo ""
+    echo -e "${YELLOW}2. INSTALL specific driver (⭐ UneeQ recommends 580.82.07):${NC}"
+    echo "   helm upgrade --install gpu-operator nvidia/gpu-operator \\"
+    echo "     --namespace gpu-operator \\"
+    echo "     --set driver.enabled=true \\"
+    echo "     --set driver.version=580.82.07 \\"
+    echo "     --set toolkit.enabled=true \\"
+    echo "     --set devicePlugin.enabled=true \\"
+    echo "     --timeout 20m"
+
+    echo ""
+    echo -e "${YELLOW}3. CHECK GPU capacity:${NC}"
+    echo "   kubectl get nodes -o json | jq '.items[] | {name: .metadata.name, gpu: .status.capacity.\"nvidia.com/gpu\"}'"
+
+    echo ""
+    echo -e "${YELLOW}4. VERIFY driver pods are running:${NC}"
+    echo "   kubectl get pods -n gpu-operator -l app=nvidia-driver-daemonset -o wide"
+
+    echo ""
+    echo -e "${YELLOW}5. VIEW driver installation logs:${NC}"
+    echo "   kubectl logs -n gpu-operator -l app=nvidia-driver-daemonset --tail=100 -f"
+
+    echo ""
+    echo -e "${YELLOW}6. RESTART Renny pods after driver installed:${NC}"
+    echo "   kubectl delete pods -n uneeq-renderer --all"
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+}
+
+# Prompt user to choose GPU driver installation method
+prompt_gpu_driver_choice() {
+    local platform="${1:-aks}"  # eks or aks
+
+    # ALL display text goes to stderr so command substitution captures clean result
+    echo "" >&2
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
+    echo -e "${CYAN}🎮 NVIDIA GPU Driver Installation (AKS)${NC}" >&2
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}" >&2
+    echo "" >&2
+    echo "Choose driver installation method:" >&2
+    echo "" >&2
+    echo -e "  ${GREEN}1)${NC} Install 580.x driver family ${YELLOW}(⭐ HIGHLY RECOMMENDED by UneeQ)${NC}" >&2
+    echo -e "  ${CYAN}2)${NC} Install different driver version (I'll choose manually)" >&2
+    echo -e "  ${BLUE}3)${NC} Skip driver installation (I'll install manually later)" >&2
+    echo "" >&2
+
+    while true; do
+        echo -n "Enter choice [1-3]: " >&2
+        if ! read -t 600 -r choice 2>/dev/null; then
+            echo -e "\n${YELLOW}⚠️  No input received within 10 minutes${NC}" >&2
+            echo "Defaulting to recommended option: 580.x drivers" >&2
+            choice=1
+        fi
+
+        case "$choice" in
+            1) echo "580"; return 0 ;;  # ONLY this goes to stdout
+            2) echo "other"; return 0 ;;
+            3) echo "manual"; return 0 ;;
+            *) echo "Invalid choice. Please enter 1, 2, or 3." >&2 ;;  # Error to stderr
+        esac
+    done
+}
+
+# Confirm driver installation with user
+confirm_driver_installation() {
+    local version="$1"
+    local platform="${2:-aks}"
+
+    echo ""
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}Ready to install NVIDIA driver: ${GREEN}$version${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "This will install the GPU operator with driver version: $version"
+    echo ""
+
+    read -p "Proceed with installation? [y/N]: " confirm
+
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
 # Install GPU Operator
 install_gpu_operator() {
     echo ""
@@ -1514,29 +1666,106 @@ install_gpu_operator() {
     echo -e "${BLUE}═══════════════════════════════════════════${NC}"
     echo ""
 
+    # Check if GPU operator already installed
+    if helm list -n gpu-operator | grep -q "gpu-operator"; then
+        echo -e "${CYAN}ℹ️  GPU Operator already installed${NC}"
+        wait_for_gpu_operator_ready_azure 2400
+        return 0
+    fi
+
+    # Step 1: Check available tools (informational)
+    check_container_tools || return 0
+
+    # Step 2: PROMPT USER FIRST (no auto-action)
+    local user_choice=$(prompt_gpu_driver_choice "aks")
+
+    # Validate we received input (not EOF/interrupt)
+    if [ -z "$user_choice" ]; then
+        echo -e "${YELLOW}⚠️  Driver selection cancelled (EOF or interrupt received)${NC}"
+        echo "Deployment cannot proceed without driver selection."
+        echo ""
+        echo "To continue:"
+        echo "  1. Re-run this script and complete the driver selection"
+        echo "  2. Or use manual installation mode"
+        return 1
+    fi
+
+    # Declare variables before case statement
+    local DRIVER_VERSION=""
+    local EXACT_DRIVER_VERSION=""
+    local NVIDIA_DRIVER_VERSION=""
+
+    case "$user_choice" in
+        "580")
+            # User chose 580.x (UneeQ recommended)
+            echo ""
+            echo -e "${GREEN}Installing UneeQ recommended NVIDIA driver: 580.82.07${NC}"
+            echo ""
+
+            # Use known working version directly
+            DRIVER_VERSION="580.82.07"
+
+            # Simple confirmation
+            echo "This will install NVIDIA driver 580.82.07 on all GPU nodes."
+            echo ""
+            read -p "Proceed with installation? [Y/n]: " confirm
+
+            if [[ "$confirm" =~ ^[Nn]$ ]]; then
+                echo "Installation cancelled. Showing manual commands..."
+                show_manual_driver_commands "aks"
+                return 0
+            fi
+            ;;
+
+        "other")
+            # User wants different version - show manual commands
+            echo ""
+            echo -e "${YELLOW}Custom driver selection:${NC}"
+            echo "Please use the manual installation commands to specify your preferred version:"
+            show_manual_driver_commands "aks"
+            return 0
+            ;;
+
+        "manual")
+            # User wants to install manually
+            echo ""
+            echo "Skipping automatic driver installation"
+            show_manual_driver_commands "aks"
+            return 0
+            ;;
+
+        *)
+            # Invalid choice or empty input - shouldn't reach here due to while loop
+            echo -e "${RED}❌ Invalid driver selection${NC}"
+            return 1
+            ;;
+    esac
+
+    # Verify we have driver version set
+    if [ -z "$DRIVER_VERSION" ]; then
+        echo -e "${RED}❌ No driver version selected${NC}"
+        return 1
+    fi
+
     # Add NVIDIA Helm repo
+    echo ""
     echo "📦 Adding NVIDIA Helm repository..."
     if ! helm repo add nvidia https://helm.ngc.nvidia.com/nvidia 2>&1; then
         echo -e "${YELLOW}⚠️  Helm repo already exists, updating...${NC}"
     fi
     helm repo update
 
-    # Check if GPU operator already installed
-    if helm list -n gpu-operator | grep -q "gpu-operator"; then
-        echo -e "${CYAN}ℹ️  GPU Operator already installed, upgrading...${NC}"
-    else
-        echo "Installing GPU Operator..."
-    fi
-
     # Create namespace
     kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
 
-    # Install/upgrade GPU Operator
-    # Note: driver.version not specified - GPU Operator will automatically select
-    # the latest compatible NVIDIA driver (580+ series) for the hardware
+    echo ""
+    echo "Installing GPU Operator with driver $DRIVER_VERSION..."
+
+    # Install/upgrade GPU Operator with specified driver version
     if ! helm upgrade --install gpu-operator nvidia/gpu-operator \
         --namespace gpu-operator \
         --set driver.enabled=true \
+        --set driver.version="$DRIVER_VERSION" \
         --set toolkit.enabled=true \
         --set devicePlugin.enabled=true \
         --set mig.strategy=single \
@@ -1544,10 +1773,13 @@ install_gpu_operator() {
         --timeout 20m \
         --wait 2>&1; then
         echo -e "${RED}❌ GPU Operator installation failed${NC}"
+        echo ""
+        echo "You can try manual installation with:"
+        show_manual_driver_commands "aks"
         return 1
     fi
 
-    echo -e "${GREEN}✅ GPU Operator installed${NC}"
+    echo -e "${GREEN}✅ GPU Operator installed with driver $DRIVER_VERSION${NC}"
 
     # Wait for GPU operator to be ready
     echo ""
@@ -1678,6 +1910,7 @@ deploy_renny_application() {
     if ! helm upgrade --install renny "$helm_chart_dir" \
         --namespace uneeq-renderer \
         --values "$values_file" \
+        --set telemetry.deploymentId="$DEPLOYMENT_ID" \
         --timeout 25m \
         --wait 2>&1; then
         echo -e "${RED}❌ Helm deployment failed${NC}"
@@ -1926,10 +2159,11 @@ show_deployment_summary() {
     echo ""
 
     echo -e "${CYAN}Next Steps:${NC}"
-    echo "  1. Check deployment status: ./scripts/status.sh"
-    echo "  2. Scale deployment: ./scripts/scale.sh <replicas>"
-    echo "  3. View costs: Azure Portal > Cost Management"
-    echo "  4. Monitor cluster: Azure Portal > Monitor"
+    echo "  1. Configure your TURN server details with UneeQ"
+    echo "  2. Verify Renny is online and TTS is working properly. TTS API and model values are set in values/renny-values.yaml"
+    echo "  3. Scale deployment: ./scripts/scale.sh <desired_count>"
+    echo "  4. Monitor cluster: ./scripts/status.sh or Azure Portal > Monitor"
+    echo "  5. View costs: Azure Portal > Cost Management"
     echo ""
 
     echo -e "${YELLOW}⚠️  Cost Warning:${NC}"
@@ -1941,6 +2175,210 @@ show_deployment_summary() {
 # =============================================================================
 # Main Deployment Flow
 # =============================================================================
+
+# Validate terraform.tfvars credentials before deployment
+# This prevents wasting time/money on infrastructure that will fail due to missing credentials
+validate_terraform_credentials() {
+    local terraform_file="$TERRAFORM_DIR/terraform.tfvars"
+    local has_issues=false
+
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${CYAN}🔐 Validating Terraform Credentials${NC}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    if [ ! -f "$terraform_file" ]; then
+        echo -e "${RED}❌ terraform.tfvars not found at $terraform_file${NC}"
+        return 1
+    fi
+
+    # Check Docker Hub credentials
+    local docker_username=$(grep "^docker_username" "$terraform_file" | cut -d'"' -f2)
+    local docker_password=$(grep "^docker_password" "$terraform_file" | cut -d'"' -f2)
+
+    if [ "$docker_username" = "YOUR_DOCKER_USERNAME" ] || [ -z "$docker_username" ]; then
+        echo -e "${RED}❌ Docker Hub username not configured${NC}"
+        echo "   Found: docker_username = \"$docker_username\""
+        echo ""
+        has_issues=true
+    fi
+
+    if [ "$docker_password" = "YOUR_DOCKER_PASSWORD" ] || [ -z "$docker_password" ]; then
+        echo -e "${RED}❌ Docker Hub password not configured${NC}"
+        echo "   Found: docker_password = \"$docker_password\""
+        echo ""
+        has_issues=true
+    fi
+
+    # Check DHOP credentials
+    local dhop_tenant_id=$(grep "^dhop_tenant_id" "$terraform_file" | cut -d'"' -f2)
+    local dhop_api_key=$(grep "^dhop_api_key" "$terraform_file" | cut -d'"' -f2)
+
+    if [ "$dhop_tenant_id" = "YOUR_DHOP_TENANT_ID" ] || [ -z "$dhop_tenant_id" ]; then
+        echo -e "${RED}❌ DHOP Tenant ID not configured${NC}"
+        echo "   Found: dhop_tenant_id = \"$dhop_tenant_id\""
+        echo ""
+        has_issues=true
+    fi
+
+    if [ "$dhop_api_key" = "YOUR_DHOP_API_KEY" ] || [ -z "$dhop_api_key" ]; then
+        echo -e "${RED}❌ DHOP API Key not configured${NC}"
+        echo "   Found: dhop_api_key = \"$dhop_api_key\""
+        echo ""
+        has_issues=true
+    fi
+
+    if [ "$has_issues" = true ]; then
+        echo -e "${YELLOW}⚠️  WARNING: Critical credentials are missing or using placeholder values${NC}"
+        echo ""
+        echo -e "${CYAN}What will fail:${NC}"
+        echo "  • Docker Hub: Image pull failures (cannot download Renny containers)"
+        echo "  • DHOP: Renny connection failures (cannot connect to UneeQ platform)"
+        echo ""
+        echo -e "${CYAN}How to fix:${NC}"
+        echo ""
+        echo -e "${YELLOW}1. Docker Hub Credentials:${NC}"
+        echo "   - Your Docker Hub account must have access to UneeQ repositories"
+        echo "   - Contact UneeQ support for repository access"
+        echo "   - Update in: $terraform_file"
+        echo "     docker_username = \"your-dockerhub-username\""
+        echo "     docker_password = \"your-dockerhub-password\""
+        echo ""
+        echo -e "${YELLOW}2. DHOP Credentials:${NC}"
+        echo "   - Get from UneeQ platform or contact UneeQ support"
+        echo "   - DHOP API Key must be base64 encoded"
+        echo "   - Update in: $terraform_file"
+        echo "     dhop_tenant_id = \"your-tenant-id-guid\""
+        echo "     dhop_api_key = \"your-base64-encoded-api-key\""
+        echo ""
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        read -p "Continue deployment anyway? [y/N]: " response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo ""
+            echo "Deployment cancelled. Please update credentials in terraform.tfvars"
+            exit 1
+        fi
+        echo ""
+    else
+        echo -e "${GREEN}✅ All terraform credentials configured${NC}"
+        echo ""
+    fi
+}
+
+# Validate TTS configuration
+validate_tts_configuration() {
+    echo "🗣️  Validating TTS (Text-to-Speech) configuration..."
+
+    local values_file="$KUBERNETES_DIR/values/renny-values-aks.yaml"
+    if [ ! -f "$values_file" ]; then
+        echo -e "${RED}❌ renny-values-aks.yaml not found at $values_file${NC}"
+        return 1
+    fi
+
+    # Extract TTS values using grep and awk (portable)
+    local azure_key=$(grep "azureSpeechKey:" "$values_file" | awk -F'"' '{print $2}' | tr -d ' ')
+    local azure_region=$(grep "azureRegion:" "$values_file" | awk -F'"' '{print $2}' | tr -d ' ')
+    local elevenlabs_key=$(grep "elevenlabsApiKey:" "$values_file" | awk -F'"' '{print $2}' | tr -d ' ')
+    local elevenlabs_model=$(grep "elevenlabsModelId:" "$values_file" | awk -F'"' '{print $2}' | tr -d ' ')
+    local gcp_creds=$(grep "gcpCredentials:" "$values_file" | awk -F'"' '{print $2}' | tr -d ' ')
+    local veritone_key=$(grep "veritoneApiKey:" "$values_file" | awk -F'"' '{print $2}' | tr -d ' ')
+    local proxy_url=$(grep "proxyUrl:" "$values_file" | awk -F'"' '{print $2}' | tr -d ' ')
+
+    # Check if ANY TTS provider is configured with ALL required fields
+    local tts_configured=false
+    local configured_providers=()
+
+    # Azure TTS validation (requires BOTH region AND key, not placeholders)
+    if [ -n "$azure_key" ] && [ "$azure_key" != "placeholder-azure-key" ] && [ "$azure_key" != "your-azure-speech-key-here" ] && [ -n "$azure_region" ]; then
+        tts_configured=true
+        configured_providers+=("Azure Speech")
+    fi
+
+    # ElevenLabs TTS validation (requires BOTH API key AND model ID)
+    if [ -n "$elevenlabs_key" ] && [ "$elevenlabs_key" != "placeholder-elevenlabs-key" ] && [ "$elevenlabs_key" != "your-elevenlabs-api-key-here" ] && [ -n "$elevenlabs_model" ]; then
+        tts_configured=true
+        configured_providers+=("ElevenLabs")
+    fi
+
+    # GCP TTS validation (requires credentials JSON)
+    if [ -n "$gcp_creds" ]; then
+        tts_configured=true
+        configured_providers+=("Google Cloud TTS")
+    fi
+
+    # Veritone TTS validation (requires API key)
+    if [ -n "$veritone_key" ]; then
+        tts_configured=true
+        configured_providers+=("Veritone")
+    fi
+
+    # Custom TTS proxy validation (requires proxy URL)
+    if [ -n "$proxy_url" ]; then
+        tts_configured=true
+        configured_providers+=("Custom TTS Proxy")
+    fi
+
+    # Report results
+    if [ "$tts_configured" = true ]; then
+        echo -e "${GREEN}✅ TTS configured: ${configured_providers[*]}${NC}"
+        return 0
+    else
+        echo ""
+        echo -e "${RED}❌ WARNING: No TTS provider configured!${NC}"
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${YELLOW}⚠️  CRITICAL: Renny requires at least ONE TTS provider${NC}"
+        echo ""
+        echo "Without TTS configured, Renny pods will enter an endless restart loop (CrashLoopBackOff)!"
+        echo ""
+        echo -e "${CYAN}Required Configuration - Choose ONE provider in $values_file:${NC}"
+        echo ""
+        echo "  1. Azure Speech Services"
+        echo "     REQUIRED: azureSpeechKey + azureRegion"
+        echo "  2. ElevenLabs"
+        echo "     REQUIRED: elevenlabsApiKey + elevenlabsModelId"
+        echo "  3. Google Cloud TTS"
+        echo "     REQUIRED: gcpCredentials"
+        echo "  4. Veritone"
+        echo "     REQUIRED: veritoneApiKey"
+        echo "  5. Custom TTS Proxy"
+        echo "     REQUIRED: proxyUrl"
+        echo ""
+        echo -e "${CYAN}Troubleshooting if Renny fails to start (AKS):${NC}"
+        echo ""
+        echo "  1. Check pod status:"
+        echo "     kubectl get pods -n uneeq-renderer -o wide"
+        echo ""
+        echo "  2. View pod logs for TTS errors:"
+        echo "     kubectl logs -n uneeq-renderer -l app=renny --tail=100 | grep -i 'tts\|speech'"
+        echo ""
+        echo "  3. Edit TTS configuration:"
+        echo "     vi $values_file"
+        echo ""
+        echo "  4. Update Renny deployment:"
+        echo "     helm upgrade renny $KUBERNETES_DIR/renny-chart.tgz \\"
+        echo "       -f $values_file \\"
+        echo "       -n uneeq-renderer"
+        echo ""
+        echo "  5. Force restart pods:"
+        echo "     kubectl delete pods -n uneeq-renderer -l app=renny"
+        echo ""
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        # Ask user if they want to continue anyway
+        read -p "Continue deployment without TTS? (Renny will not start properly) [y/N]: " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${YELLOW}⚠️  Deployment paused. Please configure TTS and run deploy script again.${NC}"
+            exit 0
+        fi
+
+        echo -e "${YELLOW}⚠️  Continuing anyway - remember to configure TTS manually!${NC}"
+        return 1
+    fi
+}
 
 main() {
     echo ""
@@ -1960,6 +2398,11 @@ main() {
 
     # Check Azure authentication
     check_azure_auth
+
+    # CRITICAL: Validate credentials BEFORE deploying expensive infrastructure
+    echo ""
+    validate_terraform_credentials || true  # Non-blocking warning - user can proceed
+    validate_tts_configuration || true  # Non-blocking warning - user can proceed
 
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════${NC}"

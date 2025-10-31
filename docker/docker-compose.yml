@@ -1,60 +1,32 @@
 name: uneeq-miniprem
 
-# Renny uses internal speech processing (NEW_SPEECH_OVERRIDE=1)
-
 services:
-  # === FIRST TIER: Memory-intensive model loading services ===
-  vllm:
-    image: vllm/vllm-openai:v0.2.7
-    container_name: vllm
-    ports:
-      - "8000:8800"
-    volumes:
-      - vllm_data:/root/.cache/huggingface
-    runtime: nvidia
-    privileged: true
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - HF_HOME=/root/.cache/huggingface
-      - HF_CACHE_DIR=/root/.cache/huggingface/cache
-    entrypoint: ["python3", "-m", "vllm.entrypoints.openai.api_server"]
-    command: ["--model", "HuggingFaceH4/zephyr-7b-beta", "--host", "0.0.0.0", "--port", "8800", "--gpu-memory-utilization", "0.8", "--trust-remote-code"]
-    restart: unless-stopped
-    network_mode: host
-    healthcheck:
-      # Enhanced health check to verify model loading is complete
-      test: [
-        "CMD-SHELL", 
-        "curl -s http://localhost:8800/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"HuggingFaceH4/zephyr-7b-beta\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}' | grep -q 'choices' || exit 1"
-      ]
-      interval: 30s
-      timeout: 15s
-      retries: 20
-      start_period: 120s  # Allow up to 2 minutes for initial startup
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
+  # Renny uses internal speech processing (NEW_SPEECH_OVERRIDE=1)
 
-  # === SECOND TIER: Other Services ===
+  # === MONITORING SERVICE ===
   miniprem-monitor:
     build:
       context: ../miniprem-monitor
       dockerfile: Dockerfile
     container_name: miniprem-monitor
+    runtime: nvidia  # GPU access for machine_id generation via nvidia-smi
     network_mode: host  # Direct access to Docker daemon and localhost services
     volumes:
       # Docker socket for container monitoring (required)
       - /var/run/docker.sock:/var/run/docker.sock:ro
       # Kubernetes config for cluster monitoring (optional)
       - ~/.kube:/root/.kube:ro
+      # Installation ID for telemetry (optional, created during install)
+      - /tmp/miniprem_installation_id:/app/data/installation_id:ro
+      # Telemetry state directory (persistent across restarts)
+      - /tmp/miniprem_telemetry_state:/app/telemetry_state
     restart: unless-stopped
     environment:
-      - MONITOR_MODE=full_stack
+      - MONITOR_MODE=default
       - LOG_LEVEL=info
+      - MINIPREM_TELEMETRY_ENDPOINT=https://renny.services.uneeq.io/telemetry/heartbeat
+      - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
+      - NVIDIA_VISIBLE_DEVICES=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -69,211 +41,31 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  redis:
-    image: redis:latest
-    container_name: redis
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis_data:/data
-    restart: unless-stopped
-    network_mode: host
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 10s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-  
-  prometheus:
-    image: prom/prometheus:v2.45.0
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - prometheus_data:/prometheus
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-    restart: unless-stopped
-    network_mode: host
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--web.enable-lifecycle'
-    healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
-      interval: 15s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-  
-  grafana:
-    image: grafana/grafana:10.2.0
-    container_name: grafana
-    ports:
-      - "3002:3000"  # Changed from 3001 to 3002 (MiniPrem Monitor now uses 3001)
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
-      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
-    restart: unless-stopped
-    network_mode: host
-    depends_on:
-      prometheus:
-        condition: service_healthy
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-  
-  # === THIRD TIER: Depends on vLLM ===
-  flowise:
-    build:
-      context: ./flowise
-      dockerfile: Dockerfile
-    container_name: flowise
-    ports:
-      - "3000:3000"
-    volumes:
-      - flowise_data:/usr/src/.flowise
-    environment:
-      # Basic configuration
-      - PORT=3000
-      - DATABASE_TYPE=sqlite
-      - DATABASE_PATH=/usr/src/.flowise/database.sqlite
-      - NODE_ENV=production
-      - LOG_LEVEL=debug
-      # Authentication
-      - FLOWISE_USERNAME=user
-      - FLOWISE_PASSWORD=password
-      # API Key for authentication
-      - APIKEY_STORAGE_TYPE=json
-      - APIKEY_PATH=/usr/src/.flowise
-      - FLOWISE_SECRETKEY_OVERWRITE=miniprem_demo_secret_key
-      # File upload limit
-      - FLOWISE_FILE_SIZE_LIMIT=50mb
-      # Disable queue mode temporarily
-      - MODE=local
-      # Disable LangChain tracing
-      - LANGCHAIN_TRACING_V2=false
-      # Debug settings
-      - DEBUG=flowise:*
-    restart: unless-stopped
-    network_mode: host
-    depends_on:
-      vllm:
-        condition: service_healthy
-      prometheus:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:3000/api/v1/ping', (res) => process.exit(res.statusCode === 200 ? 0 : 1))\" || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-
-  # === RIME Services (Conditional) ===
-  ### RIME BEGIN ###
-  # rime-model:
-  #   image: quay.io/rimelabs/mistv2:v0.0.1-20250403
-  #   container_name: rime-model
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             capabilities: [gpu]
-  #             count: all
-  #   privileged: true
-  #   ports:
-  #     - "8101:8080"
-  #   restart: unless-stopped
-  #   network_mode: host
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8080/ping"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 10
-  #     start_period: 120s  # Increased start period for model loading
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   runtime: nvidia
-  # 
-  # rime-api:
-  #   image: quay.io/rimelabs/api:v0.0.2-20250407
-  #   container_name: rime-api
-  #   depends_on:
-  #     rime-model:
-  #       condition: service_healthy
-  #   ports:
-  #     - "8100:8000"
-  #   restart: unless-stopped
-  #   environment:
-  #     - MODEL_URL=http://localhost:8080/invocations
-  #   network_mode: host
-  #   healthcheck:
-  #     test: ["CMD-SHELL", "curl -s http://localhost:8000/health > /dev/null || exit 0"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 15s
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
-  #   security_opt:
-  #     - no-new-privileges:true
-  ### RIME END ###
-
-  # === FIFTH TIER: Renny (comes last) ===
+  # === MAIN SERVICE: Renny with internal speech processing ===
   renny:
     container_name: renny
     command: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "-NoTextureStreaming"]
+    entrypoint: ["/opt/renny/renny-entrypoint.sh"]
     env_file:
       - docker-compose.env
     environment:
       - NEW_SPEECH_OVERRIDE=1
+      - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
+      - TELEMETRY_BACKEND_URL=https://renny.services.uneeq.io
+      - HEARTBEAT_INTERVAL_SECONDS=900
+      - PLATFORM=docker
+      - INSTALLATION_ID_FILE=/app/data/installation_id
     image: "facemeproduction/renny:0.713-37d59"
-    network_mode: host
+    network_mode: "host"
     runtime: nvidia
     privileged: true
     tty: true
+    volumes:
+      - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
+      - ./renny-entrypoint.sh:/opt/renny/renny-entrypoint.sh:ro
+      - ./renny-telemetry-client.sh:/opt/renny/telemetry-client.sh:ro
+      - /tmp/miniprem_installation_id:/app/data/installation_id
+      - /tmp/miniprem_telemetry_state:/app/telemetry_state
     healthcheck:
       test: "curl -f http://localhost:8081/health"
       interval: 10s
@@ -290,96 +82,4 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # --- Speech-to-Text Backend: Only enable ONE of the following ---
-  # The install script will uncomment your choice based on the WHISPER_TYPE environment variable
-
-  ### WHISPER BEGIN ###
-  # whisper:
-  #   image: onerahmet/openai-whisper-asr-webservice:latest
-  #   container_name: whisper
-  #   ports:
-  #     - "9000:9000"
-  #   volumes:
-  #     - whisper_data:/root/.cache/whisper
-  #   runtime: nvidia
-  #   privileged: true
-  #   environment:
-  #     - ASR_MODEL=medium
-  #     - ASR_ENGINE=openai_whisper
-  #     - NVIDIA_VISIBLE_DEVICES=all
-  #     - INTERVAL=5
-  #   restart: unless-stopped
-  #   network_mode: host
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 5
-  #     start_period: 120s  # Increased for model loading
-  #   logging:
-  #     driver: "json-file"
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
-  #   security_opt:
-  #     - no-new-privileges:true
-  #   depends_on:
-  #     vllm:
-  #       condition: service_healthy
-  ### WHISPER END ###
-
-  ### FASTWHISPER BEGIN ###
-  fastwhisper:
-    build:
-      context: ./fast-whisper
-      dockerfile: Dockerfile
-    container_name: fastwhisper
-    runtime: nvidia
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - MODEL_SIZE=tiny.en
-      - COMPUTE_TYPE=float16
-      - NUM_WORKERS=1
-      - CPU_THREADS=4
-      - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb=256
-      - CUDA_LAUNCH_BLOCKING=1
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              capabilities: [gpu]
-              count: 1
-    privileged: true
-    ports:
-      - "9000:9000"
-    volumes:
-      - ./fast-whisper/app:/app/app
-      - ./fast-whisper/models:/app/models
-    restart: unless-stopped
-    network_mode: host
-    healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:9000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    security_opt:
-      - no-new-privileges:true
-    depends_on:
-      vllm:
-        condition: service_healthy
-  ### FASTWHISPER END ###
-
-volumes:
-  flowise_data:
-  redis_data:
-  prometheus_data:
-  grafana_data:
-  vllm_data:
-  whisper_data:
+# No volumes needed for default Renny-only installation
