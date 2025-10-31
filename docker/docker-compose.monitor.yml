@@ -31,6 +31,8 @@ services:
     environment:
       - MONITOR_MODE=standalone
       - LOG_LEVEL=info
+      # UneeQ Tenant ID for Admin Portal link (configure in host environment or .env file)
+      - DHOP_TENANTID=${DHOP_TENANTID:-}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s

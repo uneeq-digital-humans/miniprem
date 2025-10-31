@@ -24,7 +24,11 @@ import {
   SystemInfo
 } from '../types/monitor';
 
-export default function MonitoringDashboard() {
+interface MonitoringDashboardProps {
+  tenantId?: string;
+}
+
+function MonitoringDashboard({ tenantId }: MonitoringDashboardProps = {}) {
   // State management
   const [systemMetrics, setSystemMetrics] = useState<SystemMetrics | null>(null);
   const [containers, setContainers] = useState<ContainerStatus[]>([]);
@@ -82,7 +86,7 @@ export default function MonitoringDashboard() {
   // Metrics modal state
   const [metricsModal, setMetricsModal] = useState<{
     isOpen: boolean;
-    metricType: 'cpu' | 'memory' | 'disk' | 'network' | null;
+    metricType: 'cpu' | 'memory' | 'disk' | 'network' | 'gpu' | null;
   }>({
     isOpen: false,
     metricType: null,
@@ -725,12 +729,12 @@ Available Clusters: ${availableClusters.length}`;
   }, [kubernetesError, checkForAwsSsoError]);
 
   // Metrics card click handler
-  const handleMetricClick = useCallback((metricType: 'cpu' | 'memory' | 'disk' | 'network') => {
+  const handleMetricClick = useCallback((metricType: 'cpu' | 'memory' | 'disk' | 'network' | 'gpu') => {
     setMetricsModal({ isOpen: true, metricType });
   }, []);
 
   // Metrics modal tab change handler
-  const handleMetricTypeChange = useCallback((metricType: 'cpu' | 'memory' | 'disk' | 'network') => {
+  const handleMetricTypeChange = useCallback((metricType: 'cpu' | 'memory' | 'disk' | 'network' | 'gpu') => {
     setMetricsModal(prev => ({ ...prev, metricType }));
   }, []);
 
@@ -742,11 +746,11 @@ Available Clusters: ${availableClusters.length}`;
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2" data-testid="app-branding">
-                <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center" data-testid="app-logo">
+                <div className="w-10 h-10 flex items-center justify-center" data-testid="app-logo">
                   <img
-                    src="/assets/logos/logo-white.png"
+                    src="/assets/logos/uneeq-logo.svg"
                     alt="UneeQ Logo"
-                    className="w-8 h-8"
+                    className="w-10 h-10"
                   />
                 </div>
                 <h1 className="text-2xl font-bold text-white" data-testid="app-title">
@@ -754,12 +758,22 @@ Available Clusters: ${availableClusters.length}`;
                 </h1>
               </div>
               {systemInfo && (
-                <div className="hidden md:flex items-center space-x-4 text-white/80 text-sm" data-testid="system-info">
-                  <span data-testid="system-platform">Platform: {systemInfo.system.platform}</span>
-                  <span>•</span>
-                  <span data-testid="system-cpu-count">CPUs: {systemInfo.system.cpu_count}</span>
-                  <span>•</span>
+                <div className="hidden md:flex items-center space-x-4 text-white/90 text-sm" data-testid="system-info">
                   <span data-testid="system-memory">Memory: {systemInfo.system.memory_total_gb}GB</span>
+                  <span>•</span>
+                  <a
+                    href={
+                      tenantId && tenantId !== 'YOUR_TENANT_ID'
+                        ? `https://cdn.enterprise.uneeq.io/admin/customers/${tenantId}/tenants`
+                        : 'https://cdn.enterprise.uneeq.io/admin/'
+                    }
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-white/90 hover:text-uneeq-orange dark:hover:text-uneeq-orange transition-colors duration-200 underline decoration-white/40 hover:decoration-uneeq-orange"
+                    data-testid="admin-portal-link"
+                  >
+                    UneeQ Admin Portal
+                  </a>
                 </div>
               )}
             </div>
@@ -909,4 +923,12 @@ Available Clusters: ${availableClusters.length}`;
       )}
     </div>
   );
+}
+
+// Server Component Wrapper to read environment variable server-side
+export default function Page() {
+  // Read tenant ID from environment variable (server-side only, not exposed to client)
+  const tenantId = process.env.DHOP_TENANTID;
+
+  return <MonitoringDashboard tenantId={tenantId} />;
 }

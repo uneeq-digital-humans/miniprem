@@ -7,7 +7,8 @@ import platform
 import docker
 from typing import Dict, Any, Optional
 from datetime import datetime
-from ..models.schemas import SystemMetrics
+from ..models.schemas import SystemMetrics, GpuStats
+from .gpu_monitor import detect_and_parse_gpus
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +22,10 @@ class SystemMonitor:
         self._docker_available = None
         self._kubectl_available = None
         self._docker_client = None
+        # GPU polling cache (15-second interval as per requirements)
+        self._gpu_cache = []
+        self._gpu_cache_time = None
+        self._gpu_cache_ttl = 15  # seconds
 
     def _get_docker_client(self):
         """Get or create Docker client instance (stub - using CLI commands instead)"""
@@ -29,16 +34,68 @@ class SystemMonitor:
         # which is required by Kubernetes SDK
         return None
 
+    async def _get_gpu_stats(self):
+        """
+        Get GPU statistics with 15-second caching.
+
+        Polls nvidia-smi every 15 seconds to get GPU stats. Returns cached data
+        if available within TTL window. Falls back to empty list if nvidia-smi
+        fails or is not available.
+
+        Returns:
+            List[GpuStats]: List of GPU statistics, empty if no GPUs or nvidia-smi unavailable.
+        """
+        now = datetime.now()
+
+        # Return cached data if still valid
+        if (self._gpu_cache_time is not None and
+            (now - self._gpu_cache_time).total_seconds() < self._gpu_cache_ttl):
+            return self._gpu_cache
+
+        # Poll for new GPU data
+        try:
+            gpu_data_list = detect_and_parse_gpus()
+
+            # Convert to GpuStats Pydantic models
+            self._gpu_cache = [
+                GpuStats(
+                    index=gpu.index,
+                    name=gpu.name,
+                    temperature_celsius=gpu.temperature_celsius,
+                    utilization_percent=gpu.utilization_percent,
+                    memory_used_mb=gpu.memory_used_mb,
+                    memory_total_mb=gpu.memory_total_mb,
+                    power_watts=gpu.power_watts,
+                    clock_graphics_mhz=gpu.clock_graphics_mhz,
+                    clock_memory_mhz=gpu.clock_memory_mhz,
+                    fan_speed_percent=gpu.fan_speed_percent
+                )
+                for gpu in gpu_data_list
+            ]
+            self._gpu_cache_time = now
+
+            if self._gpu_cache:
+                logger.debug(f"GPU cache updated with {len(self._gpu_cache)} GPU(s)")
+
+        except Exception as e:
+            logger.error(f"Error polling GPU stats: {str(e)}")
+            self._gpu_cache = []
+            self._gpu_cache_time = now
+
+        return self._gpu_cache
+
     async def get_system_metrics(self) -> SystemMetrics:
         """
-        Get current system metrics including per-core CPU usage.
+        Get current system metrics including per-core CPU usage and GPU stats.
 
         Collects comprehensive system metrics with short sampling intervals
         to avoid blocking the event loop. Per-core CPU data enables verification
-        of multi-threading in Docker containers.
+        of multi-threading in Docker containers. GPU stats are polled every 15
+        seconds with caching.
 
         Returns:
-            SystemMetrics: Complete system metrics with overall and per-core CPU data.
+            SystemMetrics: Complete system metrics with overall and per-core CPU data,
+                          and GPU statistics (empty list if no GPUs or nvidia-smi unavailable).
 
         Raises:
             Exception: Logs errors and returns default metrics on failure.
@@ -66,12 +123,16 @@ class SystemMonitor:
                 'packets_recv': network_io.packets_recv
             }
 
+            # GPU stats (15-second polling with cache)
+            gpu_stats = await self._get_gpu_stats()
+
             return SystemMetrics(
                 cpu_percent=round(cpu_percent, 1),
                 cpu_per_core=[round(core, 1) for core in cpu_per_core],
                 memory_percent=round(memory_percent, 1),
                 disk_percent=round(disk_percent, 1),
-                network_io=network_stats
+                network_io=network_stats,
+                gpus=gpu_stats
             )
 
         except Exception as e:
@@ -87,7 +148,8 @@ class SystemMonitor:
                     'bytes_recv': 0,
                     'packets_sent': 0,
                     'packets_recv': 0
-                }
+                },
+                gpus=[]
             )
 
     async def check_docker_availability(self) -> bool:
