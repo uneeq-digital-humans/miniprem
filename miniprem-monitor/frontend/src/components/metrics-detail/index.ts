@@ -9,3 +9,4 @@ export { MetricsChart, type MetricsChartProps, type MetricsDataPoint } from './M
 export { NetworkDetailView, type NetworkDetailViewProps } from './NetworkDetailView'
 export { CpuDetailView, type CpuDetailViewProps } from './CpuDetailView'
 export { MemoryDetailView, type MemoryDetailViewProps } from './MemoryDetailView'
+export { GpuDetailView, type GpuDetailViewProps } from './GpuDetailView'

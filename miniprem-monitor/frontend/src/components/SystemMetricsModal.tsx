@@ -10,9 +10,10 @@ import {
   X,
   TrendingUp,
   TrendingDown,
-  Activity
+  Activity,
+  Zap
 } from 'lucide-react';
-import { MetricsChart, NetworkDetailView, CpuDetailView, MemoryDetailView } from './metrics-detail';
+import { MetricsChart, NetworkDetailView, CpuDetailView, MemoryDetailView, GpuDetailView } from './metrics-detail';
 import { SystemMetrics, MetricsHistoryPoint, SystemInfo, ContainerStatus } from '../types/monitor';
 
 /**
@@ -24,9 +25,9 @@ interface SystemMetricsModalProps {
   /** Function to close the modal */
   onClose: () => void;
   /** Current selected metric type */
-  metricType: 'cpu' | 'memory' | 'disk' | 'network';
+  metricType: 'cpu' | 'memory' | 'disk' | 'network' | 'gpu';
   /** Function to change metric type (tab switching) */
-  onMetricTypeChange: (type: 'cpu' | 'memory' | 'disk' | 'network') => void;
+  onMetricTypeChange: (type: 'cpu' | 'memory' | 'disk' | 'network' | 'gpu') => void;
   /** Current system metrics snapshot */
   currentMetrics: SystemMetrics;
   /** Historical metrics data for charting (5-minute rolling window) */
@@ -45,6 +46,7 @@ const tabs = [
   { id: 'memory' as const, label: 'Memory', icon: MemoryStick },
   { id: 'disk' as const, label: 'Disk', icon: HardDrive },
   { id: 'network' as const, label: 'Network', icon: Network },
+  { id: 'gpu' as const, label: 'GPU', icon: Zap },
 ];
 
 /**
@@ -303,6 +305,19 @@ export function SystemMetricsModal({
   };
 
   /**
+   * Renders GPU detail view using GpuDetailView component
+   */
+  const renderGpuView = () => {
+    return (
+      <GpuDetailView
+        systemInfo={systemInfo}
+        currentMetrics={currentMetrics}
+        containers={containers}
+      />
+    );
+  };
+
+  /**
    * Renders content based on selected tab
    */
   const renderContent = () => {
@@ -315,6 +330,8 @@ export function SystemMetricsModal({
         return renderDiskView();
       case 'network':
         return renderNetworkView();
+      case 'gpu':
+        return renderGpuView();
       default:
         return null;
     }

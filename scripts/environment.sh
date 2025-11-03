@@ -4,13 +4,13 @@
 
 # Function to read existing values from the .env file
 read_env_variable() {
-    local var_name=$1
+    local var_name="$1"
     local env_file="docker/docker-compose.env"
     local value=""
 
     if [ -f "$env_file" ]; then
-        value=$(grep "^$var_name=" "$env_file" | cut -d '=' -f 2-)
-        value=$(echo $value | sed 's/^"//;s/"$//') # Remove surrounding quotes if any
+        value=$(grep "^${var_name}=" "$env_file" | cut -d '=' -f 2-)
+        value=$(echo "$value" | sed 's/^"//;s/"$//') # Remove surrounding quotes if any
     fi
 
     echo "$value"
@@ -18,8 +18,8 @@ read_env_variable() {
 
 # Function to update an environment variable in the .env file
 update_env_variable() {
-    local var_name=$1
-    local new_value=$2
+    local var_name="$1"
+    local new_value="$2"
     local env_file="docker/docker-compose.env"
 
     # Ensure the file exists
@@ -36,11 +36,11 @@ update_env_variable() {
         echo "" >> "$env_file"
     fi
 
-    if grep -q "^$var_name=" "$env_file"; then
+    if grep -q "^${var_name}=" "$env_file"; then
         # Update the existing variable
-        sed -i "s|^$var_name=.*|$var_name=$new_value|" "$env_file"
+        sed -i "s|^${var_name}=.*|${var_name}=${new_value}|" "$env_file"
     else
         # Add the variable if it does not exist
-        echo "$var_name=$new_value" >> "$env_file"
+        echo "${var_name}=${new_value}" >> "$env_file"
     fi
 }

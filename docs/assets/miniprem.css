@@ -8,48 +8,48 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
 
 :root {
-  /* UneeQ Brand Colors - From DigitalHumans.com and Logo Analysis */
-  --uneeq-primary: #E91E63;     /* Deep magenta from logo (accent) */
-  --uneeq-primary-light: #FF7F7F; /* Light coral from logo (accent) */
-  --uneeq-secondary: #e96057;   /* Brand red/orange from digitalhumans.com */
-  --uneeq-secondary-light: #FFA726; /* Light orange from logo */
-  --uneeq-dark-navy: #0B0941;  /* Primary dark from digitalhumans.com */
-  --uneeq-accent-purple: #5F56D9; /* Accent purple from digitalhumans.com */
-  --uneeq-dark-bg: #0e0b33;    /* Dark background from digitalhumans.com */
-  --uneeq-dark: #2a3039;       /* UPDATED: Darker navy for better contrast */
-  --uneeq-dark-light: #34495E; /* Lighter navy */
-  --uneeq-light: #FFFFFF;      /* Clean white */
-  --uneeq-light-gray: #F8F9FA; /* Very light gray */
-  --uneeq-gray: #6C757D;       /* Medium gray */
+  /* UneeQ Brand Colors (March 2023) - Official Brand Guidelines */
+  --uneeq-primary: #F47C6A;         /* Orange - primary accent */
+  --uneeq-blue: #5F56DA;            /* Blue - links and accents */
+  --uneeq-pink: #FF1888;            /* Pink - alternative accent */
+  --uneeq-yellow: #FFB648;          /* Yellow - warnings and highlights */
+  --uneeq-liquorice: #232236;       /* Secondary background (dark mode) */
+  --uneeq-dark-bg: #0E0B33;         /* Official dark blue gradient start */
+  --uneeq-dark: #232236;            /* Liquorice - dark text color */
+  --uneeq-dark-light: #34495E;      /* Lighter navy for secondary text */
+  --uneeq-light: #FFFFFF;           /* Clean white */
+  --uneeq-light-gray: #F8F9FA;      /* Very light gray */
+  --uneeq-gray: #6C757D;            /* Medium gray */
 
   /* Alert Colors */
   --success-color: #28A745;
   --warning-color: #FFC107;
   --error-color: #DC3545;
-  --info-color: var(--uneeq-primary);
+  --info-color: var(--uneeq-blue);
 
-  /* Dark Mode Colors - UPDATED: Heavily Desaturated for Eye Comfort */
-  --dark-bg-primary: #1a1925;       /* UPDATED: Reduced saturation 60% → 15% */
-  --dark-bg-secondary: #22212e;     /* UPDATED: Reduced saturation 49% → 15% */
-  --dark-text-primary: #e8e9ed;     /* UPDATED: Off-white, less bright */
-  --dark-text-secondary: #a8aab5;   /* UPDATED: Improved secondary text */
-  --dark-border: #2f2d3d;           /* UPDATED: Subtle border color */
+  /* Dark Mode Colors - Official brand with adjusted brightness */
+  --dark-bg-primary: #0E0B33;       /* Official dark blue gradient start */
+  --dark-bg-secondary: #232236;     /* Liquorice - secondary background */
+  --dark-text-primary: #FFFFFF;     /* Pure white for high contrast */
+  --dark-text-secondary: #B0B7C3;   /* Light blue-gray for secondary text */
+  --dark-border: #3D3A4D;           /* Subtle borders */
 
-  /* Desaturated Purple/Pink for Dark Mode - UPDATED */
-  --uneeq-accent-purple-dark: #9d95e8;  /* UPDATED: Less intense purple */
-  --uneeq-primary-dark: #d9769d;        /* UPDATED: Less intense pink for links */
+  /* Brightened brand colors for dark mode visibility */
+  --uneeq-accent-blue-dark: #7F77E6;      /* Brightened blue for dark mode */
+  --uneeq-accent-orange-dark: #FF9B8F;    /* Brightened orange for dark mode */
+  --uneeq-accent-pink-dark: #FF6BA8;      /* Brightened pink for dark mode */
 
   /* Theme colors for Docsify */
   --theme-color: var(--uneeq-primary);
-  --theme-color-dark: var(--uneeq-secondary);
+  --theme-color-dark: var(--uneeq-pink);
 
-  /* Light mode content colors - UPDATED: Warmer, less intense background */
-  --content-background: #FAF8F5;     /* UPDATED: Warm linen - reduces eye strain */
-  --content-text: #1a1d23;           /* Very dark for excellent readability */
+  /* Light mode content colors */
+  --content-background: #FFFFFF;    /* Clean white background */
+  --content-text: #232236;          /* Liquorice - excellent readability */
   --content-border: #e2e8f0;
 
   /* Sidebar colors */
-  --sidebar-background: #FFFFFF;     /* Pure white sidebar for contrast with warm content */
+  --sidebar-background: #FFFFFF;    /* Pure white sidebar */
   --background-color: var(--content-background);
 }
 
@@ -86,7 +86,7 @@ body {
   padding: 0 2rem;
 }
 
-/* Typography - Light Mode: Pink for Main Headers, Dark for Body */
+/* Typography - Light Mode: Orange for Main Headers, Dark for Body */
 .markdown-section h1 {
   font-size: 2.5rem;
   color: var(--uneeq-primary);
@@ -168,9 +168,9 @@ body {
   display: inline-block;
 }
 
-/* Links - Light Mode: Pink */
+/* Links - Light Mode: Blue */
 .markdown-section a {
-  color: var(--uneeq-primary);
+  color: var(--uneeq-blue);
   text-decoration: none;
   font-weight: 500;
   transition: all 0.3s ease;
@@ -178,11 +178,11 @@ body {
 }
 
 .markdown-section a:hover {
-  color: var(--uneeq-secondary);
-  border-bottom-color: var(--uneeq-secondary);
+  color: var(--uneeq-primary);
+  border-bottom-color: var(--uneeq-primary);
 }
 
-/* Step Container - Light Mode: Pink Border and Shadow */
+/* Step Container - Light Mode: Orange Border and Shadow */
 .step-container {
   display: flex;
   align-items: center;
@@ -192,12 +192,12 @@ body {
   background: linear-gradient(135deg, var(--uneeq-light-gray) 0%, var(--uneeq-light) 100%);
   border-radius: 12px;
   border-left: 4px solid var(--uneeq-primary);
-  box-shadow: 0 4px 15px rgba(233, 30, 99, 0.1);
+  box-shadow: 0 4px 15px rgba(244, 124, 106, 0.1);
 }
 
-/* Step Number - Light Mode: Pink/Orange Gradient */
+/* Step Number - Light Mode: Orange/Pink Gradient */
 .step-number {
-  background: linear-gradient(135deg, var(--uneeq-primary), var(--uneeq-secondary));
+  background: linear-gradient(135deg, var(--uneeq-primary), var(--uneeq-pink));
   color: var(--uneeq-light);
   width: 3rem;
   height: 3rem;
@@ -208,7 +208,7 @@ body {
   font-weight: 700;
   font-size: 1.25rem;
   flex-shrink: 0;
-  box-shadow: 0 4px 15px rgba(233, 30, 99, 0.3);
+  box-shadow: 0 4px 15px rgba(244, 124, 106, 0.3);
 }
 
 .step-content {
@@ -242,9 +242,9 @@ body {
   margin-top: 0.125rem;
 }
 
-/* Alert Info - Light Mode: Pink Background */
+/* Alert Info - Light Mode: Blue Background */
 .alert-info {
-  background: linear-gradient(135deg, rgba(233, 30, 99, 0.1) 0%, rgba(233, 30, 99, 0.05) 100%);
+  background: linear-gradient(135deg, rgba(95, 86, 218, 0.1) 0%, rgba(95, 86, 218, 0.05) 100%);
   border-left-color: var(--info-color);
   color: var(--uneeq-dark);
 }
@@ -293,7 +293,7 @@ pre, code {
   background: var(--uneeq-light-gray);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
-  color: var(--uneeq-secondary);
+  color: var(--uneeq-primary);
   font-weight: 500;
   font-size: 0.85em;
 }
@@ -347,7 +347,7 @@ pre, code {
   line-height: 1.6;
   white-space: pre;
   margin: 1rem 0;
-  border-left: 4px solid var(--uneeq-secondary);
+  border-left: 4px solid var(--uneeq-blue);
   border: 1px solid var(--content-border);
 }
 
@@ -372,7 +372,7 @@ pre, code {
 
 /* Blockquotes */
 .markdown-section blockquote {
-  background: rgba(233, 30, 99, 0.1);
+  background: rgba(244, 124, 106, 0.1);
   border-left: 4px solid var(--uneeq-primary);
   border-radius: 4px;
   padding: 1rem;
@@ -398,17 +398,17 @@ pre, code {
 .markdown-section td {
   padding: 1rem;
   text-align: left;
-  border-bottom: 1px solid rgba(233, 30, 99, 0.1);
+  border-bottom: 1px solid rgba(244, 124, 106, 0.15);
 }
 
 .markdown-section th {
-  background: linear-gradient(135deg, var(--uneeq-primary), var(--uneeq-secondary));
+  background: linear-gradient(135deg, var(--uneeq-primary), var(--uneeq-blue));
   color: var(--uneeq-light);
   font-weight: 600;
 }
 
 .markdown-section tr:nth-child(even) {
-  background: rgba(233, 30, 99, 0.05);
+  background: rgba(244, 124, 106, 0.05);
 }
 
 /* Lists */
@@ -459,7 +459,7 @@ pre, code {
 }
 
 .cover h1 {
-  background: linear-gradient(135deg, #FF8C42 0%, #FF6B6B 25%, #E91E63 50%, #EC407A 75%, #E91E63 100%);
+  background: linear-gradient(135deg, #F47C6A 0%, #5F56DA 50%, #FF1888 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -487,14 +487,14 @@ pre, code {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--uneeq-primary), var(--uneeq-secondary));
+  background: linear-gradient(135deg, var(--uneeq-primary), var(--uneeq-blue));
   border: none;
   color: white;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 12px rgba(233, 30, 99, 0.3);
+  box-shadow: 0 4px 12px rgba(244, 124, 106, 0.3);
   transition: transform 0.3s ease;
 }
 
@@ -802,25 +802,25 @@ pre, code {
 }
 
 .dark .markdown-section h1 {
-  color: var(--uneeq-accent-purple-dark);
+  color: var(--uneeq-accent-orange-dark);
 }
 
 .dark .markdown-section h2 {
-  border-bottom-color: var(--uneeq-accent-purple);
+  border-bottom-color: var(--uneeq-accent-orange-dark);
 }
 
-/* Dark mode links - UPDATED: Less intense pink for better readability */
+/* Dark mode links - Use brightened blue for better readability */
 .dark .markdown-section a {
-  color: var(--uneeq-primary-dark);
+  color: var(--uneeq-accent-blue-dark);
 }
 
 .dark .markdown-section a:hover {
-  color: #e89bb8;  /* Slightly lighter on hover */
+  color: var(--uneeq-accent-orange-dark);
 }
 
 .dark .step-container {
   background: linear-gradient(135deg, var(--dark-bg-secondary) 0%, var(--dark-bg-primary) 100%);
-  border-left-color: var(--uneeq-accent-purple);
+  border-left-color: var(--uneeq-accent-blue-dark);
 }
 
 .dark .step-content {
@@ -853,7 +853,7 @@ pre, code {
 
 .dark .markdown-section code:not([class*="lang-"]):not([class*="language-"]) {
   background: #2a2550;
-  color: var(--uneeq-secondary);
+  color: var(--uneeq-accent-orange-dark);
 }
 
 .dark .markdown-section pre {
@@ -891,12 +891,12 @@ pre, code {
 }
 
 .dark .sidebar .sidebar-nav li a:hover {
-  color: var(--uneeq-accent-purple-dark);
+  color: var(--uneeq-accent-blue-dark);
 }
 
 .dark .sidebar .sidebar-nav li.active > a {
-  color: var(--uneeq-accent-purple-dark);
-  border-right-color: var(--uneeq-accent-purple-dark);
+  color: var(--uneeq-accent-blue-dark);
+  border-right-color: var(--uneeq-accent-blue-dark);
 }
 
 /* Dark Mode MiniPrem Components */

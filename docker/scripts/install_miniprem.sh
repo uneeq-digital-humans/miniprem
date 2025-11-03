@@ -1,4 +1,6 @@
 #!/bin/bash
+set -euo pipefail
+IFS=$'\n\t'
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -14,25 +16,33 @@ source "$PROJECT_ROOT/scripts/prerequisites.sh"
 # Enable debugging
 #set -x
 
-# Enable error handling
-set -e
-set -o pipefail
-
 # Global variables for cleanup tracking
 CLEANUP_NEEDED=false
 CONTAINERS_STARTED=()
 INSTALLATION_MARKER_CREATED=false
 INSTALLATION_START_TIME=$(date +%s)
 
-# Cleanup handler - runs on script exit (success or failure)
+# Enhanced cleanup handler - runs on script exit (success or failure)
 cleanup_on_error() {
     local exit_code=$?
+    local line_number=$1
 
     # Only run cleanup if script failed (non-zero exit)
     if [ $exit_code -ne 0 ] && [ "$CLEANUP_NEEDED" = true ]; then
         echo ""
         echo "============================================"
         echo "Installation failed! Running cleanup..."
+        echo "Exit code: $exit_code"
+        echo "Failure location: Line $line_number"
+        
+        # Get last command for context
+        if [ -n "$BASH_COMMAND" ]; then
+            echo "Last command: $BASH_COMMAND"
+        fi
+        
+        # Get recent command history
+        echo "Recent commands:"
+        history | tail -5 | cut -c8-
         echo "============================================"
         echo ""
 
@@ -65,11 +75,17 @@ cleanup_on_error() {
         echo "============================================"
         echo "Cleanup completed. System restored to pre-installation state."
         echo ""
+        echo "Troubleshooting information:"
+        echo "  - Exit code: $exit_code"
+        echo "  - Failed at line: $line_number"
+        echo "  - Check logs: docker logs <container_name>"
+        echo ""
         echo "Common issues and solutions:"
         echo "  1. Docker not running: Start Docker Desktop and retry"
         echo "  2. Insufficient disk space: Free up space and retry"
         echo "  3. Port conflicts: Check if ports are in use with 'netstat -an | grep LISTEN'"
         echo "  4. Permission issues: Ensure user is in 'docker' group"
+        echo "  5. Network issues: Check internet connectivity and firewall settings"
         echo ""
         echo "For detailed logs, check: docker logs <container_name>"
         echo "============================================"
@@ -79,8 +95,12 @@ cleanup_on_error() {
     stty sane 2>/dev/null || true
 }
 
-# Register cleanup handler for EXIT signal
-trap cleanup_on_error EXIT
+# Register enhanced cleanup handler for EXIT signal with line number
+trap 'cleanup_on_error $LINENO' EXIT
+
+# Register handlers for user interruption
+trap 'echo ""; echo "Installation cancelled by user (SIGINT)"; exit 130' INT
+trap 'echo ""; echo "Installation terminated (SIGTERM)"; exit 143' TERM
 
 # Function to mark cleanup as needed (call when starting containers)
 enable_cleanup() {
@@ -113,6 +133,65 @@ EOF
 # Function to check if a command exists
 command_exists() {
     command -v "$1" >/dev/null 2>&1
+}
+
+# Function to check disk space availability
+check_disk_space() {
+    local required_gb=$1
+    local path=${2:-"/"}
+    local available_gb=$(df "$path" | awk 'NR==2 {print int($4/1024/1024)}')
+    
+    if [ $available_gb -lt $required_gb ]; then
+        fatal "Insufficient disk space. Required: ${required_gb}GB, Available: ${available_gb}GB on $path"
+    fi
+    
+    success "$CHECKMARK Sufficient disk space: ${available_gb}GB available (required: ${required_gb}GB)"
+}
+
+# Function to check memory usage
+check_memory_usage() {
+    local threshold_percent=${1:-80}
+    
+    if command_exists free; then
+        local memory_percent=$(free | awk 'NR==2{printf "%.0f", $3*100/$2}')
+        if [ $memory_percent -gt $threshold_percent ]; then
+            warning "High memory usage: ${memory_percent}% (threshold: ${threshold_percent}%)"
+            warning "Consider freeing up memory before proceeding"
+            return 1
+        else
+            success "$CHECKMARK Memory usage acceptable: ${memory_percent}%"
+            return 0
+        fi
+    else
+        info "Memory check skipped (free command not available)"
+        return 0
+    fi
+}
+
+# Function to perform comprehensive resource validation
+validate_system_resources() {
+    log_section "Validating System Resources"
+    
+    # Check disk space (64GB minimum for full installation, 20GB for default)
+    local required_space=20
+    if [ "$INSTALL_TYPE" = "full" ]; then
+        required_space=64
+    fi
+    
+    check_disk_space $required_space
+    
+    # Check memory usage
+    check_memory_usage 85
+    
+    # Check available RAM (minimum 16GB)
+    if command_exists free; then
+        local total_gb=$(free -g | awk 'NR==2{print $2}')
+        if [ $total_gb -lt 16 ]; then
+            warning "Low total RAM: ${total_gb}GB (recommended: 16GB or more)"
+        else
+            success "$CHECKMARK Sufficient RAM: ${total_gb}GB"
+        fi
+    fi
 }
 
 # Function to validate cloud service
@@ -220,6 +299,75 @@ configure_eleven_labs() {
     check_and_prompt_required_env_vars
 }
 
+# Function to pull Docker images in parallel for better performance
+pull_images_parallel() {
+    local images=("$@")
+    local pids=()
+    local temp_files=()
+    local failed_images=()
+    
+    info "Pulling ${#images[@]} Docker images in parallel..."
+    
+    # Start parallel pulls with progress tracking
+    for i in "${!images[@]}"; do
+        local image="${images[$i]}"
+        local temp_file=$(mktemp)
+        temp_files+=("$temp_file")
+        
+        {
+            if $DOCKER_CMD pull "$image" > "$temp_file" 2>&1; then
+                echo "SUCCESS:$image" >> "$temp_file"
+            else
+                echo "FAILED:$image" >> "$temp_file"
+            fi
+        } &
+        
+        pids+=($!)
+    done
+    
+    # Show progress while waiting
+    local total=${#images[@]}
+    local completed=0
+    
+    while [ $completed -lt $total ]; do
+        completed=0
+        for temp_file in "${temp_files[@]}"; do
+            if [ -f "$temp_file" ] && grep -q "SUCCESS:\|FAILED:" "$temp_file"; then
+                completed=$((completed + 1))
+            fi
+        done
+        
+        printf "\rProgress: %d/%d images completed" $completed $total
+        sleep 1
+    done
+    printf "\n"
+    
+    # Wait for all background processes and check results
+    for i in "${!pids[@]}"; do
+        wait ${pids[$i]}
+        local temp_file="${temp_files[$i]}"
+        local image="${images[$i]}"
+        
+        if grep -q "SUCCESS:$image" "$temp_file"; then
+            success "$CHECKMARK Successfully pulled $image"
+        else
+            error "Failed to pull $image:"
+            cat "$temp_file" | grep -v "SUCCESS:\|FAILED:"
+            failed_images+=("$image")
+        fi
+        
+        rm -f "$temp_file"
+    done
+    
+    # Report overall status
+    if [ ${#failed_images[@]} -eq 0 ]; then
+        success "$CHECKMARK All Docker images pulled successfully"
+    else
+        warning "Some images failed to pull: ${failed_images[*]}"
+        return 1
+    fi
+}
+
 # Function to pull necessary Docker images
 pull_required_images() {
 
@@ -227,12 +375,18 @@ pull_required_images() {
 
     # Only pull images for selected services
     if [ "$INSTALL_TYPE" = "full" ]; then
-        # Pull common images
+        # Pull common images in parallel
         info "Pulling basic services images..."
-        $DOCKER_CMD pull prom/prometheus:v2.45.0
-        $DOCKER_CMD pull grafana/grafana:10.2.0
-        $DOCKER_CMD pull redis:latest
-        $DOCKER_CMD pull vllm/vllm-openai:v0.2.7
+        local images=(
+            "prom/prometheus:v2.45.0"
+            "grafana/grafana:10.2.0"
+            "redis:latest"
+            "vllm/vllm-openai:v0.2.7"
+        )
+        
+        if ! pull_images_parallel "${images[@]}"; then
+            fatal "Failed to pull some basic service images"
+        fi
         
         # Pull TTS-specific images based on selection
         if [ "$TTS_PROVIDER" = "rime" ]; then
@@ -242,7 +396,9 @@ pull_required_images() {
     else
         # Only pull images for Renny with internal speech processing
         info "Pulling Renny images..."
-        $DOCKER_CMD pull facemeproduction/renny:0.713-37d59
+        if ! pull_images_parallel "facemeproduction/renny:0.713-37d59"; then
+            fatal "Failed to pull Renny image"
+        fi
         
         # If using RIME in default install, pull RIME images
         if [ "$TTS_PROVIDER" = "rime" ]; then
@@ -252,6 +408,81 @@ pull_required_images() {
 }
 
 
+# Shared exponential backoff health check function
+wait_for_service() {
+    local url=$1
+    local max_attempts=$2
+    local base_delay=$3
+    local service_name=$4
+    local attempt=1
+    
+    info "Waiting for $service_name to become available..."
+    
+    while [ $attempt -le $max_attempts ]; do
+        if curl --output /dev/null --silent --fail --max-time 2 "$url"; then
+            success "$CHECKMARK $service_name is ready"
+            return 0
+        fi
+        
+        # Show progress with exponential backoff
+        local delay=$((base_delay * attempt))
+        if [ $delay -gt 30 ]; then
+            delay=30  # Cap at 30 seconds
+        fi
+        
+        if [ $((attempt % 6)) -eq 0 ]; then
+            info "Still waiting for $service_name... (attempt $attempt/$max_attempts, ${delay}s delay)"
+        else
+            printf '.'
+        fi
+        
+        sleep $delay
+        attempt=$((attempt+1))
+    done
+    
+    printf "\n"
+    warning "$service_name did not become available within timeout"
+    return 1
+}
+
+# Function to validate network connectivity with proper timeouts
+validate_network_connectivity() {
+    local host=$1
+    local timeout=${2:-10}
+    
+    if ! timeout $timeout ping -c 1 "$host" >/dev/null 2>&1; then
+        fatal "Cannot reach $host within ${timeout} seconds"
+    fi
+    
+    success "$CHECKMARK Network connectivity to $host verified"
+}
+
+# Function to retry network operations with exponential backoff
+retry_network_operation() {
+    local max_attempts=${1:-3}
+    local base_delay=${2:-5}
+    local attempt=1
+    shift 2
+    
+    while [ $attempt -le $max_attempts ]; do
+        if "$@"; then
+            return 0
+        fi
+        
+        if [ $attempt -lt $max_attempts ]; then
+            local delay=$((base_delay * attempt))
+            warning "Operation failed, retrying in ${delay}s (attempt $attempt/$max_attempts)"
+            sleep $delay
+        fi
+        
+        attempt=$((attempt+1))
+    done
+    
+    error "Operation failed after $max_attempts attempts"
+    return 1
+}
+
+# Function to check WebSocket service connectivity
 check_wss_service() {
     local url=$1
 
@@ -659,54 +890,100 @@ check_and_prompt_required_env_vars() {
     update_env_file
 }
 
-# Function to update environment variables in docker-compose.env
+# Function to perform atomic file updates
+atomic_file_update() {
+    local target_file=$1
+    local content=$2
+    local temp_file=$(mktemp "${target_file}.tmp.XXXXXX")
+    
+    echo "$content" > "$temp_file"
+    if ! mv "$temp_file" "$target_file"; then
+        rm -f "$temp_file"
+        fatal "Failed to update $target_file atomically"
+    fi
+}
+
+# Function to update environment variables in docker-compose.env with batch operations
 update_env_file() {
     local env_file="$PROJECT_ROOT/docker/docker-compose.env"
+    local temp_file=$(mktemp)
+    local updates_made=false
     
-    # Only update variables if they have values
+    # Copy original file to temp
+    cp "$env_file" "$temp_file" || {
+        rm -f "$temp_file"
+        fatal "Failed to create temporary file for environment updates"
+    }
+    
+    # Batch update all variables at once
     if [ -n "$PLATFORM_KEY" ]; then
-        # Check if variable exists in file before updating
-        if grep -q "^DHOP_APIKEY=" "$env_file"; then
-            sed -i "s|^DHOP_APIKEY=.*|DHOP_APIKEY=$PLATFORM_KEY|" "$env_file"
+        if grep -q "^DHOP_APIKEY=" "$temp_file"; then
+            # Escape special regex characters in the value for safe sed replacement
+            local escaped_platform_key=$(printf '%s\n' "$PLATFORM_KEY" | sed -e 's/[\/&]/\\&/g')
+            sed -i "s|^DHOP_APIKEY=.*|DHOP_APIKEY=${escaped_platform_key}|" "$temp_file"
+            updates_made=true
         fi
     fi
-    
+
     if [ -n "$TENANT_ID" ]; then
-        if grep -q "^DHOP_TENANTID=" "$env_file"; then
-            sed -i "s|^DHOP_TENANTID=.*|DHOP_TENANTID=$TENANT_ID|" "$env_file"
+        if grep -q "^DHOP_TENANTID=" "$temp_file"; then
+            # Escape special regex characters in the value for safe sed replacement
+            local escaped_tenant_id=$(printf '%s\n' "$TENANT_ID" | sed -e 's/[\/&]/\\&/g')
+            sed -i "s|^DHOP_TENANTID=.*|DHOP_TENANTID=${escaped_tenant_id}|" "$temp_file"
+            updates_made=true
         fi
     fi
     
-    # Only update TTS-related variables based on selected provider
+    # TTS-specific batch updates
     if [ "$TTS_PROVIDER" = "azure" ]; then
         if [ -n "$AZURE_REGION" ]; then
-            if grep -q "^AZURE_REGION=" "$env_file"; then
-                sed -i "s|^AZURE_REGION=.*|AZURE_REGION=$AZURE_REGION|" "$env_file"
+            if grep -q "^AZURE_REGION=" "$temp_file"; then
+                local escaped_azure_region=$(printf '%s\n' "$AZURE_REGION" | sed -e 's/[\/&]/\\&/g')
+                sed -i "s|^AZURE_REGION=.*|AZURE_REGION=${escaped_azure_region}|" "$temp_file"
+                updates_made=true
             fi
         fi
-        
+
         if [ -n "$AZURE_SPEECH_KEY" ]; then
-            if grep -q "^AZURE_SPEECH_KEY=" "$env_file"; then
-                sed -i "s|^AZURE_SPEECH_KEY=.*|AZURE_SPEECH_KEY=$AZURE_SPEECH_KEY|" "$env_file"
+            if grep -q "^AZURE_SPEECH_KEY=" "$temp_file"; then
+                local escaped_azure_speech=$(printf '%s\n' "$AZURE_SPEECH_KEY" | sed -e 's/[\/&]/\\&/g')
+                sed -i "s|^AZURE_SPEECH_KEY=.*|AZURE_SPEECH_KEY=${escaped_azure_speech}|" "$temp_file"
+                updates_made=true
             fi
-            if grep -q "^AZURE_SPEECH=" "$env_file"; then
-                sed -i "s|^AZURE_SPEECH=.*|AZURE_SPEECH=$AZURE_SPEECH_KEY|" "$env_file"
+            if grep -q "^AZURE_SPEECH=" "$temp_file"; then
+                local escaped_azure_speech=$(printf '%s\n' "$AZURE_SPEECH_KEY" | sed -e 's/[\/&]/\\&/g')
+                sed -i "s|^AZURE_SPEECH=.*|AZURE_SPEECH=${escaped_azure_speech}|" "$temp_file"
+                updates_made=true
             fi
         fi
     elif [ "$TTS_PROVIDER" = "elevenlabs" ]; then
-        # If we have Eleven Labs credentials, update those
         if [ -n "$ELEVEN_LABS_API_KEY" ]; then
-            if grep -q "^ELEVEN_LABS_API_KEY=" "$env_file"; then
-                sed -i "s|^ELEVEN_LABS_API_KEY=.*|ELEVEN_LABS_API_KEY=$ELEVEN_LABS_API_KEY|" "$env_file"
+            if grep -q "^ELEVEN_LABS_API_KEY=" "$temp_file"; then
+                local escaped_eleven_labs=$(printf '%s\n' "$ELEVEN_LABS_API_KEY" | sed -e 's/[\/&]/\\&/g')
+                sed -i "s|^ELEVEN_LABS_API_KEY=.*|ELEVEN_LABS_API_KEY=${escaped_eleven_labs}|" "$temp_file"
+                updates_made=true
             fi
         fi
     elif [ "$TTS_PROVIDER" = "rime" ]; then
-        # If we have RIME credentials, update those
         if [ -n "$RIME_API_KEY" ]; then
-            if grep -q "^RIME_API_KEY=" "$env_file"; then
-                sed -i "s|^RIME_API_KEY=.*|RIME_API_KEY=$RIME_API_KEY|" "$env_file"
+            if grep -q "^RIME_API_KEY=" "$temp_file"; then
+                local escaped_rime_key=$(printf '%s\n' "$RIME_API_KEY" | sed -e 's/[\/&]/\\&/g')
+                sed -i "s|^RIME_API_KEY=.*|RIME_API_KEY=${escaped_rime_key}|" "$temp_file"
+                updates_made=true
             fi
         fi
+    fi
+    
+    # Apply atomic update if changes were made
+    if [ "$updates_made" = true ]; then
+        if ! mv "$temp_file" "$env_file"; then
+            rm -f "$temp_file"
+            fatal "Failed to apply environment file updates atomically"
+        fi
+        success "$CHECKMARK Environment file updated with batch operations"
+    else
+        rm -f "$temp_file"
+        info "No environment variable updates needed"
     fi
 }
 
@@ -741,6 +1018,101 @@ ensure_env_file_exists() {
     else
         info "Environment file already exists at $env_file"
     fi
+}
+
+# Function to check container health status comprehensively
+check_container_health() {
+    local container_name=$1
+    local max_wait=${2:-300}
+    local health_check_interval=${3:-10}
+    
+    info "Checking health of container: $container_name"
+    
+    # First check if container exists
+    if ! docker ps -a --format "table {{.Names}}" | grep -q "^$container_name$"; then
+        error "Container $container_name not found"
+        return 1
+    fi
+    
+    # Check if container is running
+    if ! docker ps --format "table {{.Names}}" | grep -q "^$container_name$"; then
+        error "Container $container_name is not running"
+        info "Container logs:"
+        docker logs "$container_name" --tail 20
+        return 1
+    fi
+    
+    local elapsed=0
+    
+    while [ $elapsed -lt $max_wait ]; do
+        # Get health status
+        local health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "unknown")
+        
+        case "$health_status" in
+            "healthy")
+                success "$CHECKMARK Container $container_name is healthy"
+                return 0
+                ;;
+            "unhealthy")
+                error "Container $container_name is unhealthy"
+                info "Container logs:"
+                docker logs "$container_name" --tail 20
+                return 1
+                ;;
+            "none"|"unknown")
+                # Container doesn't have health check, try basic connectivity
+                local ports=$(docker port "$container_name" 2>/dev/null | cut -d'-' -f1 | cut -d':' -f2 | head -1)
+                if [ -n "$ports" ] && [ "$ports" != "0" ]; then
+                    # Try to connect to the first exposed port
+                    local host_port=$(docker port "$container_name" 2>/dev/null | head -1 | cut -d':' -f2)
+                    if nc -z localhost "$host_port" 2>/dev/null; then
+                        success "$CHECKMARK Container $container_name is responding on port $host_port"
+                        return 0
+                    fi
+                fi
+                
+                # If no health check and no port, assume running is healthy
+                if docker ps --format "table {{.Names}}" | grep -q "^$container_name$"; then
+                    success "$CHECKMARK Container $container_name is running (no health check defined)"
+                    return 0
+                fi
+                ;;
+        esac
+        
+        # Show progress
+        if [ $((elapsed % 30)) -eq 0 ] && [ $elapsed -gt 0 ]; then
+            info "Still waiting for $container_name to become healthy... (${elapsed}s elapsed)"
+            # Show recent logs
+            info "Recent container logs:"
+            docker logs "$container_name" --tail 5
+        fi
+        
+        sleep $health_check_interval
+        elapsed=$((elapsed + health_check_interval))
+    done
+    
+    warning "Container $container_name health check timed out after ${max_wait}s"
+    info "Container status:"
+    docker inspect --format='{{.State.Status}} - {{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "unknown"
+    info "Container logs:"
+    docker logs "$container_name" --tail 20
+    return 1
+}
+
+# Function to monitor memory usage during operations
+monitor_memory_during_operation() {
+    local operation_name=$1
+    local threshold_percent=${2:-90}
+    
+    if command_exists free; then
+        local memory_percent=$(free | awk 'NR==2{printf "%.0f", $3*100/$2}')
+        if [ $memory_percent -gt $threshold_percent ]; then
+            warning "High memory usage during $operation_name: ${memory_percent}%"
+            warning "This may affect operation performance"
+            return 1
+        fi
+    fi
+    return 0
 }
 
 # Function to check if all required values are provided
@@ -819,7 +1191,20 @@ start_miniprem() {
     # Enable cleanup tracking before starting any services
     enable_cleanup
 
-    DOCKER_CMD="sudo docker compose"
+    # Monitor memory usage before starting services
+    monitor_memory_during_operation "service startup" 85
+
+    # Use the docker-compose command determined during prerequisites
+    if [ -z "${DOCKER_COMPOSE_CMD:-}" ]; then
+        # Fallback if not set
+        if command_exists docker-compose; then
+            DOCKER_COMPOSE_CMD="docker-compose"
+        else
+            DOCKER_COMPOSE_CMD="docker compose"
+        fi
+    fi
+
+    DOCKER_CMD="sudo $DOCKER_COMPOSE_CMD"
 
     if [ "$INSTALL_TYPE" = "full" ]; then
         # Stop any local Redis instances that might be running
@@ -868,13 +1253,19 @@ start_miniprem() {
             info "vLLM data directory created with secure permissions (755)"
         fi
 
+        # Monitor memory before starting GPU-intensive services
+        monitor_memory_during_operation "vLLM startup" 80
+
         # First, start just vLLM since it needs significant GPU memory
         info "Starting vLLM service first..."
         info "Note: Initial startup may fail as the model needs to be downloaded. This is expected."
-        $DOCKER_CMD $COMPOSE_FILES up -d vllm
+        $DOCKER_CMD $COMPOSE_FILES up -d "vllm"
         if [ $? -ne 0 ]; then
             warning "vLLM service failed to start - this is expected as the model needs to be downloaded"
         fi
+        
+        # Register container for cleanup
+        register_container "vllm"
         
         # Prepare the model while GPU is clean
         prepare_vllm_model
@@ -893,38 +1284,69 @@ start_miniprem() {
             tts_services="rime-model rime-api"
         fi
         
-        $DOCKER_CMD $COMPOSE_FILES up -d \
-            miniprem-monitor redis grafana prometheus \
-            $tts_services flowise $whisper_service
-        if [ $? -ne 0 ]; then
-            fatal "Failed to start support services"
-        fi
+        # Start support services with health monitoring
+        local support_services="miniprem-monitor redis grafana prometheus $tts_services flowise $whisper_service"
+
+        for service in $support_services; do
+            info "Starting $service..."
+            $DOCKER_CMD "$COMPOSE_FILES" up -d "$service"
+            if [ $? -eq 0 ]; then
+                register_container "$service"
+                # Check health for critical services
+                case "$service" in
+                    "redis"|"grafana"|"prometheus"|"flowise")
+                        check_container_health "$service" 180 10
+                        ;;
+                esac
+            else
+                warning "Failed to start $service"
+            fi
+        done
+        
+        # Monitor memory after starting all services
+        monitor_memory_during_operation "full service startup" 90
+        
     else
         # Default install: start monitor for container monitoring
         info "Starting MiniPrem Monitor for container monitoring..."
-        $DOCKER_CMD $COMPOSE_FILES up -d miniprem-monitor
-        if [ $? -ne 0 ]; then
+        $DOCKER_CMD "$COMPOSE_FILES" up -d "miniprem-monitor"
+        if [ $? -eq 0 ]; then
+            register_container "miniprem-monitor"
+            check_container_health "miniprem-monitor" 120 10
+        else
             warning "Failed to start MiniPrem Monitor"
         fi
 
         # If using RIME in default install, start the RIME services
         if [ "$TTS_PROVIDER" = "rime" ]; then
             info "Starting RIME services..."
-            $DOCKER_CMD $COMPOSE_FILES up -d rime-model rime-api
-            if [ $? -ne 0 ]; then
-                warning "Failed to start RIME services"
-            fi
+            for service in "rime-model" "rime-api"; do
+                $DOCKER_CMD "$COMPOSE_FILES" up -d "$service"
+                if [ $? -eq 0 ]; then
+                    register_container "$service"
+                    check_container_health "$service" 180 10
+                else
+                    warning "Failed to start $service"
+                fi
+            done
         fi
     fi
 
     # Start Renny with internal speech processing (required for both installation types)
     info "Starting Renny digital human service with internal speech processing..."
-    $DOCKER_CMD $COMPOSE_FILES up -d renny
-    if [ $? -ne 0 ]; then
+    $DOCKER_CMD "$COMPOSE_FILES" up -d "renny"
+    if [ $? -eq 0 ]; then
+        register_container "renny"
+        check_container_health "renny" 300 15
+    else
         fatal "Failed to start Renny service"
     fi
 
+    # Final memory check
+    monitor_memory_during_operation "post-startup" 90
+
     success "$CHECKMARK MiniPrem services started successfully"
+    info "All containers are running and healthy"
 }
 
 # Function to check GPU memory usage periodically for monitoring progress
@@ -1002,39 +1424,8 @@ prepare_vllm_model() {
 
     info "Step 2: Waiting for vLLM API to become available..."
     
-    # Wait for API to become available
-    local api_max_attempts=60  # 5 minutes (60 * 5s)
-    local api_attempt=1
-    
-    while [ $api_attempt -le $api_max_attempts ]; do
-        if curl --output /dev/null --silent --fail --max-time 2 http://localhost:8000/v1/models; then
-            success "$CHECKMARK vLLM API is responding"
-            break
-        fi
-        
-        # Show progress every 6 attempts (30 seconds)
-        if [ $((api_attempt % 6)) -eq 0 ]; then
-            info "Still waiting for vLLM API... ($api_attempt/$api_max_attempts)"
-            # Show GPU usage (multi-GPU aware)
-            info "Current GPU memory usage:"
-            local vllm_gpu_stats=$($DOCKER_CMD exec vllm nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader)
-            local gpu_idx=0
-            while IFS= read -r line; do
-                gpu_idx=$((gpu_idx + 1))
-                info "  GPU ${gpu_idx}: ${line}"
-            done <<< "$vllm_gpu_stats"
-            # Show recent logs
-            info "Recent container logs:"
-            $DOCKER_CMD logs --tail 5 vllm
-        else
-            printf '.'
-        fi
-        
-        sleep 5
-        api_attempt=$((api_attempt+1))
-    done
-    
-    if [ $api_attempt -gt $api_max_attempts ]; then
+    # Use the shared exponential backoff health check
+    if ! wait_for_service "http://localhost:8000/v1/models" 60 5 "vLLM API"; then
         warning "vLLM API did not become available within the expected timeframe."
         warning "Will attempt to continue anyway, but LLM services might not work properly."
         return 1
@@ -1096,45 +1487,21 @@ setup_flowise_chatflow() {
     # Define the log file path using the project root
     local log_file="$PROJECT_ROOT/logs/flowise_setup_error.log"
     
-    # Wait for Flowise to be ready
+    # Wait for Flowise to be ready using shared health check
     info "Waiting for Flowise to be ready..."
     info "This may take several minutes as Flowise needs to start up and connect to vLLM"
 
-    # Instead of relying on the health endpoint, check if the web UI is accessible
-    local max_attempts=60  # 5 minutes (60 * 5s)
-    local attempt=1
-
-    while [ $attempt -le $max_attempts ]; do
-        # Try to access the root page (the UI) instead of a health endpoint
-        if curl --output /dev/null --silent --fail http://localhost:3000/; then
-            success "$CHECKMARK Flowise UI is up and running!"
-            break
+    # Use the shared exponential backoff health check
+    if ! wait_for_service "http://localhost:3000/" 60 5 "Flowise UI"; then
+        warning "Flowise service did not become available within the expected timeframe."
+        warning "However, the container might still be starting up properly."
+        read -p "Do you want to proceed with creating the chatflow anyway? (y/n): " continue_anyway
+        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+            warning "Chatflow setup skipped. You can run it manually later with: setup-chatflow-post-deployment.sh"
+            cd "$current_dir"  # Return to original directory
+            return 1
         fi
-
-        # Show more verbose progress every 12 attempts (1 minute)
-        if [ $((attempt % 12)) -eq 0 ]; then
-            info "Still waiting for Flowise to become ready... ($attempt/$max_attempts, ~$((attempt/12)) minutes)"
-            # Show the container status
-            docker ps --filter "name=flowise" --format "{{.Status}}"
-        else
-            printf '.'
-        fi
-
-        sleep 5
-        attempt=$((attempt+1))
-
-        if [ $attempt -gt $max_attempts ]; then
-            warning "Flowise service did not become available within the expected timeframe."
-            warning "However, the container might still be starting up properly."
-            read -p "Do you want to proceed with creating the chatflow anyway? (y/n): " continue_anyway
-            if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
-                warning "Chatflow setup skipped. You can run it manually later with: setup-chatflow-post-deployment.sh"
-                cd "$current_dir"  # Return to original directory
-                return 1
-            fi
-            break
-        fi
-    done
+    fi
 
     # Run the chatflow setup script
     info "Creating Chatflow with Ollama integration..."
@@ -1203,8 +1570,15 @@ print_logo() {
 check_environment() {
     log_section "Checking Environment"
 
-    DOCKER_CMD="sudo docker compose"
-    
+    # Determine docker-compose command (v1 or v2)
+    if command_exists docker-compose; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+    else
+        DOCKER_COMPOSE_CMD="docker compose"
+    fi
+
+    DOCKER_CMD="sudo $DOCKER_COMPOSE_CMD"
+
     # First, stop any existing miniprem containers
     info "Stopping any existing Miniprem containers..."
 
@@ -1710,7 +2084,6 @@ main() {
     print_logo
 
     check_environment
-
     check_duplicate_installations
 
     # Telemetry consent dialog (BEFORE installation starts)
@@ -1718,6 +2091,9 @@ main() {
 
     # Install type
     prompt_for_install_type
+
+    # Validate system resources before proceeding
+    validate_system_resources
 
     # Parse command line arguments using getopt
     OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image: -- "$@")
@@ -1898,9 +2274,13 @@ main() {
         PLATFORM_ADDRESS="wss://api.enterprise.uneeq.io/signalling-service/v1/ws/renderer"
         # Also update it in the env file
         if grep -q "^DHOP_ADDRESS=" "$PROJECT_ROOT/docker/docker-compose.env"; then
-            sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=$PLATFORM_ADDRESS|" "$PROJECT_ROOT/docker/docker-compose.env"
+            local escaped_platform_address=$(printf '%s\n' "$PLATFORM_ADDRESS" | sed -e 's/[\/&]/\\&/g')
+            sed -i "s|^DHOP_ADDRESS=.*|DHOP_ADDRESS=${escaped_platform_address}|" "$PROJECT_ROOT/docker/docker-compose.env"
         fi
     fi
+
+    # Validate network connectivity before proceeding
+    validate_network_connectivity "api.enterprise.uneeq.io"
 
     # check to make sure the cloud services are reachable
     check_cloud_services "$PLATFORM_ADDRESS" "$PLATFORM_ADDRESS"

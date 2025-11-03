@@ -73,10 +73,38 @@ export interface PodStatus {
 }
 
 /**
+ * GPU statistics from nvidia-smi.
+ * Empty array if no GPUs detected or nvidia-smi unavailable.
+ */
+export interface GpuStats {
+  /** GPU index number */
+  index: number;
+  /** GPU model name (e.g., "NVIDIA GeForce RTX 4090") */
+  name: string;
+  /** GPU temperature in Celsius (null if unavailable) */
+  temperature_celsius: number | null;
+  /** GPU utilization percentage 0-100 (null if unavailable) */
+  utilization_percent: number | null;
+  /** GPU memory used in MB (null if unavailable) */
+  memory_used_mb: number | null;
+  /** GPU total memory in MB (null if unavailable) */
+  memory_total_mb: number | null;
+  /** GPU power consumption in watts (null if unavailable) */
+  power_watts: number | null;
+  /** Graphics clock speed in MHz (null if unavailable) */
+  clock_graphics_mhz: number | null;
+  /** Memory clock speed in MHz (null if unavailable) */
+  clock_memory_mhz: number | null;
+  /** Fan speed percentage 0-100 (null if unavailable) */
+  fan_speed_percent: number | null;
+}
+
+/**
  * System metrics snapshot for real-time monitoring.
  * Provides overall system resource usage and network I/O statistics.
  *
  * Updated in Phase 2.1 to include per-core CPU data for multi-threading verification.
+ * Updated to include GPU statistics (empty array if no GPUs or nvidia-smi unavailable).
  */
 export interface SystemMetrics {
   /** Overall CPU usage percentage (0-100) */
@@ -108,6 +136,12 @@ export interface SystemMetrics {
     /** Total packets received since system boot */
     packets_recv: number;
   };
+
+  /**
+   * GPU statistics array. Empty if no GPUs detected or nvidia-smi unavailable.
+   * Polled every 15 seconds with backend caching.
+   */
+  gpus?: GpuStats[];
 
   /** ISO 8601 timestamp when metrics were captured */
   timestamp: string;

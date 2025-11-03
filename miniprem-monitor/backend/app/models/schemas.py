@@ -69,12 +69,26 @@ class PodStatus(BaseModel):
     cpu_usage: Optional[str] = None
     memory_usage: Optional[str] = None
 
+class GpuStats(BaseModel):
+    """GPU statistics from nvidia-smi."""
+    index: int = Field(..., description="GPU index number")
+    name: str = Field(..., description="GPU model name")
+    temperature_celsius: Optional[float] = Field(None, description="GPU temperature in Celsius")
+    utilization_percent: Optional[float] = Field(None, description="GPU utilization percentage")
+    memory_used_mb: Optional[int] = Field(None, description="GPU memory used in MB")
+    memory_total_mb: Optional[int] = Field(None, description="GPU total memory in MB")
+    power_watts: Optional[float] = Field(None, description="GPU power consumption in watts")
+    clock_graphics_mhz: Optional[int] = Field(None, description="Graphics clock speed in MHz")
+    clock_memory_mhz: Optional[int] = Field(None, description="Memory clock speed in MHz")
+    fan_speed_percent: Optional[int] = Field(None, description="Fan speed percentage")
+
 class SystemMetrics(BaseModel):
     cpu_percent: float
     cpu_per_core: List[float] = Field(default_factory=list, description="Per-core CPU usage percentages")
     memory_percent: float
     disk_percent: float
     network_io: Dict[str, int]
+    gpus: List[GpuStats] = Field(default_factory=list, description="GPU statistics (empty if no GPUs or nvidia-smi unavailable)")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 # AWS Region Management Models

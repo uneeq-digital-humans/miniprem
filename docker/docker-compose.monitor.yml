@@ -36,8 +36,12 @@ services:
     environment:
       - MONITOR_MODE=standalone
       - LOG_LEVEL=info
+      # UneeQ Tenant ID for Admin Portal link (configure in host environment or .env file)
+      - DHOP_TENANTID=${DHOP_TENANTID:-}
+      # Telemetry configuration
       - MINIPREM_TELEMETRY_ENDPOINT=https://renny.services.uneeq.io/telemetry/heartbeat
       - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
+      # NVIDIA GPU support
       - NVIDIA_VISIBLE_DEVICES=all
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]

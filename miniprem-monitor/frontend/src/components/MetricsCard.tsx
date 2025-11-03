@@ -1,11 +1,11 @@
 import React from 'react';
 import { SystemMetrics } from '../types/monitor';
-import { Cpu, HardDrive, MemoryStick, Network } from 'lucide-react';
+import { Cpu, HardDrive, MemoryStick, Network, Zap } from 'lucide-react';
 
 interface MetricsCardProps {
   metrics: SystemMetrics | null;
   loading?: boolean;
-  onMetricClick?: (metricType: 'cpu' | 'memory' | 'disk' | 'network') => void;
+  onMetricClick?: (metricType: 'cpu' | 'memory' | 'disk' | 'network' | 'gpu') => void;
 }
 
 export function MetricsCard({ metrics, loading, onMetricClick }: MetricsCardProps) {
@@ -25,8 +25,8 @@ export function MetricsCard({ metrics, loading, onMetricClick }: MetricsCardProp
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-testid="metrics-section-loading">
-        {Array.from({ length: 4 }).map((_, index) => (
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6" data-testid="metrics-section-loading">
+        {Array.from({ length: 5 }).map((_, index) => (
           <div key={index} className="metric-card animate-pulse" data-testid={`metrics-card-loading-${index}`}>
             <div className="flex flex-col space-y-2">
               <div className="h-4 bg-gray-200 dark:bg-gray-600 rounded w-16"></div>
@@ -41,7 +41,7 @@ export function MetricsCard({ metrics, loading, onMetricClick }: MetricsCardProp
 
   if (!metrics) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-testid="metrics-section-empty">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6" data-testid="metrics-section-empty">
         <div className="metric-card" data-testid="metrics-empty-state">
           <div className="text-center text-gray-500 dark:text-gray-400 py-4">No metrics available</div>
         </div>
@@ -49,8 +49,15 @@ export function MetricsCard({ metrics, loading, onMetricClick }: MetricsCardProp
     );
   }
 
+  // GPU summary: aggregate all GPUs into one display
+  const gpus = metrics.gpus || [];
+  const hasGpus = gpus.length > 0;
+  const avgGpuTemp = hasGpus
+    ? gpus.reduce((sum, gpu) => sum + (gpu.temperature_celsius || 0), 0) / gpus.length
+    : null;
+
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-testid="metrics-section">
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6" data-testid="metrics-section">
       {/* CPU Usage */}
       <div
         className="metric-card cursor-pointer hover:shadow-lg transition-shadow duration-200"
@@ -146,6 +153,37 @@ export function MetricsCard({ metrics, loading, onMetricClick }: MetricsCardProp
           </div>
         </div>
         <Network className="metric-icon" data-testid="network-icon" />
+      </div>
+
+      {/* GPU */}
+      <div
+        className="metric-card cursor-pointer hover:shadow-lg transition-shadow duration-200"
+        onClick={() => onMetricClick?.('gpu')}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onMetricClick?.('gpu');
+          }
+        }}
+        data-testid="gpu-metrics-card"
+      >
+        <div>
+          <div className="metric-label" data-testid="gpu-label">
+            {hasGpus ? `GPU ${gpus.length > 1 ? `(${gpus.length})` : ''}` : 'GPU'}
+          </div>
+          {hasGpus && avgGpuTemp !== null ? (
+            <div className="metric-value text-uneeq-orange" data-testid="gpu-value">
+              {avgGpuTemp.toFixed(1)}°C
+            </div>
+          ) : (
+            <div className="text-sm text-gray-500 dark:text-gray-400" data-testid="gpu-value-na">
+              N/A
+            </div>
+          )}
+        </div>
+        <Zap className="metric-icon" data-testid="gpu-icon" />
       </div>
     </div>
   );
