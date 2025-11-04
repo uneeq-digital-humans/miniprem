@@ -22,10 +22,10 @@ services:
     restart: unless-stopped
     network_mode: host
     healthcheck:
-      # Enhanced health check to verify model loading is complete
+      # Enhanced health check to verify model loading is complete using Python
       test: [
-        "CMD-SHELL", 
-        "curl -s http://localhost:8800/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"HuggingFaceH4/zephyr-7b-beta\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"max_tokens\":5}' | grep -q 'choices' || exit 1"
+        "CMD-SHELL",
+        "python3 -c \"import urllib.request, json; req = urllib.request.Request('http://localhost:8800/v1/chat/completions', data=json.dumps({'model':'HuggingFaceH4/zephyr-7b-beta','messages':[{'role':'user','content':'hi'}],'max_tokens':5}).encode(), headers={'Content-Type':'application/json'}); resp = urllib.request.urlopen(req, timeout=10); data = json.loads(resp.read()); exit(0 if 'choices' in data else 1)\" || exit 1"
       ]
       interval: 30s
       timeout: 15s
@@ -144,6 +144,7 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_SECURITY_ADMIN_USER=admin
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SERVER_HTTP_PORT=3002  # Listen on port 3002 when using host networking
     restart: unless-stopped
     network_mode: host
     depends_on:

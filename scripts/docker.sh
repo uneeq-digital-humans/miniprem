@@ -91,14 +91,63 @@ perform_nvidia_runtime_test() {
 
     DOCKER_CMD=$(get_docker_command)
 
+    # Pull the test image first (might take a while on first run)
+    info "Pulling NVIDIA CUDA test image (if not already cached)..."
+
+    # Temporarily disable exit-on-error for this pull command
+    set +e
+    local pull_output
+    pull_output=$(eval $DOCKER_CMD pull nvidia/cuda:11.6.2-base-ubuntu20.04 2>&1)
+    local pull_exit=$?
+    set -e  # Re-enable exit-on-error
+
+    if [ $pull_exit -ne 0 ]; then
+        warning "Failed to pull NVIDIA CUDA test image (exit code: $pull_exit)"
+        info "Will attempt to use cached version. Pull output:"
+        echo "$pull_output" | head -5  # Show first 5 lines of error
+    else
+        success "$CHECKMARK NVIDIA CUDA test image ready"
+    fi
+
+    # Create a temp file to capture output from background process
+    local temp_output=$(mktemp)
+
     {
         # Perform a test to make sure Nvidia runtime is working
-        nvidia_smi_output=$($DOCKER_CMD run --rm --privileged --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi 2>/dev/null)
-        if ! echo "$nvidia_smi_output" | grep -q "NVIDIA-SMI"; then
-            fatal "$CROSS Nvidia runtime test failed. Please check your installation."
+        # Store both stdout and stderr for better debugging
+        nvidia_smi_output=$(eval $DOCKER_CMD run --rm --privileged --gpus all nvidia/cuda:11.6.2-base-ubuntu20.04 nvidia-smi 2>&1)
+        exit_code=$?
+
+        if [ $exit_code -ne 0 ]; then
+            echo "ERROR: Docker NVIDIA runtime test failed with exit code $exit_code" > "$temp_output"
+            echo "Output: $nvidia_smi_output" >> "$temp_output"
+            exit 1
         fi
+
+        if ! echo "$nvidia_smi_output" | grep -q "NVIDIA-SMI"; then
+            echo "ERROR: nvidia-smi output does not contain expected 'NVIDIA-SMI' string" > "$temp_output"
+            echo "Output: $nvidia_smi_output" >> "$temp_output"
+            exit 1
+        fi
+
+        rm -f "$temp_output"
     } &
-    show_spinner $!
+
+    local bg_pid=$!
+    show_spinner $bg_pid
+    local spinner_exit=$?
+
+    if [ $spinner_exit -ne 0 ]; then
+        # Show the error output if it exists
+        if [ -f "$temp_output" ]; then
+            error "NVIDIA Docker runtime test failed:"
+            cat "$temp_output"
+            rm -f "$temp_output"
+        fi
+        fatal "$CROSS Nvidia runtime test failed. Check Docker GPU support."
+    fi
+
+    rm -f "$temp_output"
     success "$CHECKMARK Nvidia runtime is working correctly."
 }
 
@@ -135,9 +184,9 @@ pull_docker_images() {
         # First, pull public images (Grafana, Prometheus, Redis)
         info "Pulling public images (Grafana, Prometheus, Redis)..."
         {
-            $DOCKER_CMD pull grafana/grafana:latest
-            $DOCKER_CMD pull prom/prometheus:latest
-            $DOCKER_CMD pull redis:latest
+            eval $DOCKER_CMD pull grafana/grafana:latest
+            eval $DOCKER_CMD pull prom/prometheus:latest
+            eval $DOCKER_CMD pull redis:latest
         } &
         show_spinner $!
         success "$CHECKMARK Public Docker images pulled successfully."
@@ -162,7 +211,7 @@ pull_docker_images() {
     echo
 
     # Log in to the UneeQ Docker registry using stdin to provide the PAT
-    echo "$UNEEQ_PAT" | $DOCKER_CMD login -u "$UNEEQ_USERNAME" --password-stdin
+    echo "$UNEEQ_PAT" | eval $DOCKER_CMD login -u "$UNEEQ_USERNAME" --password-stdin
     if [ $? -ne 0 ]; then
         fatal "$CROSS Failed to login to UneeQ Docker registry."
     fi
@@ -173,7 +222,7 @@ pull_docker_images() {
     {
         # Change to the directory containing the docker-compose file
         cd $current_dir
-        $DOCKER_CMD compose $compose_file pull
+        eval $DOCKER_CMD compose $compose_file pull
     } &
     show_spinner $!
     success "$CHECKMARK Docker images pulled successfully for selected install type."
@@ -184,7 +233,7 @@ start_docker_compose() {
     DOCKER_CMD=$(get_docker_command)
     local compose_file="${1:-"-f docker/docker-compose.yml"}"
     info "Starting Docker Compose services..."
-    $DOCKER_CMD compose $compose_file up -d
+    eval $DOCKER_CMD compose $compose_file up -d
     if [ $? -ne 0 ]; then
         fatal "$CROSS Failed to start Docker Compose services."
     fi
@@ -196,7 +245,7 @@ stop_docker_compose() {
     DOCKER_CMD=$(get_docker_command)
     local compose_file="${1:-"-f docker/docker-compose.yml"}"
     info "Stopping Docker Compose services..."
-    $DOCKER_CMD compose $compose_file down
+    eval $DOCKER_CMD compose $compose_file down
     if [ $? -ne 0 ]; then
         fatal "$CROSS Failed to stop Docker Compose services."
     fi

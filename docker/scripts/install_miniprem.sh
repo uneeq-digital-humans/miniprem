@@ -2,6 +2,9 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Temporary debug mode - uncomment to see which command is failing
+#set -x
+
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -57,19 +60,9 @@ cleanup_on_error() {
             done
         fi
 
-        # Remove installation marker if it was created recently (within last 5 minutes)
-        if [ "$INSTALLATION_MARKER_CREATED" = true ]; then
-            local current_time=$(date +%s)
-            local elapsed=$((current_time - INSTALLATION_START_TIME))
-
-            if [ $elapsed -lt 300 ]; then  # 5 minutes = 300 seconds
-                local marker_file="$PROJECT_ROOT/.miniprem_install_type"
-                if [ -f "$marker_file" ]; then
-                    echo "Removing installation marker (installation was incomplete)..."
-                    rm -f "$marker_file"
-                fi
-            fi
-        fi
+        # Note: We do NOT remove .miniprem_install_type during cleanup
+        # This file represents the user's installation choice and should persist
+        # across installation attempts to avoid requiring re-selection on retry
 
         echo ""
         echo "============================================"
@@ -230,12 +223,20 @@ extract_url_components() {
     local port=$(echo $url | sed -n 's,.*://[^:/]*:\([0-9]*\).*,\1,p')
     local path=$(echo $url | sed -n 's,.*://[^/]*/\(.*\),/\1,p')
 
-    # If port is not found, set it to an empty string
+    # If port is not found, set default based on protocol
     if [[ -z $port ]]; then
-        port="443"
+        if [[ $protocol == "wss://" || $protocol == "https://" ]]; then
+            port="443"
+        else
+            port="80"
+        fi
     fi
 
-    echo "$protocol" "$address" "$port" "$path"
+    # Output each component on a separate line for proper read parsing
+    echo "$protocol"
+    echo "$address"
+    echo "$port"
+    echo "$path"
 }
 
 # Function to prompt for installation type
@@ -247,15 +248,24 @@ prompt_for_install_type() {
     read -p "Enter choice [1-2]: " install_choice
     if [[ "$install_choice" == "1" ]]; then
         INSTALL_TYPE="default"
-        echo "default" > "$PROJECT_ROOT/.miniprem_install_type"
+        echo "default" > "$PROJECT_ROOT/.miniprem_install_type" || {
+            warning "Failed to write installation type marker, but continuing..."
+        }
         mark_installation_marker_created
     elif [[ "$install_choice" == "2" ]]; then
         INSTALL_TYPE="full"
-        echo "full" > "$PROJECT_ROOT/.miniprem_install_type"
+        echo "full" > "$PROJECT_ROOT/.miniprem_install_type" || {
+            warning "Failed to write installation type marker, but continuing..."
+        }
         mark_installation_marker_created
     else
         echo "Invalid choice, exiting."
         exit 1
+    fi
+
+    # Verify the variable is set before returning
+    if [ -z "$INSTALL_TYPE" ]; then
+        fatal "Failed to set installation type"
     fi
 }
 
@@ -315,7 +325,7 @@ pull_images_parallel() {
         temp_files+=("$temp_file")
         
         {
-            if $DOCKER_CMD pull "$image" > "$temp_file" 2>&1; then
+            if eval $DOCKER_CMD pull "$image" > "$temp_file" 2>&1; then
                 echo "SUCCESS:$image" >> "$temp_file"
             else
                 echo "FAILED:$image" >> "$temp_file"
@@ -449,12 +459,27 @@ wait_for_service() {
 validate_network_connectivity() {
     local host=$1
     local timeout=${2:-10}
-    
-    if ! timeout $timeout ping -c 1 "$host" >/dev/null 2>&1; then
-        fatal "Cannot reach $host within ${timeout} seconds"
+
+    # Use curl instead of ping since many servers block ICMP
+    # Try HTTPS first, then HTTP as fallback
+    if curl --max-time $timeout --silent --fail --output /dev/null "https://$host" 2>/dev/null; then
+        success "$CHECKMARK Network connectivity to $host verified (HTTPS)"
+        return 0
+    elif curl --max-time $timeout --silent --head --output /dev/null "https://$host" 2>/dev/null; then
+        success "$CHECKMARK Network connectivity to $host verified (HTTPS, any status)"
+        return 0
+    elif curl --max-time $timeout --silent --head --output /dev/null "http://$host" 2>/dev/null; then
+        success "$CHECKMARK Network connectivity to $host verified (HTTP)"
+        return 0
+    else
+        # Final fallback: check if DNS resolves
+        if nslookup "$host" >/dev/null 2>&1 || host "$host" >/dev/null 2>&1; then
+            warning "DNS resolves but HTTP/HTTPS connection failed for $host"
+            info "This may be normal if the server requires specific paths or authentication"
+            return 0
+        fi
+        fatal "Cannot reach $host within ${timeout} seconds (tried HTTPS, HTTP, and DNS)"
     fi
-    
-    success "$CHECKMARK Network connectivity to $host verified"
 }
 
 # Function to retry network operations with exponential backoff
@@ -487,8 +512,13 @@ check_wss_service() {
     local url=$1
 
     # Extract the protocol, address, port, and path from the URL
-    read protocol address port path < <(extract_url_components "$url")
-   
+    local components
+    mapfile -t components < <(extract_url_components "$url")
+    local protocol="${components[0]}"
+    local address="${components[1]}"
+    local port="${components[2]}"
+    local path="${components[3]}"
+
     # Default port if not specified
     if [[ -z $port ]]; then
         if [[ $protocol == "wss://" ]]; then
@@ -498,21 +528,42 @@ check_wss_service() {
         fi
     fi
 
+    info "Testing WebSocket connection to $url..."
+    info "  Protocol: $protocol, Host: $address, Port: $port, Path: $path"
+
     # Generate a valid Sec-WebSocket-Key
     local valid_key=$(openssl rand -base64 16)
 
+    # Temporarily disable exit-on-error for socat command
+    set +e
+    local response
     # Use socat to test the WebSocket connection
     if [[ $protocol == "wss://" ]]; then
         response=$(echo -e "GET $path HTTP/1.1\r\nHost: $address\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $valid_key\r\nSec-WebSocket-Version: 13\r\n\r\n" | socat -t 5 - SSL:$address:$port,verify=0 2>&1)
+        local socat_exit=$?
     else
         response=$(echo -e "GET $path HTTP/1.1\r\nHost: $address\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $valid_key\r\nSec-WebSocket-Version: 13\r\n\r\n" | socat -t 5 - TCP:$address:$port 2>&1)
+        local socat_exit=$?
+    fi
+    set -e  # Re-enable exit-on-error
+
+    # Debug output
+    info "  Socat exit code: $socat_exit"
+    if [ $socat_exit -ne 0 ]; then
+        warning "Socat command failed with exit code $socat_exit"
+        info "First 5 lines of response:"
+        echo "$response" | head -5
     fi
 
     # Check if the response contains "101 Switching Protocols"
     if [[ $response == *"101 Switching Protocols"* || $response == *"200 OK"* ]]; then
         success "$CHECKMARK Service at $url is reachable."
     else
-        fatal "$CROSS Service at $url is not reachable."
+        error "$CROSS Service at $url is not reachable."
+        info "Expected '101 Switching Protocols' or '200 OK' in response"
+        info "Actual response (first 10 lines):"
+        echo "$response" | head -10
+        fatal "WebSocket connection test failed for $url"
     fi
 }
 
@@ -751,7 +802,7 @@ setup_rime_credentials() {
     # Only pull RIME images if we're using RIME
     if [ "$TTS_PROVIDER" == "rime" ]; then
         # Check if we've already authenticated with quay.io
-        if $DOCKER_CMD images | grep -q "quay.io/rimelabs/api" && $DOCKER_CMD images | grep -q "quay.io/rimelabs/mistv2"; then
+        if eval $DOCKER_CMD images | grep -q "quay.io/rimelabs/api" && eval $DOCKER_CMD images | grep -q "quay.io/rimelabs/mistv2"; then
             success "$CHECKMARK Already have RIME Docker images, skipping quay.io login"
             return 0
         fi
@@ -768,9 +819,9 @@ setup_rime_credentials() {
 
         # Login to quay.io for RIME images
         info "Logging in to quay.io for RIME images..."
-        $DOCKER_CMD login -u="rimelabs+uneeq" -p="$RIME_QUAY_PASSWORD" quay.io
-        $DOCKER_CMD pull quay.io/rimelabs/api:v0.0.2-20250407
-        $DOCKER_CMD pull quay.io/rimelabs/mistv2:v0.0.1-20250403
+        eval $DOCKER_CMD login -u="rimelabs+uneeq" -p="$RIME_QUAY_PASSWORD" quay.io
+        eval $DOCKER_CMD pull quay.io/rimelabs/api:v0.0.2-20250407
+        eval $DOCKER_CMD pull quay.io/rimelabs/mistv2:v0.0.1-20250403
 
         info "RIME credential setup complete"
     fi
@@ -1025,29 +1076,29 @@ check_container_health() {
     local container_name=$1
     local max_wait=${2:-300}
     local health_check_interval=${3:-10}
-    
+
     info "Checking health of container: $container_name"
-    
+
     # First check if container exists
-    if ! docker ps -a --format "table {{.Names}}" | grep -q "^$container_name$"; then
+    if ! sudo docker ps -a --format "table {{.Names}}" | grep -q "^$container_name$"; then
         error "Container $container_name not found"
         return 1
     fi
-    
+
     # Check if container is running
-    if ! docker ps --format "table {{.Names}}" | grep -q "^$container_name$"; then
+    if ! sudo docker ps --format "table {{.Names}}" | grep -q "^$container_name$"; then
         error "Container $container_name is not running"
         info "Container logs:"
-        docker logs "$container_name" --tail 20
+        sudo docker logs "$container_name" --tail 20
         return 1
     fi
-    
+
     local elapsed=0
-    
+
     while [ $elapsed -lt $max_wait ]; do
         # Get health status
-        local health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "unknown")
-        
+        local health_status=$(sudo docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "unknown")
+
         case "$health_status" in
             "healthy")
                 success "$CHECKMARK Container $container_name is healthy"
@@ -1056,46 +1107,46 @@ check_container_health() {
             "unhealthy")
                 error "Container $container_name is unhealthy"
                 info "Container logs:"
-                docker logs "$container_name" --tail 20
+                sudo docker logs "$container_name" --tail 20
                 return 1
                 ;;
             "none"|"unknown")
                 # Container doesn't have health check, try basic connectivity
-                local ports=$(docker port "$container_name" 2>/dev/null | cut -d'-' -f1 | cut -d':' -f2 | head -1)
+                local ports=$(sudo docker port "$container_name" 2>/dev/null | cut -d'-' -f1 | cut -d':' -f2 | head -1)
                 if [ -n "$ports" ] && [ "$ports" != "0" ]; then
                     # Try to connect to the first exposed port
-                    local host_port=$(docker port "$container_name" 2>/dev/null | head -1 | cut -d':' -f2)
+                    local host_port=$(sudo docker port "$container_name" 2>/dev/null | head -1 | cut -d':' -f2)
                     if nc -z localhost "$host_port" 2>/dev/null; then
                         success "$CHECKMARK Container $container_name is responding on port $host_port"
                         return 0
                     fi
                 fi
-                
+
                 # If no health check and no port, assume running is healthy
-                if docker ps --format "table {{.Names}}" | grep -q "^$container_name$"; then
+                if sudo docker ps --format "table {{.Names}}" | grep -q "^$container_name$"; then
                     success "$CHECKMARK Container $container_name is running (no health check defined)"
                     return 0
                 fi
                 ;;
         esac
-        
+
         # Show progress
         if [ $((elapsed % 30)) -eq 0 ] && [ $elapsed -gt 0 ]; then
             info "Still waiting for $container_name to become healthy... (${elapsed}s elapsed)"
             # Show recent logs
             info "Recent container logs:"
-            docker logs "$container_name" --tail 5
+            sudo docker logs "$container_name" --tail 5
         fi
-        
+
         sleep $health_check_interval
         elapsed=$((elapsed + health_check_interval))
     done
     
     warning "Container $container_name health check timed out after ${max_wait}s"
     info "Container status:"
-    docker inspect --format='{{.State.Status}} - {{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "unknown"
+    sudo docker inspect --format='{{.State.Status}} - {{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "unknown"
     info "Container logs:"
-    docker logs "$container_name" --tail 20
+    sudo docker logs "$container_name" --tail 20
     return 1
 }
 
@@ -1210,9 +1261,9 @@ start_miniprem() {
         # Stop any local Redis instances that might be running
         info "Checking for local Redis instances..."
         if command -v lsof >/dev/null 2>&1; then
-            REDIS_PROCESS=$(lsof -i :6379 -sTCP:LISTEN 2>/dev/null)
+            REDIS_PROCESS=$(lsof -i :6379 -sTCP:LISTEN 2>/dev/null || true)
         else
-            REDIS_PROCESS=$(ss -ltnp "sport = :6379" 2>/dev/null)
+            REDIS_PROCESS=$(ss -ltnp "sport = :6379" 2>/dev/null || true)
         fi
 
         if [ -n "$REDIS_PROCESS" ]; then
@@ -1244,8 +1295,16 @@ start_miniprem() {
 
             # Verify permissions were set correctly (cross-platform compatible)
             if command -v stat >/dev/null 2>&1; then
-                local actual_perms=$(stat -f '%A' "$PROJECT_ROOT/docker/vllm_data" 2>/dev/null || stat -c '%a' "$PROJECT_ROOT/docker/vllm_data" 2>/dev/null)
-                if [ "$actual_perms" != "755" ]; then
+                local actual_perms=""
+                # Try Linux/GNU stat first
+                if actual_perms=$(stat -c '%a' "$PROJECT_ROOT/docker/vllm_data" 2>/dev/null); then
+                    : # Success, actual_perms is set
+                # Fall back to BSD/macOS stat
+                elif actual_perms=$(stat -f '%A' "$PROJECT_ROOT/docker/vllm_data" 2>/dev/null); then
+                    : # Success, actual_perms is set
+                fi
+
+                if [ -n "$actual_perms" ] && [ "$actual_perms" != "755" ]; then
                     warning "Failed to set secure permissions on vLLM data directory (got $actual_perms instead of 755)"
                 fi
             fi
@@ -1259,7 +1318,7 @@ start_miniprem() {
         # First, start just vLLM since it needs significant GPU memory
         info "Starting vLLM service first..."
         info "Note: Initial startup may fail as the model needs to be downloaded. This is expected."
-        $DOCKER_CMD $COMPOSE_FILES up -d "vllm"
+        eval $DOCKER_CMD $COMPOSE_FILES up -d "vllm"
         if [ $? -ne 0 ]; then
             warning "vLLM service failed to start - this is expected as the model needs to be downloaded"
         fi
@@ -1289,7 +1348,7 @@ start_miniprem() {
 
         for service in $support_services; do
             info "Starting $service..."
-            $DOCKER_CMD "$COMPOSE_FILES" up -d "$service"
+            eval $DOCKER_CMD $COMPOSE_FILES up -d "$service"
             if [ $? -eq 0 ]; then
                 register_container "$service"
                 # Check health for critical services
@@ -1309,7 +1368,7 @@ start_miniprem() {
     else
         # Default install: start monitor for container monitoring
         info "Starting MiniPrem Monitor for container monitoring..."
-        $DOCKER_CMD "$COMPOSE_FILES" up -d "miniprem-monitor"
+        eval $DOCKER_CMD $COMPOSE_FILES up -d "miniprem-monitor"
         if [ $? -eq 0 ]; then
             register_container "miniprem-monitor"
             check_container_health "miniprem-monitor" 120 10
@@ -1321,7 +1380,7 @@ start_miniprem() {
         if [ "$TTS_PROVIDER" = "rime" ]; then
             info "Starting RIME services..."
             for service in "rime-model" "rime-api"; do
-                $DOCKER_CMD "$COMPOSE_FILES" up -d "$service"
+                eval $DOCKER_CMD $COMPOSE_FILES up -d "$service"
                 if [ $? -eq 0 ]; then
                     register_container "$service"
                     check_container_health "$service" 180 10
@@ -1334,7 +1393,7 @@ start_miniprem() {
 
     # Start Renny with internal speech processing (required for both installation types)
     info "Starting Renny digital human service with internal speech processing..."
-    $DOCKER_CMD "$COMPOSE_FILES" up -d "renny"
+    eval $DOCKER_CMD $COMPOSE_FILES up -d "renny"
     if [ $? -eq 0 ]; then
         register_container "renny"
         check_container_health "renny" 300 15
@@ -1401,14 +1460,14 @@ show_progress_spinner() {
 prepare_vllm_model() {
     log_section "Preparing vLLM LLM"
 
-    DOCKER_CMD="sudo docker"
+    local DOCKER_CMD="sudo docker"
 
     info "Step 1: Waiting for vLLM container to become ready..."
     local max_attempts=30  # 5 minutes (30 * 10s)
     local attempt=1
 
     while [ $attempt -le $max_attempts ]; do
-        if $DOCKER_CMD inspect vllm >/dev/null 2>&1; then
+        if eval $DOCKER_CMD inspect vllm >/dev/null 2>&1; then
             success "$CHECKMARK vLLM container exists"
             break
         fi
@@ -1423,18 +1482,19 @@ prepare_vllm_model() {
     fi
 
     info "Step 2: Waiting for vLLM API to become available..."
-    
+    info "In a separate terminal, run 'sudo docker logs -f vllm' to watch progress..."
+
     # Use the shared exponential backoff health check
-    if ! wait_for_service "http://localhost:8000/v1/models" 60 5 "vLLM API"; then
+    if ! wait_for_service "http://localhost:8800/v1/models" 60 5 "vLLM API"; then
         warning "vLLM API did not become available within the expected timeframe."
         warning "Will attempt to continue anyway, but LLM services might not work properly."
         return 1
     fi
-    
+
     # Do a final validation test using chat completions endpoint
     info "Step 3: Validating chat completions functionality..."
-    
-    local response=$(curl -s -X POST http://localhost:8000/v1/chat/completions \
+
+    local response=$(curl -s -X POST http://localhost:8800/v1/chat/completions \
         -H "Content-Type: application/json" \
         -d '{
             "model": "HuggingFaceH4/zephyr-7b-beta",
@@ -1570,6 +1630,17 @@ print_logo() {
 check_environment() {
     log_section "Checking Environment"
 
+    # Safeguard: Ensure INSTALL_TYPE is set (should be set by prompt_for_install_type)
+    if [ -z "${INSTALL_TYPE:-}" ]; then
+        # Try to read from marker file as fallback
+        if [ -f "$PROJECT_ROOT/.miniprem_install_type" ]; then
+            INSTALL_TYPE=$(cat "$PROJECT_ROOT/.miniprem_install_type")
+            info "Recovered installation type from marker file: $INSTALL_TYPE"
+        else
+            fatal "INSTALL_TYPE is not set. This should not happen. Please report this bug."
+        fi
+    fi
+
     # Determine docker-compose command (v1 or v2)
     if command_exists docker-compose; then
         DOCKER_COMPOSE_CMD="docker-compose"
@@ -1586,7 +1657,7 @@ check_environment() {
         "$PROJECT_ROOT/miniprem.sh" stop >/dev/null 2>&1 || true
         success "$CHECKMARK Existing Miniprem containers stopped using miniprem.sh"
     elif [ -d "$PROJECT_ROOT/docker" ]; then
-        (cd "$PROJECT_ROOT/docker" && $DOCKER_CMD down) >/dev/null 2>&1 || true
+        (cd "$PROJECT_ROOT/docker" && eval $DOCKER_CMD down) >/dev/null 2>&1 || true
         success "$CHECKMARK Existing Miniprem containers stopped using docker compose"
     else
         info "No existing Miniprem containers found"
@@ -1607,10 +1678,11 @@ check_environment() {
             local service="${port_entry#*:}"
             
             # Try lsof first, fallback to ss
+            # Note: lsof returns exit code 1 when no matches found, so we need to handle this explicitly
             if command -v lsof >/dev/null 2>&1; then
-                proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
+                proc_info=$(lsof -i :$port -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {print $1, $2}' | head -n1 || true)
             else
-                proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
+                proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1 || true)
             fi
             if [ ! -z "$proc_info" ]; then
                 proc_name=$(echo $proc_info | awk '{print $1}')
@@ -1624,9 +1696,9 @@ check_environment() {
                         sudo systemctl stop redis || true
                         # Re-check if port is still in use
                         if command -v lsof >/dev/null 2>&1; then
-                            proc_info=$(lsof -i :$port -sTCP:LISTEN -nP | awk 'NR>1 {print $1, $2}' | head -n1)
+                            proc_info=$(lsof -i :$port -sTCP:LISTEN -nP 2>/dev/null | awk 'NR>1 {print $1, $2}' | head -n1 || true)
                         else
-                            proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1)
+                            proc_info=$(ss -ltnp "sport = :$port" 2>/dev/null | awk 'NR>1 {gsub(/users:\(\(","",$NF); split($NF,a,","); print a[1], a[2]}' | head -n1 || true)
                         fi
                         if [ -z "$proc_info" ]; then
                             success "$CHECKMARK Successfully stopped redis-server on port 6379."
@@ -1881,7 +1953,7 @@ EOF
     fi
 
     # Build the Docker image
-    (cd "$PROJECT_ROOT/docker" && $DOCKER_CMD build -t fast-whisper-optimized -f fast-whisper/Dockerfile ./fast-whisper)
+    (cd "$PROJECT_ROOT/docker" && eval $DOCKER_CMD build -t fast-whisper-optimized -f fast-whisper/Dockerfile ./fast-whisper)
     
     if [ $? -ne 0 ]; then
         fatal "Failed to build fast-whisper Docker image"
@@ -1942,6 +2014,9 @@ EOF
 
     # Handle response
     if [[ "$telemetry_consent" =~ ^[Yy]$ ]]; then
+        # Initialize installation ID variable
+        INSTALLATION_ID=""
+
         # Check if installation ID already exists (reuse for reinstalls/upgrades)
         if [ -f "/tmp/miniprem_installation_id" ] && [ -s "/tmp/miniprem_installation_id" ]; then
             INSTALLATION_ID=$(cat /tmp/miniprem_installation_id 2>/dev/null | tr -d '[:space:]')
@@ -2083,14 +2158,15 @@ EOF
 main() {
     print_logo
 
+    # Install type
+    prompt_for_install_type
+
     check_environment
+
     check_duplicate_installations
 
     # Telemetry consent dialog (BEFORE installation starts)
     prompt_for_telemetry_consent
-
-    # Install type
-    prompt_for_install_type
 
     # Validate system resources before proceeding
     validate_system_resources
