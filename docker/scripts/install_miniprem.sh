@@ -2407,6 +2407,19 @@ main() {
     info "- Renny service health at http://localhost:8081/health"
     info ""
     info "To stop the services, use: cd docker && docker compose down"
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  📦 Want to run multiple Renny instances for increased capacity?"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "To configure multiple Renny containers:"
+    echo "  cd $PROJECT_ROOT/docker/scripts"
+    echo "  ./setup_multiple_rennys.sh"
+    echo ""
+    echo "Recommended: 2-4 instances per GPU (varies by GPU model)"
+    echo "See docs/MULTIPLE_RENNY_SETUP.md for detailed guidance"
+    echo ""
 }
 
 main "$@"

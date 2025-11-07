@@ -16,8 +16,8 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # Unicode characters for checkmark and cross
-CHECKMARK="\u2714"
-CROSS="\u2716"
+CHECKMARK="✓"
+CROSS="✗"
 
 # Ensure log directory exists
 mkdir -p "$LOG_DIR"
@@ -26,7 +26,7 @@ mkdir -p "$LOG_DIR"
 rotate_logs() {
     if [ -f "$LOG_FILE" ]; then
         # Read the timestamp from the log file
-        local timestamp=$(head -n 1 "$LOG_FILE" | grep -oP '\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}')
+        local timestamp=$(head -n 1 "$LOG_FILE" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}')
         if [ -z "$timestamp" ]; then
             # If no timestamp is found, use the current time
             timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
@@ -47,8 +47,8 @@ log_message() {
     local message="$@"
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
 
-    # Log to console
-    echo -e "${color}${level}: ${symbol} ${message}${NC}"
+    # Log to console (stderr to avoid capture in redirects)
+    echo -e "${color}${level}: ${symbol} ${message}${NC}" >&2
 
     # Log to file
     echo -e "${timestamp} ${level}: ${symbol} ${message}" >> "$LOG_FILE"
@@ -63,10 +63,10 @@ log_section() {
     # Create horizontal border line with consistent width
     local border=$(printf "%${box_width}s" | tr ' ' '=')
     
-    # Log to console
-    echo -e "\n\e[1;34m+${border}+\e[0m"
-    printf "\e[1;34m| %-${box_width}s |\e[0m\n" "$section_name"
-    echo -e "\e[1;34m+${border}+\e[0m\n"
+    # Log to console (stderr to avoid capture in redirects)
+    echo -e "\n${BLUE}${BOLD}+${border}+${NC}" >&2
+    printf "${BLUE}${BOLD}| %-${box_width}s |${NC}\n" "$section_name" >&2
+    echo -e "${BLUE}${BOLD}+${border}+${NC}\n" >&2
     
     # Log to file
     echo -e "\n${timestamp} +${border}+" >> "$LOG_FILE"

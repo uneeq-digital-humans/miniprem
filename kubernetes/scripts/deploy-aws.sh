@@ -2482,8 +2482,8 @@ install_gpu_operator_with_retry() {
             continue
         fi
 
-        # Check for control characters in the YAML file
-        if grep -P '[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]' "$temp_values_file" > /dev/null 2>&1; then
+        # Check for control characters in the YAML file (macOS-compatible)
+        if LC_ALL=C grep -E '[[:cntrl:]]' "$temp_values_file" > /dev/null 2>&1; then
             echo -e "${RED}❌ YAML file contains control characters, recreating...${NC}"
             rm -f "$temp_values_file"
             continue
