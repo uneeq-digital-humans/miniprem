@@ -20,6 +20,7 @@
   - [Installation](#installation)
 - [Accessing Services](#accessing-services)
 - [Managing MiniPrem](#managing-miniprem)
+- [Scaling with Multiple Renny Instances](#scaling-with-multiple-renny-instances)
 - [Internal Speech Processing (NEW_SPEECH_OVERRIDE)](#internal-speech-processing-new_speech_override)
 - [Docker Configuration](#docker-configuration)
 - [Kubernetes/EKS Deployment](#kuberneteseks-deployment)
@@ -153,7 +154,6 @@ This architecture is optimized for kiosk deployments where the user's browser an
    - **Tenant ID**: Your UneeQ tenant identifier
    - **Azure region**: Region for your Azure Speech service (e.g., eastus)
    - **Azure speech key**: Authentication key for Azure Speech service
-   - **Renny image name**: Docker image for the Renny digital human
 
    You can also provide these values directly as command-line arguments:
 
@@ -320,6 +320,82 @@ The services started will depend on your installation type (Default or Full) as 
 * Grafana (Monitoring Dashboard)
 * Redis (Queue Management)
 * RIME (Text-to-Speech API)
+
+## Scaling with Multiple Renny Instances
+
+### Overview
+
+Deploy multiple Renny instances to handle concurrent users and scale your digital human capacity. This configuration allows you to maximize GPU utilization by running 2-4 independent Renny containers on a single GPU, each with its own dedicated ports and resources. This is useful for high-traffic deployments, testing scenarios, or capacity planning.
+
+### Quick Start
+
+```bash
+cd docker/scripts
+./setup_multiple_rennys.sh
+```
+
+The script will prompt you for the number of instances to create and automatically configure everything needed.
+
+### Key Capabilities
+
+- **🚀 Concurrent Users**: Run 2-4 instances per GPU for better resource utilization
+- **🔄 Idempotent Configuration**: Re-run the script anytime to add, remove, or modify instances
+- **🔌 Automatic Port Allocation**: Each instance gets dedicated HTTP and WebRTC ports
+- **📊 Independent Monitoring**: Monitor each instance separately via MiniPrem Monitor
+- **⚙️ Flexible Scaling**: Adjust instance count up or down as needed
+- **MUST run AFTER installation**: Ensure `./miniprem.sh start` completes successfully first
+
+### GPU Capacity Planning
+
+Choose the number of Renny instances based on your GPU model:
+
+| GPU Model | VRAM | Recommended Instances | Notes |
+|-----------|------|----------------------|-------|
+| NVIDIA ADA6000 | 48GB | 4 | Enterprise-grade, excellent multi-instance performance |
+| NVIDIA RTX 6000 | 24GB | 3-4 | High-end workstation GPU |
+| NVIDIA A10G (AWS) | 24GB | 2-3 | Production cloud GPU |
+| NVIDIA RTX 4090 | 24GB | 2-3 | Consumer-grade high-end |
+| NVIDIA T4 (Azure) | 16GB | 2 | Production cloud GPU, conservative estimate |
+| NVIDIA RTX 4080 | 24GB | 2-3 | Consumer-grade mid-range |
+
+**Recommendation**: Start with 2 instances and increase incrementally. Monitor GPU memory usage with `nvidia-smi` to find your optimal configuration.
+
+### Accessing Multiple Instances
+
+After setup, each Renny instance is accessible at its own port:
+
+- **Instance 1**: http://localhost:8081/health (metrics: 8080)
+- **Instance 2**: http://localhost:8091/health (metrics: 8090)
+- **Instance 3**: http://localhost:8101/health (metrics: 8100)
+- **Instance 4**: http://localhost:8111/health (metrics: 8110)
+
+All instances are monitored together in MiniPrem Monitor at http://localhost:3001.
+
+### Managing Instances
+
+```bash
+# View current instances
+docker ps | grep renny
+
+# Start all instances
+./miniprem.sh start
+
+# Stop all instances
+./miniprem.sh stop
+
+# Restart all instances
+./miniprem.sh restart
+
+# View logs for specific instance
+docker logs renny         # First instance
+docker logs renny-second  # Second instance
+docker logs renny-third   # Third instance
+```
+
+### Advanced Configuration
+
+For detailed setup, troubleshooting, and performance tuning, see:
+**📖 [Multiple Renny Setup Guide](docs/MULTIPLE_RENNY_SETUP.md)**
 
 ## Monitoring Deployment Scenarios
 
