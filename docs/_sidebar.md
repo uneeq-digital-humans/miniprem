@@ -6,6 +6,7 @@
 * [Getting Started](guides/getting-started.md)
 * [Deployment Options](#)
   * [Docker (Local)](guides/getting-started.md)
+    * [Multiple Rennys](guides/README_SETUP_MULTIPLE.md)
   * [Kubernetes (Production)](guides/kubernetes-overview.md)
     * [Multi-Cloud Overview](guides/kubernetes-overview.md)
     * [AWS EKS Deployment](guides/kubernetes-eks.md)

@@ -105,7 +105,7 @@ docker logs renny-second
 
 ## Full Documentation
 
-See `SETUP_MULTIPLE_RENNYS.md` for comprehensive documentation including:
+See [SETUP MULTIPLE RENNYS](../../docs/guides/SETUP_MULTIPLE_RENNYS.md) for comprehensive documentation including:
 - Detailed workflow explanation
 - Advanced configuration
 - Performance considerations
@@ -149,5 +149,5 @@ See `SETUP_MULTIPLE_RENNYS.md` for comprehensive documentation including:
 For issues or questions:
 1. Check troubleshooting section above
 2. Review logs: `./miniprem.sh logs`
-3. See full documentation: `SETUP_MULTIPLE_RENNYS.md`
+3. See full documentation: [SETUP MULTIPLE RENNYS](../../docs/guides/SETUP_MULTIPLE_RENNYS.md)
 4. Run help: `./docker/scripts/setup_multiple_rennys.sh --help`
