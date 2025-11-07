@@ -25,13 +25,34 @@ mkdir -p "$LOG_DIR"
 # Function to rotate logs
 rotate_logs() {
     if [ -f "$LOG_FILE" ]; then
-        # Read the timestamp from the log file
-        local timestamp=$(head -n 1 "$LOG_FILE" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}')
-        if [ -z "$timestamp" ]; then
-            # If no timestamp is found, use the current time
+        # Extract timestamp using POSIX ERE (grep -oE) for macOS/BSD compatibility
+        local timestamp
+        local grep_output
+
+        grep_output=$(head -n 1 "$LOG_FILE" 2>/dev/null | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}' 2>&1)
+        local grep_exit=$?
+
+        if [ -n "$grep_output" ]; then
+            timestamp="$grep_output"
+        else
+            # Fallback to current timestamp
             timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
+
+            # Log why we're using fallback (only if grep actually failed, not just no match)
+            if [ $grep_exit -ne 0 ] && [ $grep_exit -ne 1 ]; then
+                echo "WARNING: Failed to extract timestamp from log file (grep exit: $grep_exit), using current time" >&2
+            fi
         fi
-        mv "$LOG_FILE" "$LOG_DIR/install_miniprem_$timestamp.log"
+
+        local target_file="$LOG_DIR/install_miniprem_$timestamp.log"
+
+        # Check if mv succeeds
+        if ! mv "$LOG_FILE" "$target_file" 2>/dev/null; then
+            echo "ERROR: Failed to rotate log file from $LOG_FILE to $target_file" >&2
+            echo "  - Check disk space: df -h" >&2
+            echo "  - Check permissions: ls -la $LOG_DIR" >&2
+            # Don't exit - rotation failure shouldn't kill the script
+        fi
     fi
 }
 
@@ -129,6 +150,10 @@ show_spinner() {
     wait $pid
     local exit_status=$?
     if [ $exit_status -ne 0 ]; then
+        printf "    \b\b\b\b"
+        # Log error with context before exiting
+        error "Background process (PID: $pid) failed with exit code: $exit_status"
+        error "Check the log file for details: $LOG_FILE"
         exit 1
     fi
     printf "    \b\b\b\b"

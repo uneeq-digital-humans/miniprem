@@ -241,8 +241,8 @@ Instance 5 (renny-fifth):     8120 (metrics) / 8121 (health)
 ```
 
 **Pattern Rule**: For instance N (1-indexed):
-- Metrics port: `8000 + (N-1)*10`
-- Health port: `8000 + (N-1)*10 + 1`
+- Metrics port: `8080 + (N-1)*10`
+- Health port: `8081 + (N-1)*10`
 
 ### Container Naming Convention
 
@@ -273,7 +273,7 @@ renny:
   environment:
     - NEW_SPEECH_OVERRIDE=1
     - PLATFORM=docker
-    - TELEMETRY_DISABLED=0
+    - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
   volumes:
     - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
 
@@ -284,7 +284,7 @@ renny-second:
   environment:
     - NEW_SPEECH_OVERRIDE=1
     - PLATFORM=docker
-    - TELEMETRY_DISABLED=0
+    - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
   volumes:
     - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
 ```

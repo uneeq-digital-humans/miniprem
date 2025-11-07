@@ -154,7 +154,6 @@ This architecture is optimized for kiosk deployments where the user's browser an
    - **Tenant ID**: Your UneeQ tenant identifier
    - **Azure region**: Region for your Azure Speech service (e.g., eastus)
    - **Azure speech key**: Authentication key for Azure Speech service
-   - **Renny image name**: Docker image for the Renny digital human
 
    You can also provide these values directly as command-line arguments:
 
@@ -365,10 +364,10 @@ Choose the number of Renny instances based on your GPU model:
 
 After setup, each Renny instance is accessible at its own port:
 
-- **Instance 1**: http://localhost:5900
-- **Instance 2**: http://localhost:5901
-- **Instance 3**: http://localhost:5902
-- **Instance 4**: http://localhost:5903
+- **Instance 1**: http://localhost:8081/health (metrics: 8080)
+- **Instance 2**: http://localhost:8091/health (metrics: 8090)
+- **Instance 3**: http://localhost:8101/health (metrics: 8100)
+- **Instance 4**: http://localhost:8111/health (metrics: 8110)
 
 All instances are monitored together in MiniPrem Monitor at http://localhost:3001.
 
@@ -388,8 +387,9 @@ docker ps | grep renny
 ./miniprem.sh restart
 
 # View logs for specific instance
-docker logs renny-1
-docker logs renny-2
+docker logs renny         # First instance
+docker logs renny-second  # Second instance
+docker logs renny-third   # Third instance
 ```
 
 ### Advanced Configuration
