@@ -37,7 +37,7 @@ prompt_for_install_type() {
 # Function to prompt for deployment target
 prompt_deployment_target() {
     # Check if deployment target already set (e.g., via CLI argument)
-    if [ -n "$DEPLOYMENT_TARGET" ]; then
+    if [ -n "${DEPLOYMENT_TARGET:-}" ]; then
         info "$CHECKMARK Using deployment target from command line: $DEPLOYMENT_TARGET"
         return 0
     fi

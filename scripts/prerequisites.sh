@@ -8,9 +8,9 @@
 validate_docker_daemon() {
     log_section "Docker Daemon Validation"
 
-    if ! timeout 5 docker info > /dev/null 2>&1; then
+    if ! timeout 5 sudo docker info > /dev/null 2>&1; then
         fatal "$CROSS Docker daemon is not running or unreachable (timeout after 5 seconds)"
-        fatal "Try starting Docker: service docker start"
+        fatal "Try starting Docker: sudo service docker start"
         return 1
     fi
 
