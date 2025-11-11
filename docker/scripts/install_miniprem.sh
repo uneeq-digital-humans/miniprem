@@ -298,6 +298,11 @@ prompt_deployment_target() {
 
 # Function to configure Renny quality level based on deployment target
 configure_renny_quality() {
+    # Validate that deployment target was set by caller
+    if [ -z "$DEPLOYMENT_TARGET" ]; then
+        fatal "DEPLOYMENT_TARGET not set. prompt_deployment_target() must be called first."
+    fi
+
     local quality_level=""
 
     # Map deployment target to quality level
@@ -315,11 +320,8 @@ configure_renny_quality() {
             ;;
     esac
 
-    # Update the environment variable
-    update_env_variable "RENNY_QUALITY_LEVEL" "$quality_level"
-
-    # Verify it was written
-    if [ $? -eq 0 ]; then
+    # Update the environment variable and capture result immediately
+    if update_env_variable "RENNY_QUALITY_LEVEL" "$quality_level"; then
         success "$CHECKMARK Renny quality level configured: RENNY_QUALITY_LEVEL=$quality_level"
         info "You can change this later by editing docker/docker-compose.env and restarting Renny"
     else
