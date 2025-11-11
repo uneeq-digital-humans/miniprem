@@ -15,6 +15,9 @@
 - [vLLM Issues](#vllm-issues)
 - [Flowise Issues](#flowise-issues)
 - [Renny Issues](#renny-issues)
+  - [Renny Health Check Failures](#renny-health-check-failures)
+  - [Speech Processing Issues](#speech-processing-issues)
+  - [Rendering Quality Issues](#rendering-quality-issues)
 - [Monitoring Issues](#monitoring-issues)
 - [Network Issues](#network-issues)
 - [Resource Issues](#resource-issues)
@@ -201,6 +204,53 @@
    ```bash
    curl -s http://localhost:8081/health | grep -i speech
    ```
+
+### Rendering Quality Issues
+
+**Symptoms**: Poor visual quality or unexpected rendering behavior
+
+**Solutions**:
+1. Check RENNY_QUALITY_LEVEL setting:
+   ```bash
+   # Docker
+   grep RENNY_QUALITY_LEVEL docker/docker-compose.env
+
+   # Docker (check running container)
+   docker exec renny env | grep RENNY_QUALITY_LEVEL
+
+   # Kubernetes
+   kubectl get pods -n uneeq-renderer -o yaml | grep RENNY_QUALITY_LEVEL
+   ```
+
+2. Verify deployment target matches quality setting:
+   - **Dedicated hardware** → Should use `RENNY_QUALITY_LEVEL=miniprem`
+   - **Cloud platforms** → Should use `RENNY_QUALITY_LEVEL=web`
+
+3. Change quality level if needed:
+   ```bash
+   # Docker: Edit docker/docker-compose.env
+   RENNY_QUALITY_LEVEL=miniprem  # or web
+
+   # Then restart
+   docker compose restart renny
+   ```
+
+4. For Kubernetes deployments:
+   ```bash
+   # Edit kubernetes/values/renny-values.yaml
+   # Change RENNY_QUALITY_LEVEL value to "miniprem" or "web"
+
+   # Reapply with Helm
+   helm upgrade renny ./kubernetes/renny -f kubernetes/values/renny-values.yaml
+   ```
+
+5. For cloud deployments with quality issues:
+   - Verify GPU availability: `nvidia-smi` (Docker) or `kubectl exec` (Kubernetes)
+   - Check GPU memory usage and adjust if needed
+   - Review GPU time-slicing settings in `kubernetes/values/renny-values.yaml`
+   - Consider the quality setting matches your deployment type (web for cloud)
+
+See [Renny Quality Settings](guides/renny.md#quality-settings) for detailed configuration.
 
 ## Monitoring Issues
 

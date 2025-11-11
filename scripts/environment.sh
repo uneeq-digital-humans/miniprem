@@ -44,3 +44,39 @@ update_env_variable() {
         echo "${var_name}=${new_value}" >> "$env_file"
     fi
 }
+
+# Function to configure Renny quality level based on deployment target
+configure_renny_quality() {
+    # Validate that deployment target was set by caller
+    if [ -z "$DEPLOYMENT_TARGET" ]; then
+        fatal "DEPLOYMENT_TARGET not set. prompt_deployment_target() must be called first."
+    fi
+
+    local quality_level=""
+
+    # Map deployment target to quality level (RENNY_QUALITY_LEVEL env var)
+    # These values are consumed by the Renny renderer to control rendering behavior:
+    #   - "miniprem": High-fidelity rendering optimized for dedicated hardware with direct GPU access
+    #   - "web": Performance-optimized rendering for cloud platforms with shared GPU resources
+    case "$DEPLOYMENT_TARGET" in
+        "hardware")
+            quality_level="miniprem"  # High-fidelity rendering for local/on-premise installations
+            info "Configuring for dedicated hardware: Higher rendering quality (RENNY_QUALITY_LEVEL=miniprem)"
+            ;;
+        "cloud")
+            quality_level="web"  # Performance-optimized rendering for cloud platforms
+            info "Configuring for cloud platform: Optimized performance (RENNY_QUALITY_LEVEL=web)"
+            ;;
+        *)
+            fatal "Invalid deployment target: $DEPLOYMENT_TARGET"
+            ;;
+    esac
+
+    # Update the environment variable and capture result immediately
+    if update_env_variable "RENNY_QUALITY_LEVEL" "$quality_level"; then
+        success "$CHECKMARK Renny quality level configured: RENNY_QUALITY_LEVEL=$quality_level"
+        info "You can change this later by editing docker/docker-compose.env and restarting Renny"
+    else
+        warning "Failed to update RENNY_QUALITY_LEVEL, but continuing..."
+    fi
+}

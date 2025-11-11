@@ -76,8 +76,8 @@ COPY --from=frontend-builder /app/frontend/package.json ./frontend/
 COPY --from=frontend-builder /app/frontend/next.config.js ./frontend/
 COPY --from=frontend-builder /app/frontend/node_modules ./frontend/node_modules
 
-# Create public directory in final stage (Next.js serves static files from here)
-RUN mkdir -p ./frontend/public
+# Copy public directory from frontend builder (contains logos and static assets)
+COPY --from=frontend-builder /app/frontend/public ./frontend/public
 
 # Copy startup script
 COPY docker-entrypoint.sh /docker-entrypoint.sh

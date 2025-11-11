@@ -1,5 +1,5 @@
 # Renny Helm values
-image: "facemeproduction/renny:0.713-37d59"
+image: "facemeproduction/renny:0.758-f9e3f"
 
 # GPU time-slicing configuration
 # Controls how many Renny pods share a single physical GPU
@@ -209,3 +209,5 @@ env:
     value: "240"
   - name: A2F_AUDIO_SAMPLE_RATE
     value: "16000"
+  - name: RENNY_QUALITY_LEVEL
+    value: "web"  # Cloud deployments use 'web' for optimized cloud performance

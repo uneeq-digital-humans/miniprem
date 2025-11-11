@@ -14,6 +14,7 @@ source "$PROJECT_ROOT/scripts/logging.sh"
 source "$PROJECT_ROOT/scripts/audio.sh"
 source "$PROJECT_ROOT/scripts/hash.sh"
 source "$PROJECT_ROOT/scripts/environment.sh"
+source "$PROJECT_ROOT/scripts/prompts.sh"
 source "$PROJECT_ROOT/scripts/prerequisites.sh"
 
 # Enable debugging
@@ -237,36 +238,6 @@ extract_url_components() {
     echo "$address"
     echo "$port"
     echo "$path"
-}
-
-# Function to prompt for installation type
-prompt_for_install_type() {
-    INSTALL_TYPE=""
-    echo "Select installation type:"
-    echo "1) Default Install (Renny with internal speech processing only)"
-    echo "2) Full Install (All services: Renny with internal speech, Flowise, vLLM, Grafana, Prometheus, RIME, Whisper etc.)"
-    read -p "Enter choice [1-2]: " install_choice
-    if [[ "$install_choice" == "1" ]]; then
-        INSTALL_TYPE="default"
-        echo "default" > "$PROJECT_ROOT/.miniprem_install_type" || {
-            warning "Failed to write installation type marker, but continuing..."
-        }
-        mark_installation_marker_created
-    elif [[ "$install_choice" == "2" ]]; then
-        INSTALL_TYPE="full"
-        echo "full" > "$PROJECT_ROOT/.miniprem_install_type" || {
-            warning "Failed to write installation type marker, but continuing..."
-        }
-        mark_installation_marker_created
-    else
-        echo "Invalid choice, exiting."
-        exit 1
-    fi
-
-    # Verify the variable is set before returning
-    if [ -z "$INSTALL_TYPE" ]; then
-        fatal "Failed to set installation type"
-    fi
 }
 
 # Function to configure Eleven Labs
@@ -1613,12 +1584,12 @@ setup_flowise_chatflow() {
 # UneeQ ASCII Logo
 print_logo() {
     echo ""
-    echo -e "\e[38;5;208m  #     #  #    #  #######  #######  #######   "
-    echo -e "\e[38;5;209m  #     #  ##   #  #        #        #     #   "
-    echo -e "\e[38;5;210m  #     #  # #  #  #######  #######  #     #   "
-    echo -e "\e[38;5;211m  #     #  #  # #  #        #        #     #   "
-    echo -e "\e[38;5;212m  #     #  #   ##  #        #        #   # #   "
-    echo -e "\e[38;5;213m   #####   #    #  #######  #######  #######   "
+    echo -e "\e[38;5;208m  #     #  #    #  #######  #######  #######        "
+    echo -e "\e[38;5;209m  #     #  ##   #  #        #        #     #        "
+    echo -e "\e[38;5;210m  #     #  # #  #  #######  #######  #     #        "
+    echo -e "\e[38;5;211m  #     #  #  # #  #        #        #     #        "
+    echo -e "\e[38;5;212m  #     #  #   ##  #        #        #   # #        "
+    echo -e "\e[38;5;213m   #####   #    #  #######  #######  #######        "
     echo ""
     echo -e "\e[38;5;208m  ################################################  "
     echo -e "\e[38;5;255m               DIGITALHUMANS.COM                    "
@@ -1972,132 +1943,6 @@ pull_docker_with_tts_provider() {
     pull_docker_images
 }
 
-# Function to show telemetry consent dialog and handle user response
-prompt_for_telemetry_consent() {
-    log_section "MiniPrem Telemetry Notice"
-
-    # Display consent dialog
-    cat << 'EOF'
-┌─────────────────────────────────────────────────────────────────┐
-│                    MiniPrem Telemetry Notice                    │
-├─────────────────────────────────────────────────────────────────┤
-│ This installation sends anonymous usage data to UneeQ:         │
-│                                                                 │
-│ ✓ Installation notification (one-time)                         │
-│ ✓ Heartbeat every 15 minutes to monitor uptime                 │
-│                                                                 │
-│ Data collected (NO personally identifiable information):       │
-│   • Anonymous installation ID (generated locally)               │
-│   • GPU hardware identifier (one-way SHA-256 hash)              │
-│   • MiniPrem version and deployment type                        │
-│   • System uptime and health status                             │
-│                                                                 │
-│ We DO NOT collect:                                              │
-│   ✗ IP addresses, hostnames, or network identifiers             │
-│   ✗ UneeQ credentials, API keys, or tokens                      │
-│   ✗ Conversation data or chat history                           │
-│   ✗ Any content processed by Renny                              │
-│   ✗ Customer information                                         │
-│                                                                 │
-│ Privacy: See docs/TELEMETRY.md for full details               │
-└─────────────────────────────────────────────────────────────────┘
-EOF
-
-    # Prompt for consent
-    echo ""
-    read -p "Do you consent to anonymous telemetry? [Y/n] " telemetry_consent
-
-    # Default to yes if user just presses enter
-    if [[ -z "$telemetry_consent" ]]; then
-        telemetry_consent="y"
-    fi
-
-    # Handle response
-    if [[ "$telemetry_consent" =~ ^[Yy]$ ]]; then
-        # Initialize installation ID variable
-        INSTALLATION_ID=""
-
-        # Check if installation ID already exists (reuse for reinstalls/upgrades)
-        if [ -f "/tmp/miniprem_installation_id" ] && [ -s "/tmp/miniprem_installation_id" ]; then
-            INSTALLATION_ID=$(cat /tmp/miniprem_installation_id 2>/dev/null | tr -d '[:space:]')
-            if [ -n "$INSTALLATION_ID" ]; then
-                success "$CHECKMARK Reusing existing installation ID: ${INSTALLATION_ID:0:8}..."
-            else
-                # File exists but is invalid, generate new one
-                INSTALLATION_ID=""
-            fi
-        fi
-
-        # Generate new installation ID if none exists
-        if [ -z "$INSTALLATION_ID" ]; then
-            # Remove if it exists as a directory (Docker may have created it)
-            if [ -d "/tmp/miniprem_installation_id" ]; then
-                sudo rm -rf /tmp/miniprem_installation_id 2>/dev/null || rm -rf /tmp/miniprem_installation_id
-            fi
-
-            # Generate using uuidgen (POSIX-compatible)
-            if command -v uuidgen >/dev/null 2>&1; then
-                INSTALLATION_ID=$(uuidgen | tr '[:upper:]' '[:lower:]')
-            else
-                # Fallback: use random data if uuidgen not available
-                INSTALLATION_ID=$(cat /dev/urandom | tr -dc 'a-f0-9' | fold -w 32 | head -n 1)
-                INSTALLATION_ID="${INSTALLATION_ID:0:8}-${INSTALLATION_ID:8:4}-${INSTALLATION_ID:12:4}-${INSTALLATION_ID:16:4}-${INSTALLATION_ID:20:12}"
-            fi
-
-            # Save installation ID to /tmp (will be mounted into container)
-            # Always use sudo tee to avoid permission errors
-            echo "$INSTALLATION_ID" | sudo tee /tmp/miniprem_installation_id > /dev/null
-            sudo chmod 644 /tmp/miniprem_installation_id
-
-            success "$CHECKMARK Installation ID generated: ${INSTALLATION_ID:0:8}..."
-        fi
-
-        # Send initial installation event via curl (best-effort, non-blocking)
-        info "Sending installation notification..."
-
-        # Build JSON payload
-        local payload=$(cat <<PAYLOAD_EOF
-{
-  "installation_id": "$INSTALLATION_ID",
-  "event_type": "installation",
-  "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
-  "version": "2.1.0",
-  "platform": "docker",
-  "os": "$(uname -s | tr '[:upper:]' '[:lower:]')",
-  "platform_arch": "$(uname -m)",
-  "status": "installing"
-}
-PAYLOAD_EOF
-)
-
-        # Send with curl (5-second timeout, silent failure)
-        if curl -X POST -H "Content-Type: application/json" \
-                -d "$payload" \
-                --max-time 5 \
-                --silent \
-                --show-error \
-                --fail \
-                https://renny.services.uneeq.io/telemetry >/dev/null 2>&1; then
-            success "$CHECKMARK Installation notification sent"
-        else
-            info "Installation notification will be sent when container starts"
-        fi
-
-    else
-        warning "Telemetry disabled - you can re-enable later by removing MINIPREM_TELEMETRY_DISABLED from docker/docker-compose.env"
-
-        # Set telemetry disabled flag in env file
-        update_env_variable "MINIPREM_TELEMETRY_DISABLED" "1"
-
-        # Don't create installation ID file
-        sudo rm -f /tmp/miniprem_installation_id 2>/dev/null || rm -f /tmp/miniprem_installation_id 2>/dev/null || true
-
-        info "Telemetry disabled - continuing with installation"
-    fi
-
-    echo ""
-}
-
 # Function to create desktop shortcut for Ubuntu Desktop users
 create_desktop_shortcut() {
     # Only create shortcut if running Ubuntu Desktop (has desktop environment)
@@ -2172,7 +2017,7 @@ main() {
     validate_system_resources
 
     # Parse command line arguments using getopt
-    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image: -- "$@")
+    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target: -- "$@")
     if [ $? -ne 0 ]; then
         usage
     fi
@@ -2216,6 +2061,9 @@ main() {
 
     # check docker installation
     check_docker_installation
+
+    # validate docker daemon is responsive
+    validate_docker_daemon
 
     eval set -- "$OPTIONS"
 
@@ -2268,6 +2116,17 @@ main() {
                 RENNY_IMAGE="$2"
                 shift 2
                 ;;
+            --deployment-target)
+                DEPLOYMENT_TARGET="$2"
+                # Validate deployment target value
+                if [[ ! "$DEPLOYMENT_TARGET" =~ ^(hardware|cloud)$ ]]; then
+                    fatal "Invalid --deployment-target value: $DEPLOYMENT_TARGET (must be 'hardware' or 'cloud')"
+                fi
+                info "$CHECKMARK Deployment target specified via argument: $DEPLOYMENT_TARGET"
+                # Persist the CLI-provided value
+                echo "$DEPLOYMENT_TARGET" > "$PROJECT_ROOT/.miniprem_deployment_target" 2>/dev/null || true
+                shift 2
+                ;;
             --)
                 shift
                 break
@@ -2277,6 +2136,11 @@ main() {
                 ;;
         esac
     done
+
+    # Deployment target & quality configuration
+    # Called here after argument parsing so --deployment-target CLI arg takes precedence
+    prompt_deployment_target
+    configure_renny_quality
 
     # Check if all required values are already provided
     if check_all_values_provided; then
