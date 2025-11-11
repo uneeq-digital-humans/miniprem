@@ -271,26 +271,64 @@ prompt_for_install_type() {
 
 # Function to prompt for deployment target
 prompt_deployment_target() {
-    DEPLOYMENT_TARGET=""
-    info "Selecting deployment target for Renny quality optimization..."
-    echo ""
-    echo "Select deployment target:"
-    echo "1) Dedicated Hardware (PC/Server) - Optimized for local/on-premise installations"
-    echo "2) Cloud Platform (AWS/Azure/GCP) - Optimized for cloud infrastructure"
-    read -p "Enter choice [1-2]: " deployment_choice
-
-    if [[ "$deployment_choice" == "1" ]]; then
-        DEPLOYMENT_TARGET="hardware"
-        info "$CHECKMARK Selected: Dedicated Hardware deployment"
-    elif [[ "$deployment_choice" == "2" ]]; then
-        DEPLOYMENT_TARGET="cloud"
-        info "$CHECKMARK Selected: Cloud Platform deployment"
-    else
-        echo "Invalid choice, exiting."
-        exit 1
+    # Check if deployment target already set (e.g., via CLI argument)
+    if [ -n "$DEPLOYMENT_TARGET" ]; then
+        info "$CHECKMARK Using deployment target from command line: $DEPLOYMENT_TARGET"
+        return 0
     fi
 
-    # Verify the variable is set before returning
+    # Check if deployment target already persisted from previous installation
+    if [ -f "$PROJECT_ROOT/.miniprem_deployment_target" ]; then
+        DEPLOYMENT_TARGET=$(cat "$PROJECT_ROOT/.miniprem_deployment_target" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$DEPLOYMENT_TARGET" ]; then
+            info "$CHECKMARK Using previously configured deployment target: $DEPLOYMENT_TARGET"
+            return 0
+        fi
+    fi
+
+    log_section "Deployment Target Selection"
+
+    DEPLOYMENT_TARGET=""
+    local max_retries=3
+    local attempts=0
+
+    while [ $attempts -lt $max_retries ]; do
+        echo ""
+        echo "Select deployment target:"
+        echo "1) Dedicated Hardware (PC/Server) - Optimized for local/on-premise installations"
+        echo "2) Cloud Platform (AWS/Azure/GCP) - Optimized for cloud infrastructure"
+        read -p "Enter choice [1-2]: " deployment_choice
+
+        case "$deployment_choice" in
+            1)
+                DEPLOYMENT_TARGET="hardware"
+                info "$CHECKMARK Selected: Dedicated Hardware deployment"
+                ;;
+            2)
+                DEPLOYMENT_TARGET="cloud"
+                info "$CHECKMARK Selected: Cloud Platform deployment"
+                ;;
+            *)
+                attempts=$((attempts + 1))
+                if [ $attempts -lt $max_retries ]; then
+                    warning "Invalid choice. Please enter 1 or 2. (Attempt $attempts/$max_retries)"
+                    continue
+                else
+                    fatal "Invalid choice after $max_retries attempts. Exiting."
+                fi
+                ;;
+        esac
+
+        # Persist the choice for future installations
+        if echo "$DEPLOYMENT_TARGET" > "$PROJECT_ROOT/.miniprem_deployment_target" 2>/dev/null; then
+            success "$CHECKMARK Deployment target saved for future installations"
+        else
+            warning "Failed to save deployment target, but continuing..."
+        fi
+        break
+    done
+
+    # Final validation
     if [ -z "$DEPLOYMENT_TARGET" ]; then
         fatal "Failed to set deployment target"
     fi
@@ -305,15 +343,18 @@ configure_renny_quality() {
 
     local quality_level=""
 
-    # Map deployment target to quality level
+    # Map deployment target to quality level (RENNY_QUALITY_LEVEL env var)
+    # These values are consumed by the Renny renderer to control rendering behavior:
+    #   - "miniprem": High-fidelity rendering optimized for dedicated hardware with direct GPU access
+    #   - "web": Performance-optimized rendering for cloud platforms with shared GPU resources
     case "$DEPLOYMENT_TARGET" in
         "hardware")
-            quality_level="miniprem"
-            info "Configuring for dedicated hardware: Higher rendering quality"
+            quality_level="miniprem"  # High-fidelity rendering for local/on-premise installations
+            info "Configuring for dedicated hardware: Higher rendering quality (RENNY_QUALITY_LEVEL=miniprem)"
             ;;
         "cloud")
-            quality_level="web"
-            info "Configuring for cloud platform: Optimized performance"
+            quality_level="web"  # Performance-optimized rendering for cloud platforms
+            info "Configuring for cloud platform: Optimized performance (RENNY_QUALITY_LEVEL=web)"
             ;;
         *)
             fatal "Invalid deployment target: $DEPLOYMENT_TARGET"
@@ -2221,10 +2262,6 @@ main() {
     # Install type
     prompt_for_install_type
 
-    # Deployment target & quality configuration
-    prompt_deployment_target
-    configure_renny_quality
-
     check_environment
 
     check_duplicate_installations
@@ -2236,7 +2273,7 @@ main() {
     validate_system_resources
 
     # Parse command line arguments using getopt
-    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image: -- "$@")
+    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target: -- "$@")
     if [ $? -ne 0 ]; then
         usage
     fi
@@ -2335,6 +2372,17 @@ main() {
                 RENNY_IMAGE="$2"
                 shift 2
                 ;;
+            --deployment-target)
+                DEPLOYMENT_TARGET="$2"
+                # Validate deployment target value
+                if [[ ! "$DEPLOYMENT_TARGET" =~ ^(hardware|cloud)$ ]]; then
+                    fatal "Invalid --deployment-target value: $DEPLOYMENT_TARGET (must be 'hardware' or 'cloud')"
+                fi
+                info "$CHECKMARK Deployment target specified via argument: $DEPLOYMENT_TARGET"
+                # Persist the CLI-provided value
+                echo "$DEPLOYMENT_TARGET" > "$PROJECT_ROOT/.miniprem_deployment_target" 2>/dev/null || true
+                shift 2
+                ;;
             --)
                 shift
                 break
@@ -2344,6 +2392,11 @@ main() {
                 ;;
         esac
     done
+
+    # Deployment target & quality configuration
+    # Called here after argument parsing so --deployment-target CLI arg takes precedence
+    prompt_deployment_target
+    configure_renny_quality
 
     # Check if all required values are already provided
     if check_all_values_provided; then
