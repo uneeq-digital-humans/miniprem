@@ -79,10 +79,11 @@ log_message() {
 log_section() {
     local section_name=$1
     local timestamp=$(date +"%Y-%m-%d %H:%M:%S")
-    local box_width=65  # Same width as in the port conflict warnings
-    
+    local box_width=63  # Content padding width
+
     # Create horizontal border line with consistent width
-    local border=$(printf "%${box_width}s" | tr ' ' '=')
+    # Border needs +2 chars to account for spaces in "| %-63s |" format
+    local border=$(printf "%$((box_width + 2))s" | tr ' ' '=')
     
     # Log to console (stderr to avoid capture in redirects)
     echo -e "\n${BLUE}${BOLD}+${border}+${NC}" >&2
