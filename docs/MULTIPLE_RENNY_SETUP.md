@@ -671,7 +671,7 @@ Original docker-compose.full.yml (simplified):
 services:
   renny:
     container_name: renny
-    image: "facemeproduction/renny:0.713-37d59"
+    image: "facemeproduction/renny:0.758-f9e3f"
     ports:
       - "8080:8080"
       - "8081:8081"
@@ -688,7 +688,7 @@ After adding second instance:
 services:
   renny:
     container_name: renny
-    image: "facemeproduction/renny:0.713-37d59"
+    image: "facemeproduction/renny:0.758-f9e3f"
     ports:
       - "8080:8080"
       - "8081:8081"
@@ -700,7 +700,7 @@ services:
 
   renny-second:
     container_name: renny-second
-    image: "facemeproduction/renny:0.713-37d59"
+    image: "facemeproduction/renny:0.758-f9e3f"
     ports:
       - "8090:8090"
       - "8091:8091"

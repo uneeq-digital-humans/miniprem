@@ -269,6 +269,64 @@ prompt_for_install_type() {
     fi
 }
 
+# Function to prompt for deployment target
+prompt_deployment_target() {
+    DEPLOYMENT_TARGET=""
+    info "Selecting deployment target for Renny quality optimization..."
+    echo ""
+    echo "Select deployment target:"
+    echo "1) Dedicated Hardware (PC/Server) - Optimized for local/on-premise installations"
+    echo "2) Cloud Platform (AWS/Azure/GCP) - Optimized for cloud infrastructure"
+    read -p "Enter choice [1-2]: " deployment_choice
+
+    if [[ "$deployment_choice" == "1" ]]; then
+        DEPLOYMENT_TARGET="hardware"
+        info "$CHECKMARK Selected: Dedicated Hardware deployment"
+    elif [[ "$deployment_choice" == "2" ]]; then
+        DEPLOYMENT_TARGET="cloud"
+        info "$CHECKMARK Selected: Cloud Platform deployment"
+    else
+        echo "Invalid choice, exiting."
+        exit 1
+    fi
+
+    # Verify the variable is set before returning
+    if [ -z "$DEPLOYMENT_TARGET" ]; then
+        fatal "Failed to set deployment target"
+    fi
+}
+
+# Function to configure Renny quality level based on deployment target
+configure_renny_quality() {
+    local quality_level=""
+
+    # Map deployment target to quality level
+    case "$DEPLOYMENT_TARGET" in
+        "hardware")
+            quality_level="miniprem"
+            info "Configuring for dedicated hardware: Higher rendering quality"
+            ;;
+        "cloud")
+            quality_level="web"
+            info "Configuring for cloud platform: Optimized performance"
+            ;;
+        *)
+            fatal "Invalid deployment target: $DEPLOYMENT_TARGET"
+            ;;
+    esac
+
+    # Update the environment variable
+    update_env_variable "RENNY_QUALITY_LEVEL" "$quality_level"
+
+    # Verify it was written
+    if [ $? -eq 0 ]; then
+        success "$CHECKMARK Renny quality level configured: RENNY_QUALITY_LEVEL=$quality_level"
+        info "You can change this later by editing docker/docker-compose.env and restarting Renny"
+    else
+        warning "Failed to update RENNY_QUALITY_LEVEL, but continuing..."
+    fi
+}
+
 # Function to configure Eleven Labs
 configure_eleven_labs() {
     USE_ELEVEN_LABS=""
@@ -2161,6 +2219,10 @@ main() {
     # Install type
     prompt_for_install_type
 
+    # Deployment target & quality configuration
+    prompt_deployment_target
+    configure_renny_quality
+
     check_environment
 
     check_duplicate_installations
@@ -2216,6 +2278,9 @@ main() {
 
     # check docker installation
     check_docker_installation
+
+    # validate docker daemon is responsive
+    validate_docker_daemon
 
     eval set -- "$OPTIONS"
 

@@ -4,6 +4,20 @@
 
 # variables which define the system requirements
 
+# Function to validate Docker daemon is running and responsive
+validate_docker_daemon() {
+    log_section "Docker Daemon Validation"
+
+    if ! timeout 5 docker info > /dev/null 2>&1; then
+        fatal "$CROSS Docker daemon is not running or unreachable (timeout after 5 seconds)"
+        fatal "Try starting Docker: service docker start"
+        return 1
+    fi
+
+    success "$CHECKMARK Docker daemon is running and responsive"
+    return 0
+}
+
 # Define required total GPU memory (in MB)
 MIN_GPU_MEMORY=16000
 
@@ -40,10 +54,30 @@ check_driver_prerequisites() {
         fatal 'Nvidia drivers are not installed. Please install Nvidia drivers and try again.'
     else
         # Extract driver version and CUDA version
-        driver_version=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits)
-        cuda_version=$(nvidia-smi | grep -oP 'CUDA Version: \K[0-9.]+')
+        if ! driver_version=$(timeout 5 nvidia-smi --query-gpu=driver_version --format=csv,noheader,nounits 2>/dev/null); then
+            log_warn "Could not query NVIDIA driver (GPU may be unavailable)"
+            return 0
+        fi
+        cuda_version=$(timeout 5 nvidia-smi 2>/dev/null | grep -oP 'CUDA Version: \K[0-9.]+' || echo "")
+
+        # Validate driver version is not empty
+        if [[ -z "$driver_version" ]]; then
+            log_warn "Could not determine NVIDIA driver version"
+            return 0
+        fi
+
+        # Extract major version, handle various formats
+        local major_version
+        major_version=$(echo "$driver_version" | sed -E 's/([0-9]+).*/\1/')
+
+        # Validate numeric format before arithmetic
+        if ! [[ "$major_version" =~ ^[0-9]+$ ]]; then
+            log_warn "Could not parse NVIDIA driver version: $driver_version"
+            return 0
+        fi
+
         # Check if driver version is at least the minimum required version
-        if [ $(echo $driver_version | cut -d '.' -f 1) -lt $MIN_NVIDIA_DRIVER_VERSION ]; then
+        if (( major_version < MIN_NVIDIA_DRIVER_VERSION )); then
             fatal "$CROSS Nvidia driver version is less than $MIN_NVIDIA_DRIVER_VERSION. Please install Nvidia driver version $MIN_NVIDIA_DRIVER_VERSION or higher."
         else
             success "$CHECKMARK Nvidia driver version $driver_version is sufficient."
