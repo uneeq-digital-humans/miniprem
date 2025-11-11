@@ -108,12 +108,12 @@ prompt_for_telemetry_consent() {
 ┌─────────────────────────────────────────────────────────────────┐
 │                    MiniPrem Telemetry Notice                    │
 ├─────────────────────────────────────────────────────────────────┤
-│ This installation sends anonymous usage data to UneeQ:         │
+│ This installation sends anonymous usage data to UneeQ:          │
 │                                                                 │
-│ ✓ Installation notification (one-time)                         │
-│ ✓ Heartbeat every 15 minutes to monitor uptime                 │
+│ ✓ Installation notification (one-time)                          │
+│ ✓ Heartbeat every 15 minutes to monitor uptime                  │
 │                                                                 │
-│ Data collected (NO personally identifiable information):       │
+│ Data collected (NO personally identifiable information):        │
 │   • Anonymous installation ID (generated locally)               │
 │   • GPU hardware identifier (one-way SHA-256 hash)              │
 │   • MiniPrem version and deployment type                        │
@@ -124,9 +124,9 @@ prompt_for_telemetry_consent() {
 │   ✗ UneeQ credentials, API keys, or tokens                      │
 │   ✗ Conversation data or chat history                           │
 │   ✗ Any content processed by Renny                              │
-│   ✗ Customer information                                         │
+│   ✗ Customer information                                        │
 │                                                                 │
-│ Privacy: See docs/TELEMETRY.md for full details               │
+│ Privacy: See docs/TELEMETRY.md for full details                 │
 └─────────────────────────────────────────────────────────────────┘
 EOF
 
