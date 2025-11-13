@@ -15,7 +15,7 @@ WHITE='\033[1;37m'
 # Global state
 COMPOSE_FILE=""
 INSTALL_TYPE=""
-NUM_INSTANCES=0
+NUM_INSTANCES=""
 BASE_RENNY_CONFIG=""
 BACKUP_FILE=""
 DEBUG_MODE=false
@@ -157,12 +157,18 @@ function validate_installation() {
 ################################################################################
 # Function: validate_docker
 # Description: Verify Docker daemon is running
+# Note: This script requires Docker access. On systems without docker group
+#       privileges, run with sudo: sudo ./setup_multiple_rennys.sh
 ################################################################################
 function validate_docker() {
     info "Checking Docker daemon..."
 
-    if ! docker ps > /dev/null 2>&1; then
-        fatal "Docker daemon is not running. Please start Docker and retry."
+    if ! sudo docker ps > /dev/null 2>&1; then
+        error "Docker daemon is not accessible."
+        echo ""
+        echo "This may be because:"
+        echo "  1. Docker is not running (start Docker and retry)"
+        exit 1
     fi
 
     success "$CHECKMARK Docker daemon is running"
@@ -240,7 +246,13 @@ function validate_instance_count() {
     log_section "Validating Instance Count"
 
     if ! validate_number_input "$NUM_INSTANCES"; then
-        fatal "Instance count must be an integer between $MIN_INSTANCES and $MAX_INSTANCES (you provided: $NUM_INSTANCES)"
+        error "Instance count must be an integer between $MIN_INSTANCES and $MAX_INSTANCES (you provided: $NUM_INSTANCES)"
+        echo ""
+        echo "Usage examples:"
+        echo "  ./setup_multiple_rennys.sh -n 2    # Configure 2 instances"
+        echo "  ./setup_multiple_rennys.sh -n 4    # Configure 4 instances"
+        echo "  ./setup_multiple_rennys.sh         # Interactive mode (prompts for count)"
+        exit 1
     fi
 
     success "$CHECKMARK Valid instance count: $NUM_INSTANCES"
@@ -561,7 +573,7 @@ function manage_docker_services() {
 
     info "Stopping current services..."
     local down_error
-    if ! down_error=$(docker compose -f "$COMPOSE_FILE" down 2>&1); then
+    if ! down_error=$(sudo docker compose -f "$COMPOSE_FILE" down 2>&1); then
         # Check if failure is because services aren't running
         if echo "$down_error" | grep -q "no configuration file provided\|No such container"; then
             warning "No services were running (this is normal for first run)"
@@ -577,7 +589,7 @@ function manage_docker_services() {
 
     info "Starting services with new configuration..."
     local up_error
-    if ! up_error=$(docker compose -f "$COMPOSE_FILE" up -d 2>&1); then
+    if ! up_error=$(sudo docker compose -f "$COMPOSE_FILE" up -d 2>&1); then
         error "Failed to start services"
         error "Docker compose up error: $up_error"
         error ""
@@ -588,9 +600,9 @@ function manage_docker_services() {
         error "  - Resources: Ensure sufficient CPU/memory/disk"
         error ""
         error "Troubleshooting:"
-        error "  docker ps -a                    # Check existing containers"
-        error "  docker compose -f $COMPOSE_FILE config  # Validate compose file"
-        error "  docker compose -f $COMPOSE_FILE logs    # View service logs"
+        error "  sudo docker ps -a                    # Check existing containers"
+        error "  sudo docker compose -f $COMPOSE_FILE config  # Validate compose file"
+        error "  sudo docker compose -f $COMPOSE_FILE logs    # View service logs"
         return 1
     fi
 
@@ -605,21 +617,21 @@ function check_container_health() {
     local service_name="$1"
 
     # Check if container exists
-    local container_id=$(docker ps -a -f name="^${service_name}$" -q 2>/dev/null)
+    local container_id=$(sudo docker ps -a -f name="^${service_name}$" -q 2>/dev/null)
     if [ -z "$container_id" ]; then
         echo "not found"
         return 1
     fi
 
     # Check if container is running
-    local container_status=$(docker inspect "$container_id" --format='{{.State.Running}}' 2>/dev/null)
+    local container_status=$(sudo docker inspect "$container_id" --format='{{.State.Running}}' 2>/dev/null)
     if [ "$container_status" != "true" ]; then
         echo "not running"
         return 1
     fi
 
     # Check health status if healthcheck is configured
-    local health_status=$(docker inspect "$container_id" --format='{{.State.Health.Status}}' 2>/dev/null)
+    local health_status=$(sudo docker inspect "$container_id" --format='{{.State.Health.Status}}' 2>/dev/null)
     if [ -n "$health_status" ] && [ "$health_status" != "" ]; then
         echo "$health_status"
     else
