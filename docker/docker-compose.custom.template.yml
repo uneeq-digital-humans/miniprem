@@ -1,0 +1,670 @@
+# =============================================================================
+# MiniPrem Custom Services Template
+# =============================================================================
+#
+# This template provides examples and best practices for adding custom Docker
+# services to your MiniPrem deployment. Copy this file to
+# docker-compose.custom.yml and uncomment/modify the services you need.
+#
+# USAGE:
+#   1. Copy this file: cp docker-compose.custom.template.yml docker-compose.custom.yml
+#   2. Uncomment and modify the services you want to add
+#   3. Run: ./miniprem.sh restart
+#
+# IMPORTANT NOTES:
+#   - All custom services automatically join the 'miniprem' network
+#   - You can reference official MiniPrem services by their container names
+#   - Use environment variables for secrets (see examples below)
+#   - Always define health checks for production services
+#   - Use named volumes for data persistence
+#
+# =============================================================================
+
+version: '3.8'
+
+# -----------------------------------------------------------------------------
+# SERVICES
+# -----------------------------------------------------------------------------
+services:
+
+  # ===========================================================================
+  # EXAMPLE 1: PostgreSQL Database
+  # ===========================================================================
+  # Use case: Structured data storage for custom applications
+  # Best for: Relational data, complex queries, ACID transactions
+  #
+  # postgres:
+  #   image: postgres:16-alpine
+  #   container_name: miniprem-postgres
+  #   restart: unless-stopped
+  #
+  #   # Environment variables - CHANGE THESE DEFAULTS!
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER:-miniprem}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme123}  # Use strong password!
+  #     POSTGRES_DB: ${POSTGRES_DB:-miniprem_db}
+  #     # Performance tuning (adjust based on available RAM)
+  #     POSTGRES_SHARED_BUFFERS: 256MB
+  #     POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+  #
+  #   # Persistent data volume
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #     # Optional: Custom initialization scripts
+  #     # - ./custom/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+  #
+  #   # Health check - ensures service is ready before dependent services start
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-miniprem}"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 10s
+  #
+  #   # Expose port (optional - only if you need external access)
+  #   # ports:
+  #   #   - "5432:5432"
+  #
+  #   # Resource limits (prevents runaway resource usage)
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+  #       reservations:
+  #         memory: 512M
+  #
+  #   # Logging configuration
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #
+  #   networks:
+  #     - miniprem
+
+  # ===========================================================================
+  # EXAMPLE 2: Redis Cache
+  # ===========================================================================
+  # Use case: Fast in-memory caching, session storage, pub/sub messaging
+  # Best for: Temporary data, rate limiting, real-time features
+  #
+  # redis-custom:
+  #   image: redis:7-alpine
+  #   container_name: miniprem-redis-custom
+  #   restart: unless-stopped
+  #
+  #   # Redis command-line options
+  #   command: >
+  #     redis-server
+  #     --requirepass ${REDIS_PASSWORD:-changeme123}
+  #     --maxmemory 512mb
+  #     --maxmemory-policy allkeys-lru
+  #     --appendonly yes
+  #
+  #   # Persistent data (optional - Redis is often used ephemerally)
+  #   volumes:
+  #     - redis_data:/data
+  #     # Optional: Custom Redis configuration
+  #     # - ./custom/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+  #
+  #   # Health check
+  #   healthcheck:
+  #     test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+  #     interval: 10s
+  #     timeout: 3s
+  #     retries: 5
+  #     start_period: 5s
+  #
+  #   # Resource limits
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 768M
+  #       reservations:
+  #         memory: 256M
+  #
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #
+  #   networks:
+  #     - miniprem
+
+  # ===========================================================================
+  # EXAMPLE 3: Custom FastAPI Application
+  # ===========================================================================
+  # Use case: Custom Python backend API that integrates with MiniPrem
+  # Best for: Custom business logic, data processing, integrations
+  #
+  # custom-api:
+  #   # Use your own image or build from local Dockerfile
+  #   # image: your-registry/custom-api:latest
+  #   build:
+  #     context: ./custom/api
+  #     dockerfile: Dockerfile
+  #
+  #   container_name: miniprem-custom-api
+  #   restart: unless-stopped
+  #
+  #   # Environment variables
+  #   environment:
+  #     # API configuration
+  #     API_HOST: 0.0.0.0
+  #     API_PORT: 8080
+  #     API_KEY: ${CUSTOM_API_KEY:-your-secret-api-key}
+  #
+  #     # Database connection (referencing PostgreSQL example above)
+  #     DATABASE_URL: postgresql://${POSTGRES_USER:-miniprem}:${POSTGRES_PASSWORD:-changeme123}@postgres:5432/${POSTGRES_DB:-miniprem_db}
+  #
+  #     # Redis connection (referencing Redis example above)
+  #     REDIS_URL: redis://:${REDIS_PASSWORD:-changeme123}@redis-custom:6379/0
+  #
+  #     # Integration with official MiniPrem services
+  #     FLOWISE_URL: http://flowise:3000
+  #     VLLM_URL: http://vllm:8000
+  #
+  #     # Application settings
+  #     LOG_LEVEL: ${LOG_LEVEL:-info}
+  #     WORKERS: ${API_WORKERS:-4}
+  #
+  #   # Mount custom code or configuration
+  #   volumes:
+  #     # Development: Mount source code for hot-reload
+  #     # - ./custom/api/src:/app/src:ro
+  #
+  #     # Production: Mount configuration only
+  #     - ./custom/api/config:/app/config:ro
+  #
+  #     # Shared data directory
+  #     - custom_api_data:/app/data
+  #
+  #   # Expose API port
+  #   ports:
+  #     - "8080:8080"
+  #
+  #   # Wait for dependencies to be healthy
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis-custom:
+  #       condition: service_healthy
+  #
+  #   # Health check
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 3
+  #     start_period: 30s
+  #
+  #   # Resource limits
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: '2.0'
+  #         memory: 2G
+  #       reservations:
+  #         cpus: '0.5'
+  #         memory: 512M
+  #
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #
+  #   networks:
+  #     - miniprem
+
+  # ===========================================================================
+  # EXAMPLE 4: RabbitMQ Message Queue
+  # ===========================================================================
+  # Use case: Asynchronous task processing, event-driven architecture
+  # Best for: Background jobs, microservice communication, workflow orchestration
+  #
+  # rabbitmq:
+  #   image: rabbitmq:3-management-alpine
+  #   container_name: miniprem-rabbitmq
+  #   restart: unless-stopped
+  #
+  #   # Default credentials - CHANGE THESE!
+  #   environment:
+  #     RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-miniprem}
+  #     RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-changeme123}
+  #     RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-/miniprem}
+  #
+  #     # Performance tuning
+  #     RABBITMQ_VM_MEMORY_HIGH_WATERMARK: 0.8
+  #
+  #   # Persistent storage
+  #   volumes:
+  #     - rabbitmq_data:/var/lib/rabbitmq
+  #     # Optional: Custom configuration
+  #     # - ./custom/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+  #     # - ./custom/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+  #
+  #   # Ports
+  #   # 5672: AMQP protocol
+  #   # 15672: Management UI
+  #   ports:
+  #     - "5672:5672"
+  #     - "15672:15672"
+  #
+  #   # Health check
+  #   healthcheck:
+  #     test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 60s
+  #
+  #   # Resource limits
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+  #       reservations:
+  #         memory: 512M
+  #
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #
+  #   networks:
+  #     - miniprem
+
+  # ===========================================================================
+  # EXAMPLE 5: MinIO Object Storage
+  # ===========================================================================
+  # Use case: S3-compatible object storage for files, media, backups
+  # Best for: File uploads, video storage, backup archives
+  #
+  # minio:
+  #   image: minio/minio:latest
+  #   container_name: miniprem-minio
+  #   restart: unless-stopped
+  #
+  #   # MinIO credentials - CHANGE THESE!
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme123456}  # Min 8 chars
+  #
+  #     # Optional: Enable browser console
+  #     MINIO_BROWSER: "on"
+  #
+  #   # Start server command
+  #   command: server /data --console-address ":9001"
+  #
+  #   # Persistent storage
+  #   volumes:
+  #     - minio_data:/data
+  #
+  #   # Ports
+  #   # 9000: S3 API
+  #   # 9001: Web console
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #
+  #   # Health check
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 15s
+  #
+  #   # Resource limits
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+  #       reservations:
+  #         memory: 256M
+  #
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #
+  #   networks:
+  #     - miniprem
+
+  # ===========================================================================
+  # EXAMPLE 6: MongoDB NoSQL Database
+  # ===========================================================================
+  # Use case: Document storage, flexible schemas, JSON-like data
+  # Best for: Rapid prototyping, dynamic schemas, hierarchical data
+  #
+  # mongodb:
+  #   image: mongo:7
+  #   container_name: miniprem-mongodb
+  #   restart: unless-stopped
+  #
+  #   # Authentication - CHANGE THESE!
+  #   environment:
+  #     MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER:-miniprem}
+  #     MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-changeme123}
+  #     MONGO_INITDB_DATABASE: ${MONGO_DATABASE:-miniprem_db}
+  #
+  #   # Persistent storage
+  #   volumes:
+  #     - mongodb_data:/data/db
+  #     - mongodb_config:/data/configdb
+  #     # Optional: Initialization scripts
+  #     # - ./custom/mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+  #
+  #   # Port (optional - only if you need external access)
+  #   # ports:
+  #   #   - "27017:27017"
+  #
+  #   # Health check
+  #   healthcheck:
+  #     test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 20s
+  #
+  #   # Resource limits
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #       reservations:
+  #         memory: 1G
+  #
+  #   logging:
+  #     driver: "json-file"
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
+  #
+  #   networks:
+  #     - miniprem
+
+  # ===========================================================================
+  # EXAMPLE 7: Elasticsearch + Kibana (Logging Stack)
+  # ===========================================================================
+  # Use case: Centralized logging, log analysis, search
+  # Best for: Application logs, audit trails, analytics
+  #
+  # elasticsearch:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+  #   container_name: miniprem-elasticsearch
+  #   restart: unless-stopped
+  #
+  #   environment:
+  #     # Single-node cluster (for development)
+  #     discovery.type: single-node
+  #
+  #     # Disable security for simplicity (enable in production!)
+  #     xpack.security.enabled: "false"
+  #
+  #     # Memory settings (adjust based on available RAM)
+  #     ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+  #
+  #   volumes:
+  #     - elasticsearch_data:/usr/share/elasticsearch/data
+  #
+  #   # Port (optional)
+  #   # ports:
+  #   #   - "9200:9200"
+  #
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 60s
+  #
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 2G
+  #       reservations:
+  #         memory: 1G
+  #
+  #   networks:
+  #     - miniprem
+  #
+  # kibana:
+  #   image: docker.elastic.co/kibana/kibana:8.11.0
+  #   container_name: miniprem-kibana
+  #   restart: unless-stopped
+  #
+  #   environment:
+  #     ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+  #
+  #   ports:
+  #     - "5601:5601"
+  #
+  #   depends_on:
+  #     elasticsearch:
+  #       condition: service_healthy
+  #
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 5
+  #     start_period: 60s
+  #
+  #   networks:
+  #     - miniprem
+
+  # ===========================================================================
+  # EXAMPLE 8: Nginx Reverse Proxy
+  # ===========================================================================
+  # Use case: Load balancing, SSL termination, static file serving
+  # Best for: Production deployments, custom routing, HTTPS
+  #
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: miniprem-nginx
+  #   restart: unless-stopped
+  #
+  #   volumes:
+  #     # Custom nginx configuration
+  #     - ./custom/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./custom/nginx/conf.d:/etc/nginx/conf.d:ro
+  #
+  #     # SSL certificates (if using HTTPS)
+  #     # - ./custom/nginx/ssl:/etc/nginx/ssl:ro
+  #
+  #     # Static files
+  #     - ./custom/nginx/html:/usr/share/nginx/html:ro
+  #
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #
+  #   # Wait for backend services
+  #   depends_on:
+  #     - custom-api
+  #
+  #   healthcheck:
+  #     test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 3
+  #
+  #   networks:
+  #     - miniprem
+
+# -----------------------------------------------------------------------------
+# VOLUMES
+# -----------------------------------------------------------------------------
+# Named volumes for persistent data storage
+# Data persists even when containers are removed
+volumes:
+  # Database volumes
+  postgres_data:
+    driver: local
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+
+  # Cache volumes
+  redis_data:
+    driver: local
+
+  # Message queue volumes
+  rabbitmq_data:
+    driver: local
+
+  # Object storage volumes
+  minio_data:
+    driver: local
+
+  # Application volumes
+  custom_api_data:
+    driver: local
+
+  # Logging volumes
+  elasticsearch_data:
+    driver: local
+
+# -----------------------------------------------------------------------------
+# NETWORKS
+# -----------------------------------------------------------------------------
+# Custom services automatically join the 'miniprem' network
+# This allows them to communicate with official MiniPrem services
+networks:
+  miniprem:
+    external: true
+    # The 'miniprem' network is created by docker-compose.yml
+    # All services in this file can communicate with:
+    #   - flowise (port 3000)
+    #   - vllm (port 8000)
+    #   - redis (port 6379)
+    #   - renny (port 8081)
+    #   - grafana (port 3002)
+    #   - prometheus (port 9090)
+    #   - miniprem-monitor (port 3001)
+
+# =============================================================================
+# INTEGRATION WITH MINIPREM SERVICES
+# =============================================================================
+#
+# Your custom services can communicate with official MiniPrem services by
+# referencing their container names. Common integration patterns:
+#
+# 1. **LLM Integration (vLLM)**
+#    - URL: http://vllm:8000
+#    - Example: curl http://vllm:8000/v1/completions
+#
+# 2. **Workflow Automation (Flowise)**
+#    - URL: http://flowise:3000
+#    - Example: Trigger custom workflows via Flowise API
+#
+# 3. **Metrics and Monitoring (Prometheus/Grafana)**
+#    - Prometheus: http://prometheus:9090
+#    - Grafana: http://grafana:3002
+#    - Example: Expose /metrics endpoint for Prometheus scraping
+#
+# 4. **Container Monitoring (MiniPrem Monitor)**
+#    - Frontend: http://miniprem-monitor:3001
+#    - Backend API: http://miniprem-monitor:8000
+#    - Example: Query system metrics via REST API
+#
+# 5. **Digital Human (Renny)**
+#    - Health: http://renny:8081/health
+#    - Example: Check Renny status from custom service
+#
+# =============================================================================
+
+# =============================================================================
+# ENVIRONMENT VARIABLES
+# =============================================================================
+#
+# It's recommended to use a .env file for sensitive configuration:
+#
+# 1. Create a file named .env in the same directory as this file
+# 2. Add your variables:
+#
+#    # Database credentials
+#    POSTGRES_PASSWORD=your-secure-password
+#    MONGO_ROOT_PASSWORD=another-secure-password
+#
+#    # API keys
+#    CUSTOM_API_KEY=your-api-key-here
+#
+#    # Service credentials
+#    REDIS_PASSWORD=redis-secure-password
+#    RABBITMQ_PASSWORD=rabbitmq-secure-password
+#
+# 3. Docker Compose will automatically load these variables
+# 4. NEVER commit the .env file to version control!
+#
+# =============================================================================
+
+# =============================================================================
+# COMMON GOTCHAS AND SOLUTIONS
+# =============================================================================
+#
+# 1. **Service can't connect to official MiniPrem services**
+#    Solution: Ensure network is set to 'miniprem' (external: true)
+#
+# 2. **Volume data not persisting**
+#    Solution: Use named volumes (defined in volumes: section)
+#
+# 3. **Container exits immediately**
+#    Solution: Check logs with 'docker logs <container-name>'
+#
+# 4. **Port conflicts**
+#    Solution: Change the host port (left side): "8081:80" -> "8082:80"
+#
+# 5. **Container out of memory**
+#    Solution: Add memory limits in deploy.resources section
+#
+# 6. **Service starts before dependencies are ready**
+#    Solution: Use depends_on with service_healthy condition
+#
+# 7. **Can't access service from host**
+#    Solution: Add ports mapping: "host_port:container_port"
+#
+# 8. **Environment variables not working**
+#    Solution: Use .env file or export variables before running docker-compose
+#
+# 9. **Container can't write to volume**
+#    Solution: Check file permissions and container user
+#
+# 10. **Logs filling up disk**
+#     Solution: Configure logging driver with max-size and max-file
+#
+# =============================================================================
+
+# =============================================================================
+# NEXT STEPS
+# =============================================================================
+#
+# 1. Copy this template:
+#    cp docker-compose.custom.template.yml docker-compose.custom.yml
+#
+# 2. Uncomment and modify the services you need
+#
+# 3. Create a .env file with your secrets
+#
+# 4. Test your configuration:
+#    docker-compose -f docker-compose.custom.yml config
+#
+# 5. Start your custom services:
+#    ./miniprem.sh restart
+#
+# 6. Check service status:
+#    docker ps
+#
+# 7. View logs:
+#    docker logs <container-name>
+#
+# For more information, see the MiniPrem documentation.
+#
+# =============================================================================
