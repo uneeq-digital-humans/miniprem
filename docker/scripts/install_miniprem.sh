@@ -1947,7 +1947,7 @@ pull_docker_with_tts_provider() {
 create_desktop_shortcut() {
     # Only create shortcut if running Ubuntu Desktop (has desktop environment)
     if [ ! -d "$HOME/Desktop" ] || [ -z "$XDG_CURRENT_DESKTOP" ]; then
-        log_debug "Desktop environment not detected, skipping shortcut creation"
+        info "Desktop environment not detected, skipping shortcut creation"
         return 0
     fi
 
