@@ -38,9 +38,12 @@ enable_nat_ha = true
 dhop_tenant_id = ""  # Your DHOP tenant ID
 dhop_api_key = ""    # Your DHOP API key (base64 encoded)
 
-# Docker Hub Credentials - required for UneeQ container access
-docker_username = ""  # Your Docker Hub username with access to UneeQ repos
-docker_password = ""  # Your Docker Hub password
+# Harbor registry credentials (robot account)
+# Contact help@uneeq.com or your UneeQ representative to obtain credentials
+# Robot account format: robot$customer-name
+# These credentials are required for pulling Renny container images from Harbor
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-robot-password"
 
 # ============================================================================
 # OPTIONAL OVERRIDES

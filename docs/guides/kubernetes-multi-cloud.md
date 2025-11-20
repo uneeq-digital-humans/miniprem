@@ -12,6 +12,7 @@
 ## Table of Contents
 
 - [Overview](#overview)
+- [Prerequisites](#prerequisites)
 - [Quick Comparison](#quick-comparison)
 - [Detailed Cost Analysis](#detailed-cost-analysis)
 - [Technical Comparison](#technical-comparison)
@@ -22,6 +23,69 @@
 ## Overview
 
 This guide helps you choose between AWS EKS, Azure AKS, and Google GKE (coming soon) for deploying Renny digital humans at scale. Each cloud provider has unique strengths, and the best choice depends on your specific requirements.
+
+## Prerequisites
+
+### Shared Requirements (All Platforms)
+
+Before deploying on any cloud platform, ensure you have:
+
+1. **UneeQ Harbor Registry Access**
+   - **Registry URL**: https://cr.uneeq.io
+   - **Registry Credentials**: Robot account (contact help@uneeq.com)
+   - **Network Access**: Port 443 (HTTPS) for image pulls
+   - **What's Required**: `harbor_username` and `harbor_password` credentials
+
+2. **Renny Configuration**
+   - **Tenant ID**: Your UneeQ DHOP tenant identifier
+   - **API Key**: Your UneeQ DHOP API key (plain text)
+   - **Helm Chart**: `renny-chart.tgz` file from UneeQ
+
+3. **Platform-Specific Tools** (varies by cloud provider):
+   - **AWS EKS**: AWS CLI >= 2.3.0, Terraform >= 1.0, kubectl, Helm >= 3.0
+   - **Azure AKS**: Azure CLI >= 2.50.0, Terraform >= 1.5.0, kubectl, Helm >= 3.12.0
+   - **Google GKE** (coming soon): Google Cloud CLI, Terraform >= 1.0, kubectl, Helm
+
+### Harbor Registry Access Details
+
+All Renny container images are hosted in the UneeQ Harbor registry. This is a **shared requirement across all cloud platforms**:
+
+<div class="info-box">
+<strong>ℹ️ Harbor Registry Configuration:</strong>
+<ul>
+  <li><strong>Registry Hostname:</strong> cr.uneeq.io</li>
+  <li><strong>Protocol:</strong> HTTPS (port 443)</li>
+  <li><strong>Account Type:</strong> Robot account (not personal account)</li>
+  <li><strong>Use Case:</strong> Image pulls during cluster deployment and auto-scaling</li>
+  <li><strong>Network Requirement:</strong> Nodes must have outbound HTTPS access to cr.uneeq.io</li>
+</ul>
+</div>
+
+**To obtain Harbor credentials:**
+1. Contact help@uneeq.com or your UneeQ representative
+2. Request robot account credentials for your customer/organization
+3. You will receive: username (format: `robot$customer-name`) and password
+4. Use these credentials in your platform-specific `terraform.tfvars` configuration
+
+### Network Requirements
+
+Ensure your network or cloud VPC allows:
+- **Outbound HTTPS (443)** to `cr.uneeq.io` for container image pulls
+- **Outbound HTTPS (443)** to `*.uneeq.io` for API calls and telemetry
+- **UDP ports 22000-23000** for WebRTC (Pixel Streaming)
+- **UDP port 3478** for TURN/STUN traffic
+
+If your network uses firewalls or proxies, whitelist these endpoints.
+
+### Next Steps
+
+After confirming prerequisites:
+1. **Choose your cloud platform** - See [Quick Comparison](#quick-comparison) below
+2. **Review platform-specific guide**:
+   - [AWS EKS Deployment](kubernetes-eks.md)
+   - [Azure AKS Deployment](kubernetes-aks.md)
+   - Google GKE (coming soon)
+3. **Follow platform-specific prerequisites** for additional cloud-specific setup
 
 ## Quick Comparison
 

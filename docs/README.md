@@ -39,6 +39,7 @@ MiniPrem supports two deployment architectures to match your needs:
 
 Detailed guides for each component:
 
+- **[Harbor Registry](guides/harbor-registry.md)** - Container image registry setup and configuration
 - **[Renny Integration](guides/renny.md)** - Digital human configuration and management
 - **[Flowise Configuration](guides/flowise.md)** - Workflow automation setup
 - **[vLLM Integration](guides/vllm.md)** - Large language model configuration

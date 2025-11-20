@@ -3142,18 +3142,25 @@ setup_kubernetes_resources() {
     
     # Create namespace
     kubectl apply -f "$KUBERNETES_DIR/manifests/namespace.yaml"
-    
-    # Get Docker credentials from terraform vars
+
+    # Get Harbor credentials from terraform vars
     cd "$TERRAFORM_DIR"
-    DOCKER_USERNAME=$(grep docker_username terraform.tfvars | cut -d'"' -f2)
-    DOCKER_PASSWORD=$(grep docker_password terraform.tfvars | cut -d'"' -f2)
-    
-    # Create Docker registry secret
-    echo "Creating Docker registry secret..."
-    kubectl create secret docker-registry docker-config \
-        --docker-server=https://index.docker.io/v1/ \
-        --docker-username="$DOCKER_USERNAME" \
-        --docker-password="$DOCKER_PASSWORD" \
+    HARBOR_USERNAME=$(grep harbor_username terraform.tfvars | cut -d'"' -f2)
+    HARBOR_PASSWORD=$(grep harbor_password terraform.tfvars | cut -d'"' -f2)
+
+    if [ -z "$HARBOR_USERNAME" ] || [ -z "$HARBOR_PASSWORD" ]; then
+        echo -e "${RED}❌ Harbor credentials not found in terraform.tfvars${NC}"
+        echo "Please set harbor_username and harbor_password variables."
+        echo "Contact help@uneeq.com to obtain Harbor robot account credentials."
+        exit 1
+    fi
+
+    # Create Harbor registry secret
+    echo "Creating Harbor registry secret..."
+    kubectl create secret docker-registry harbor-credentials \
+        --docker-server=https://cr.uneeq.io \
+        --docker-username="$HARBOR_USERNAME" \
+        --docker-password="$HARBOR_PASSWORD" \
         --namespace=uneeq-renderer \
         --dry-run=client -o yaml | kubectl apply -f -
 }
@@ -3174,20 +3181,22 @@ validate_terraform_credentials() {
         return 1
     fi
 
-    # Check Docker Hub credentials
-    local docker_username=$(grep "^docker_username" "$terraform_file" | cut -d'"' -f2)
-    local docker_password=$(grep "^docker_password" "$terraform_file" | cut -d'"' -f2)
+    # Check Harbor registry credentials
+    local harbor_username=$(grep "^harbor_username" "$terraform_file" | cut -d'"' -f2)
+    local harbor_password=$(grep "^harbor_password" "$terraform_file" | cut -d'"' -f2)
 
-    if [ "$docker_username" = "YOUR_DOCKER_USERNAME" ] || [ -z "$docker_username" ]; then
-        echo -e "${RED}❌ Docker Hub username not configured${NC}"
-        echo "   Found: docker_username = \"$docker_username\""
+    if [ "$harbor_username" = "robot\$your-customer-name" ] || [ -z "$harbor_username" ]; then
+        echo -e "${RED}❌ Harbor robot username not configured${NC}"
+        echo "   Found: harbor_username = \"$harbor_username\""
+        echo "   Contact help@uneeq.com to obtain Harbor credentials"
         echo ""
         has_issues=true
     fi
 
-    if [ "$docker_password" = "YOUR_DOCKER_PASSWORD" ] || [ -z "$docker_password" ]; then
-        echo -e "${RED}❌ Docker Hub password not configured${NC}"
-        echo "   Found: docker_password = \"$docker_password\""
+    if [ "$harbor_password" = "your-robot-password" ] || [ -z "$harbor_password" ]; then
+        echo -e "${RED}❌ Harbor robot password not configured${NC}"
+        echo "   Found: harbor_password = \"$harbor_password\""
+        echo "   Contact help@uneeq.com to obtain Harbor credentials"
         echo ""
         has_issues=true
     fi

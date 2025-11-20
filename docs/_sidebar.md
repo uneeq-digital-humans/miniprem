@@ -20,6 +20,7 @@
   * [Renny](guides/renny.md)
   * [RIME AI Integration](guides/rime.md)
   * [Whisper Speech Recognition](guides/whisper.md)
+* [Harbor Registry](guides/harbor-registry.md)
 * [FastWhisper GPU Setup](fastwhisper_gpu_setup.md)
 * [API Reference](api/README.md)
   * [Flowise API](api/README.md#flowise-api)
