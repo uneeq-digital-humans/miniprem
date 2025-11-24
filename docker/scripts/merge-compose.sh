@@ -233,8 +233,17 @@ merge_services() {
 
     log "Merging services..."
 
-    # Start with the full official file structure (including name, etc.)
-    yq eval '.' "${official_file}" > "${output_file}.tmp.merged"
+    # Start with minimal YAML structure (override files should only contain additions/overrides)
+    # Get the name from official file to maintain consistency
+    local compose_name
+    compose_name=$(yq eval '.name // ""' "${official_file}")
+
+    if [[ -n "${compose_name}" ]]; then
+        echo "name: ${compose_name}" > "${output_file}.tmp.merged"
+        echo "services:" >> "${output_file}.tmp.merged"
+    else
+        echo "services:" > "${output_file}.tmp.merged"
+    fi
 
     # Process custom services
     local custom_services
@@ -257,20 +266,21 @@ merge_services() {
             # Handle conflict based on strategy
             if [[ "${PREFER_CUSTOM}" == "true" ]]; then
                 log_verbose "Overwriting service '${service}' with custom version (prefer-custom)"
-                yq eval-all --inplace \
-                    "select(fileIndex == 0).services.${service} = select(fileIndex == 1).services.${service} | select(fileIndex == 0)" \
-                    "${output_file}.tmp.merged" "${custom_file}"
+                # Extract service from custom file and add to override
+                yq eval ".services.${service}" "${custom_file}" | \
+                    yq eval ".services.${service} = load(\"${custom_file}\") | .services.${service}" --inplace "${output_file}.tmp.merged"
             elif [[ -n "${RENAME_CUSTOM_PREFIX}" ]]; then
                 local new_name="${RENAME_CUSTOM_PREFIX}${service}"
                 log_verbose "Renaming custom service '${service}' to '${new_name}'"
-                yq eval-all --inplace \
-                    "select(fileIndex == 0).services.${new_name} = select(fileIndex == 1).services.${service} | select(fileIndex == 0)" \
-                    "${output_file}.tmp.merged" "${custom_file}"
+                # Extract service and rename
+                yq eval ".services.${service}" "${custom_file}" | \
+                    yq eval ".services.${new_name} = load(\"${custom_file}\") | .services.${service}" --inplace "${output_file}.tmp.merged"
             else
                 log_verbose "Keeping official service '${service}' (prefer-official)"
+                # Don't add to override file - official service takes precedence
             fi
         else
-            # No conflict, add custom service
+            # No conflict, add custom service to override file
             log_verbose "Adding custom service '${service}'"
             yq eval-all --inplace \
                 "select(fileIndex == 0).services.${service} = select(fileIndex == 1).services.${service} | select(fileIndex == 0)" \
@@ -290,11 +300,11 @@ merge_volumes() {
     local custom_volumes
     custom_volumes=$(yq eval '.volumes // {}' "${custom_file}")
 
-    # If custom file has volumes, merge them
+    # If custom file has volumes, add them to override
     if [[ "${custom_volumes}" != "{}" ]]; then
-        # Merge volumes into the main merged file (custom takes precedence)
+        # Add custom volumes to override file (will be merged by Docker Compose)
         yq eval-all --inplace \
-            'select(fileIndex == 0).volumes = (select(fileIndex == 0).volumes // {}) * select(fileIndex == 1).volumes | select(fileIndex == 0)' \
+            'select(fileIndex == 0).volumes = select(fileIndex == 1).volumes | select(fileIndex == 0)' \
             "${output_file}.tmp.merged" "${custom_file}"
     fi
 }
@@ -310,11 +320,11 @@ merge_networks() {
     local custom_networks
     custom_networks=$(yq eval '.networks // {}' "${custom_file}")
 
-    # If custom file has networks, merge them
+    # If custom file has networks, add them to override
     if [[ "${custom_networks}" != "{}" ]]; then
-        # Merge networks into the main merged file (custom takes precedence)
+        # Add custom networks to override file (will be merged by Docker Compose)
         yq eval-all --inplace \
-            'select(fileIndex == 0).networks = (select(fileIndex == 0).networks // {}) * select(fileIndex == 1).networks | select(fileIndex == 0)' \
+            'select(fileIndex == 0).networks = select(fileIndex == 1).networks | select(fileIndex == 0)' \
             "${output_file}.tmp.merged" "${custom_file}"
     fi
 }
