@@ -15,6 +15,9 @@
 
 set -euo pipefail
 
+# Add common snap binary directories to PATH (for yq installed via snap)
+export PATH="/snap/bin:$PATH"
+
 # Script directory and Docker root
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -115,9 +118,16 @@ EOF
 check_dependencies() {
     local missing_tools=()
 
-    # Check for required tools
+    # Check for required tools (with explicit PATH check for snap installations)
     if ! command -v yq &> /dev/null; then
-        missing_tools+=("yq")
+        # Try common snap installation paths directly
+        if [[ -x /snap/bin/yq ]]; then
+            log_verbose "Found yq at /snap/bin/yq"
+        else
+            missing_tools+=("yq")
+        fi
+    else
+        log_verbose "Found yq at $(command -v yq)"
     fi
 
     if ! command -v docker &> /dev/null && ! command -v docker-compose &> /dev/null; then
@@ -127,7 +137,7 @@ check_dependencies() {
     if [[ ${#missing_tools[@]} -gt 0 ]]; then
         log_error "Missing required tools: ${missing_tools[*]}"
         log_error "Please install missing dependencies:"
-        log_error "  - yq: brew install yq (macOS) or https://github.com/mikefarah/yq"
+        log_error "  - yq: brew install yq (macOS), snap install yq (Ubuntu), or https://github.com/mikefarah/yq"
         return 1
     fi
 
