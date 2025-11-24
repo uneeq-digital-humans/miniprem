@@ -5,12 +5,7 @@ IFS=$'\n\t'
 # Temporary debug mode - uncomment to see which command is failing
 #set -x
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-
-# Ensure script is run from MiniPrem root directory
-cd "$PROJECT_ROOT"
+# Ensure script is run from MiniPrem root directory (check BEFORE changing directories)
 if [ ! -f "miniprem.sh" ] || [ ! -d "docker" ] || [ ! -d "kubernetes" ]; then
     echo ""
     echo "╔═══════════════════════════════════════════════════════════╗"
@@ -26,6 +21,10 @@ if [ ! -f "miniprem.sh" ] || [ ! -d "docker" ] || [ ! -d "kubernetes" ]; then
     echo ""
     exit 1
 fi
+
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 source "$PROJECT_ROOT/scripts/docker.sh"
 source "$PROJECT_ROOT/scripts/logging.sh"
