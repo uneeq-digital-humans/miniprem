@@ -228,7 +228,8 @@ pull_docker_images() {
     success "$CHECKMARK Network connectivity to Harbor verified"
 
     # Log in to Harbor registry using stdin to provide credentials
-    echo "$HARBOR_PASSWORD" | eval $DOCKER_CMD login https://cr.uneeq.io -u "$HARBOR_USERNAME" --password-stdin
+    # Note: eval is needed for DOCKER_CMD expansion, single quotes prevent $HARBOR_USERNAME expansion
+    echo "$HARBOR_PASSWORD" | eval "$DOCKER_CMD" login https://cr.uneeq.io -u \'"$HARBOR_USERNAME"\' --password-stdin
     if [ $? -ne 0 ]; then
         error "Failed to authenticate with Harbor registry"
         error "Please verify:"
