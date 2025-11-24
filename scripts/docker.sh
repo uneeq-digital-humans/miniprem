@@ -231,12 +231,17 @@ pull_docker_images() {
     # Note: eval is needed for DOCKER_CMD expansion, single quotes prevent $HARBOR_USERNAME expansion
     echo "$HARBOR_PASSWORD" | eval "$DOCKER_CMD" login https://cr.uneeq.io -u \'"$HARBOR_USERNAME"\' --password-stdin
     if [ $? -ne 0 ]; then
-        error "Failed to authenticate with Harbor registry"
-        error "Please verify:"
-        error "  1. Username format is correct (robot\$customer-name)"
-        error "  2. Password is correct"
-        error "  3. Robot account has 'Pull Repository' permission"
-        fatal "$CROSS Harbor authentication failed. Contact help@uneeq.com for assistance."
+        echo ""
+        error "ERROR: Harbor Registry Authentication Failed"
+        echo ""
+        error "Unable to authenticate with cr.uneeq.io using the provided credentials."
+        echo ""
+        error "Common causes:"
+        error "  • Invalid robot account username or password"
+        error "  • Robot account has been disabled or expired"
+        error "  • Robot account lacks required permissions"
+        echo ""
+        fatal "Please contact UneeQ Support for further assistance."
     fi
     success "$CHECKMARK Successfully logged in to Harbor registry."
     
