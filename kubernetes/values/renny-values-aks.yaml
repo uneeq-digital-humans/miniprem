@@ -21,7 +21,9 @@
 # - Total Capacity: 4-20 Renny instances (2 pods per node)
 
 # Renny container image
-image: facemeproduction/renny:0.758-f9e3f
+# Image is pulled from UneeQ's Harbor registry (cr.uneeq.io)
+# Contact help@uneeq.com for Harbor robot account credentials
+image: cr.uneeq.io/uneeq/renny-renderer:latest
 
 # GPU time-slicing configuration for AKS NC16as_T4_v3
 # T4 has 16GB VRAM - can handle 2 Renny instances with 7-8GB each
@@ -276,8 +278,9 @@ securityContext:
 
 # Image pull secrets for private registries
 # Must match the secret created by deploy-azure.sh script
+# Harbor registry authentication
 imagePullSecrets:
-- name: docker-config
+  - name: harbor-credentials
 
 # Telemetry configuration for heartbeat monitoring
 telemetry:

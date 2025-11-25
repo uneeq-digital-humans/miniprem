@@ -20,11 +20,13 @@ dhop_tenant_id = "YOUR_DHOP_TENANT_ID"
 dhop_api_key   = "YOUR_DHOP_API_KEY"
 
 # ============================================================================
-# REQUIRED: Docker Hub Credentials
+# REQUIRED: Harbor Registry Credentials (Robot Account)
 # ============================================================================
-# Your Docker Hub account must have access to UneeQ repositories
-docker_username = "YOUR_DOCKER_USERNAME"
-docker_password = "YOUR_DOCKER_PASSWORD"
+# Contact help@uneeq.com or your UneeQ representative to obtain credentials
+# Robot account format: robot$customer-name
+# These credentials are required for pulling Renny container images from Harbor
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-robot-password"
 
 # ============================================================================
 # Azure Configuration

@@ -8,9 +8,54 @@ MiniPrem's Docker deployment provides a complete local development environment w
 
 - Docker Desktop installed (macOS/Windows) or Docker Engine (Linux)
 - Docker Compose v2.0+
+- Harbor registry credentials (robot account for `cr.uneeq.io`)
 - NVIDIA GPU with Docker GPU runtime (for GPU acceleration)
 - Minimum 16GB RAM
 - 50GB available disk space
+- Network access to `cr.uneeq.io` on port 443 (HTTPS)
+
+## Container Registry Access
+
+### Harbor Registry Requirement
+
+MiniPrem container images are hosted on the private Harbor registry at `cr.uneeq.io`. Before deploying MiniPrem, you must authenticate with this registry using your Harbor robot account credentials.
+
+For detailed information about Harbor registry access, including troubleshooting steps and enterprise firewall configuration, see the [Harbor Registry Guide](harbor-registry.md).
+
+### Quick Registry Authentication
+
+Authenticate with the Harbor registry before starting services:
+
+```bash
+# Log in with your robot account credentials
+docker login https://cr.uneeq.io --username 'robot$your-customer-name'
+
+# When prompted, enter your Harbor password/token
+```
+
+**Expected Output**:
+```
+Password:
+Login Succeeded
+```
+
+### Network Requirements
+
+Ensure your firewall allows outbound connections to the Harbor registry:
+
+- **Registry Endpoint**: `cr.uneeq.io:443`
+- **Protocol**: HTTPS (TLS 1.2+)
+- **Direction**: Outbound
+
+For enterprise/corporate networks with strict firewall rules, ensure your network administrator has whitelisted `cr.uneeq.io` on port 443.
+
+### Credential Management
+
+Docker automatically encrypts and stores your Harbor registry credentials in `~/.docker/config.json`. For production deployments, ensure:
+
+- Credentials are stored securely
+- Credential files are not committed to version control
+- Access credentials are rotated regularly
 
 ## Installation Types
 
@@ -48,6 +93,19 @@ docker compose -f docker-compose.monitor.yml up -d
 ```
 
 ## Quick Start
+
+### Harbor Authentication (Required First Step)
+
+Before running any installation, authenticate with the Harbor registry:
+
+```bash
+# Authenticate with Harbor registry
+docker login https://cr.uneeq.io --username 'robot$your-customer-name'
+
+# Enter your Harbor password/token when prompted
+```
+
+Once authenticated, you can proceed with installation.
 
 ### Interactive Installation
 
@@ -301,11 +359,17 @@ docker logs --tail 100 miniprem-flowise
 ## Updating Services
 
 ### Pull Latest Images
+
+Before pulling updated images, ensure you are authenticated with the Harbor registry:
+
 ```bash
+# Verify Harbor authentication
+docker login https://cr.uneeq.io --username 'robot$your-customer-name'
+
 # Stop services
 ./miniprem.sh stop
 
-# Pull updates
+# Pull updates from Harbor registry
 docker compose -f docker/docker-compose.yml pull
 
 # Restart with new images
@@ -347,17 +411,25 @@ docker run --rm -v miniprem_flowise_data:/data \
 
 ## Security Considerations
 
-1. **Credential Management**:
+1. **Harbor Registry Credentials**:
+   - Store robot account credentials securely
+   - Never commit Harbor credentials to version control
+   - Credentials are automatically encrypted in `~/.docker/config.json`
+   - Rotate credentials periodically as recommended by UneeQ
+   - For production, use Kubernetes Secrets instead of local Docker credentials
+
+2. **Credential Management**:
    - Store `configuration.dat` securely
    - Use Docker secrets for production
    - Rotate JWT tokens regularly
 
-2. **Network Security**:
+3. **Network Security**:
+   - Whitelist `cr.uneeq.io:443` in firewalls for production environments
    - Use custom Docker networks
    - Implement firewall rules
    - Enable TLS for external access
 
-3. **Resource Limits**:
+4. **Resource Limits**:
    - Set memory/CPU limits in docker-compose.yml
    - Monitor resource usage
    - Implement rate limiting
@@ -373,5 +445,6 @@ docker run --rm -v miniprem_flowise_data:/data \
 
 For issues and support:
 - Check [Troubleshooting Guide](../troubleshooting.md)
+- Review [Harbor Registry Guide](harbor-registry.md) for container image access issues
 - Review [Container Logs](../api/container-logs.md)
 - Contact support@digitalhumans.com

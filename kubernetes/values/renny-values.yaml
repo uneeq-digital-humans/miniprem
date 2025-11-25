@@ -1,5 +1,11 @@
 # Renny Helm values
-image: "facemeproduction/renny:0.758-f9e3f"
+# Image is pulled from UneeQ's Harbor registry (cr.uneeq.io)
+# Contact help@uneeq.com for Harbor robot account credentials
+image: "cr.uneeq.io/uneeq/renny-renderer:latest"
+
+# Image pull secret for Harbor registry authentication
+imagePullSecrets:
+  - name: harbor-credentials
 
 # GPU time-slicing configuration
 # Controls how many Renny pods share a single physical GPU
