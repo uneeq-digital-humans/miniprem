@@ -204,18 +204,46 @@ pull_docker_images() {
         fi
     fi
 
-    # Docker login for UneeQ images
-    info "Logging in to UneeQ Docker registry for Renny images..."
-    read -p "Enter UneeQ Docker registry username: " UNEEQ_USERNAME
-    read -s -p "Enter UneeQ personal access token (PAT): " UNEEQ_PAT
+    # Docker login for Harbor registry
+    info "Logging in to Harbor registry (cr.uneeq.io) for Renny images..."
+    info "If you don't have Harbor credentials:"
+    info "  - Contact: help@uneeq.com"
+    info "  - Or ask your UneeQ representative"
     echo
 
-    # Log in to the UneeQ Docker registry using stdin to provide the PAT
-    echo "$UNEEQ_PAT" | eval $DOCKER_CMD login -u "$UNEEQ_USERNAME" --password-stdin
-    if [ $? -ne 0 ]; then
-        fatal "$CROSS Failed to login to UneeQ Docker registry."
+    read -p "Enter Harbor robot username (e.g., robot\$customer-name): " HARBOR_USERNAME
+    read -s -p "Enter Harbor robot password: " HARBOR_PASSWORD
+    echo
+
+    # Test network connectivity to Harbor
+    info "Testing connectivity to cr.uneeq.io..."
+    if ! curl --max-time 10 --silent --fail --output /dev/null "https://cr.uneeq.io" 2>/dev/null; then
+        warning "Cannot reach cr.uneeq.io"
+        warning "Please ensure:"
+        warning "  1. You have internet connectivity"
+        warning "  2. Your firewall allows HTTPS to cr.uneeq.io (port 443)"
+        warning "  3. Corporate networks: cr.uneeq.io is whitelisted"
+        fatal "Network connectivity test failed"
     fi
-    success "$CHECKMARK Successfully logged in to UneeQ Docker registry."
+    success "$CHECKMARK Network connectivity to Harbor verified"
+
+    # Log in to Harbor registry using stdin to provide credentials
+    # Note: eval is needed for DOCKER_CMD expansion, single quotes prevent $HARBOR_USERNAME expansion
+    echo "$HARBOR_PASSWORD" | eval "$DOCKER_CMD" login https://cr.uneeq.io -u \'"$HARBOR_USERNAME"\' --password-stdin
+    if [ $? -ne 0 ]; then
+        echo ""
+        error "ERROR: Harbor Registry Authentication Failed"
+        echo ""
+        error "Unable to authenticate with cr.uneeq.io using the provided credentials."
+        echo ""
+        error "Common causes:"
+        error "  • Invalid robot account username or password"
+        error "  • Robot account has been disabled or expired"
+        error "  • Robot account lacks required permissions"
+        echo ""
+        fatal "Please contact UneeQ Support for further assistance."
+    fi
+    success "$CHECKMARK Successfully logged in to Harbor registry."
     
     # Pull images for the selected install type
     info "Pulling Docker images for selected install type..."

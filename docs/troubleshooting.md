@@ -20,6 +20,7 @@
   - [Rendering Quality Issues](#rendering-quality-issues)
 - [Monitoring Issues](#monitoring-issues)
 - [Network Issues](#network-issues)
+- [Harbor Registry Authentication Failures](#harbor-registry-authentication-failures)
 - [Resource Issues](#resource-issues)
 - [License](#license)
 - [Copyright](#copyright)
@@ -329,6 +330,70 @@ See [Renny Quality Settings](guides/renny.md#quality-settings) for detailed conf
    ```bash
    sudo systemctl restart docker
    ```
+
+## Harbor Registry Authentication Failures
+
+**Symptoms**:
+- Image pull errors
+- "authentication denied" or "unauthorized" errors
+- ImagePullBackOff status in Kubernetes pods
+- Docker login failures
+
+**Common Causes and Solutions**:
+
+1. **Invalid Credentials**
+   - **Cause**: Incorrect robot username or password
+   - **Solution**: Verify credentials format is `robot$customer-name`
+   - **Test**: `docker login https://cr.uneeq.io --username 'robot$customer-name'`
+   - **Contact**: help@uneeq.com for credential verification
+
+2. **Network Connectivity Issues**
+   - **Cause**: Firewall blocking cr.uneeq.io
+   - **Solution**: Whitelist `cr.uneeq.io` on port 443 (HTTPS)
+   - **Test**: `curl -I https://cr.uneeq.io`
+   - **Corporate Networks**: Contact IT to whitelist the registry
+
+3. **Expired or Revoked Credentials**
+   - **Cause**: Robot account password expired or account disabled
+   - **Solution**: Request new credentials from UneeQ
+   - **Contact**: help@uneeq.com
+
+4. **Certificate/TLS Issues**
+   - **Cause**: Corporate proxy performing SSL inspection
+   - **Solution**: Install corporate CA certificate
+   - **Alternative**: Configure Docker to trust corporate proxy
+
+5. **Insufficient Permissions**
+   - **Cause**: Robot account lacks "Pull Repository" permission
+   - **Solution**: Verify permissions with UneeQ support
+   - **Contact**: help@uneeq.com
+
+**Diagnostic Commands**:
+```bash
+# Test DNS resolution
+nslookup cr.uneeq.io
+
+# Test HTTPS connectivity
+curl -I https://cr.uneeq.io
+
+# Test Docker authentication
+docker login https://cr.uneeq.io --username 'robot$your-customer-name'
+
+# Check saved credentials
+cat ~/.docker/config.json | grep cr.uneeq.io
+
+# Kubernetes: Check imagePullSecret
+kubectl describe secret harbor-credentials -n uneeq-renderer
+```
+
+**Network Requirements**:
+- **URL**: `https://cr.uneeq.io`
+- **Port**: 443 (HTTPS)
+- **Protocol**: Docker Registry API v2
+- **Firewall**: Must allow outbound HTTPS connections
+
+**For More Information**:
+See the [Harbor Registry Guide](guides/harbor-registry.md) for detailed setup and troubleshooting steps.
 
 ## Resource Issues
 

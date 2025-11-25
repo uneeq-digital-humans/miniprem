@@ -5,6 +5,23 @@ IFS=$'\n\t'
 # Temporary debug mode - uncomment to see which command is failing
 #set -x
 
+# Ensure script is run from MiniPrem root directory (check BEFORE changing directories)
+if [ ! -f "miniprem.sh" ] || [ ! -d "docker" ] || [ ! -d "kubernetes" ]; then
+    echo ""
+    echo "╔═══════════════════════════════════════════════════════════╗"
+    echo "║  ERROR: Installation script must be run from MiniPrem     ║"
+    echo "║         root directory                                    ║"
+    echo "╚═══════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "Please change to the MiniPrem directory first:"
+    echo "  cd /path/to/miniprem"
+    echo "  sudo ./docker/scripts/install_miniprem.sh"
+    echo ""
+    echo "Current location: $(pwd)"
+    echo ""
+    exit 1
+fi
+
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"

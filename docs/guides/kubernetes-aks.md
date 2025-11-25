@@ -100,8 +100,19 @@ Azure Cloud (East US)
 - **WebRTC/UDP:** Ports 22000-23000 (Pixel Streaming)
 - **TURN/STUN:** Port 3478 (TCP/UDP)
 - **HTTPS:** Port 443 (egress to *.uneeq.io)
+- **Harbor Registry:** HTTPS port 443 to cr.uneeq.io (required for image pulls)
 - **Private Subnets:** All GPU nodes for security
 - **Azure CNI Networking:** Native Azure networking
+
+### Harbor Registry Access
+
+All Renny container images are hosted in the UneeQ Harbor registry. Ensure your network allows:
+
+- **Harbor URL**: https://cr.uneeq.io
+- **Port**: 443 (HTTPS)
+- **Access**: Required for initial image pull and any image updates
+
+If your network uses a firewall or proxy, whitelist `cr.uneeq.io` to allow the AKS nodes to pull images during deployment and scaling.
 
 ## Prerequisites
 
@@ -112,7 +123,9 @@ Azure Cloud (East US)
 3. **Terraform** >= 1.5.0
 4. **kubectl** >= 1.28.0 (Kubernetes CLI)
 5. **Helm** >= 3.12.0 (Kubernetes package manager)
-6. **Docker Hub** account with access to UneeQ repositories
+6. **UneeQ Harbor registry access** (robot account credentials)
+   - Contact help@uneeq.com for credentials
+   - Registry URL: https://cr.uneeq.io
 7. **Renny Helm chart** (renny-chart.tgz file)
 
 ### Installation Commands
@@ -386,10 +399,13 @@ client_id       = "your-client-id"
 client_secret   = "your-client-secret"
 
 # Required Renny credentials
-dhop_tenant_id  = "your-uneeq-tenant-id"
-dhop_api_key    = "your-uneeq-api-key"
-docker_username = "your-dockerhub-username"
-docker_password = "your-dockerhub-password"
+dhop_tenant_id   = "your-uneeq-tenant-id"
+dhop_api_key     = "your-uneeq-api-key"
+
+# Harbor registry credentials (robot account)
+# Contact help@uneeq.com or your UneeQ representative to obtain credentials
+harbor_username  = "robot$your-customer-name"
+harbor_password  = "your-robot-password"
 
 # Optional: Override defaults
 azure_region = "eastus"  # Change to your preferred region
@@ -593,10 +609,18 @@ kubectl describe pod <pod-name> -n uneeq-renderer
 
 **Image Pull Failures:**
 ```bash
-# Check Docker registry secret
-kubectl get secret docker-config -n uneeq-renderer
+# Check Harbor registry secret
+kubectl get secret harbor-registry -n uneeq-renderer
 
-# Recreate if needed (run deploy script again)
+# Verify secret contents
+kubectl get secret harbor-registry -n uneeq-renderer -o jsonpath='{.data.\.dockerconfigjson}' | base64 -d
+
+# Recreate if needed (run deploy script again or):
+# kubectl create secret docker-registry harbor-registry \
+#   --docker-server=cr.uneeq.io \
+#   --docker-username=your-robot-account \
+#   --docker-password=your-robot-password \
+#   -n uneeq-renderer
 ```
 
 **GPU Driver Issues:**
