@@ -28,19 +28,24 @@ fi
 usage() {
     echo -e $WHITE
     cat <<EOF
-`basename $0` [start|stop|status|restart|logs|setup]
+`basename $0` [start|stop|status|restart|logs|setup|pull|validate|config|custom]
 Control the MiniPrem services
 
 Commands:
-    start:   Start the MiniPrem services
-    stop:    Stop the MiniPrem services
-    status:  Check the status of the MiniPrem services
-    restart: Restart the MiniPrem services
-    logs:    View the logs of the MiniPrem services
-    setup:   Run the Flowise chatflow setup
+    start:              Start the MiniPrem services
+    stop:               Stop the MiniPrem services
+    status:             Check the status of the MiniPrem services
+    restart:            Restart the MiniPrem services
+    logs:               View the logs of the MiniPrem services
+    setup:              Run the Flowise chatflow setup
+    pull [--regenerate]: Pull latest MiniPrem updates from git
+    validate:           Validate custom services configuration
+    config [--custom]:  Show final merged Docker Compose config
+    custom list:        List all custom services
+    custom add [name]:  Add a new custom service interactively
 
 Options:
-    -h: usage
+    -h, --help: Show this usage information
 EOF
     echo -e $NC
     exit 1
@@ -107,6 +112,359 @@ setup_flowise() {
     bash "$PROJECT_ROOT/docker/setup-chatflow-post-deployment.sh"
 }
 
+pull_updates() {
+    log_section "Pulling Latest MiniPrem Updates"
+
+    local regenerate=false
+    if [[ "$1" == "--regenerate" ]]; then
+        regenerate=true
+    fi
+
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        fatal "Not a git repository. Cannot pull updates."
+    fi
+
+    # Check for uncommitted changes
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        warning "You have uncommitted changes. Please commit or stash them first."
+        info "Current changes:"
+        git status --short
+        fatal "Aborting pull to avoid conflicts."
+    fi
+
+    # Pull latest changes
+    info "Pulling latest changes from git..."
+    git pull
+    if [ $? -ne 0 ]; then
+        fatal "$CROSS Failed to pull updates from git."
+    fi
+    success "$CHECKMARK Successfully pulled latest updates."
+
+    # Check if custom services file exists
+    if [ -f "$PROJECT_ROOT/docker/docker-compose.custom.yml" ]; then
+        info "Custom services file detected."
+
+        if [ "$regenerate" = true ]; then
+            info "Regenerating merge with custom services..."
+            bash "$PROJECT_ROOT/docker/scripts/merge-compose.sh"
+            if [ $? -eq 0 ] || [ $? -eq 2 ]; then
+                success "$CHECKMARK Merge regenerated successfully."
+            else
+                fatal "$CROSS Failed to regenerate merge."
+            fi
+        else
+            warning "Custom services exist. Run 'pull --regenerate' to update merge."
+        fi
+    fi
+
+    # Show summary of changes
+    info "Recent changes:"
+    git log --oneline -5
+}
+
+validate_custom_services() {
+    log_section "Validating Custom Services Configuration"
+
+    # Check if custom services file exists
+    if [ ! -f "$PROJECT_ROOT/docker/docker-compose.custom.yml" ]; then
+        info "No custom services file found at docker/docker-compose.custom.yml"
+        success "$CHECKMARK No validation needed."
+        exit 0
+    fi
+
+    info "Validating custom services configuration..."
+
+    # Run merge-compose in check-only mode
+    bash "$PROJECT_ROOT/docker/scripts/merge-compose.sh" --check --verbose
+    local exit_code=$?
+
+    case $exit_code in
+        0)
+            success "$CHECKMARK Custom services configuration is valid. No conflicts detected."
+            exit 0
+            ;;
+        1)
+            error "$CROSS Validation failed. Please fix errors in docker-compose.custom.yml"
+            exit 1
+            ;;
+        2)
+            warning "Validation completed with warnings. Conflicts detected but can be resolved."
+            exit 2
+            ;;
+        *)
+            error "$CROSS Unknown validation error."
+            exit 1
+            ;;
+    esac
+}
+
+show_config() {
+    log_section "Docker Compose Configuration"
+
+    local show_custom_only=false
+    if [[ "$1" == "--custom" ]]; then
+        show_custom_only=true
+    fi
+
+    DOCKER_CMD=$(get_docker_command)
+
+    if [ "$show_custom_only" = true ]; then
+        # Show only custom services
+        if [ ! -f "$PROJECT_ROOT/docker/docker-compose.custom.yml" ]; then
+            info "No custom services file found."
+            exit 0
+        fi
+
+        info "Custom services configuration:"
+        cat "$PROJECT_ROOT/docker/docker-compose.custom.yml"
+    else
+        # Show final merged configuration
+        info "Final merged Docker Compose configuration:"
+
+        # Check if override file exists
+        if [ -f "$PROJECT_ROOT/docker/docker-compose.override.yml" ]; then
+            $DOCKER_CMD compose $COMPOSE_FILE -f "$PROJECT_ROOT/docker/docker-compose.override.yml" config
+        else
+            $DOCKER_CMD compose $COMPOSE_FILE config
+        fi
+    fi
+}
+
+list_custom_services() {
+    log_section "Custom Services"
+
+    # Check if custom services file exists
+    if [ ! -f "$PROJECT_ROOT/docker/docker-compose.custom.yml" ]; then
+        info "No custom services defined yet."
+        info "Use './miniprem.sh custom add [SERVICE_NAME]' to add a custom service."
+        exit 0
+    fi
+
+    # Get list of custom services
+    local services=$(yq eval '.services | keys | .[]' "$PROJECT_ROOT/docker/docker-compose.custom.yml" 2>/dev/null)
+
+    if [ -z "$services" ]; then
+        info "No custom services defined in docker-compose.custom.yml"
+        exit 0
+    fi
+
+    info "Custom services defined:"
+    echo ""
+
+    DOCKER_CMD=$(get_docker_command)
+
+    # Get running containers
+    local running_containers=$($DOCKER_CMD ps --format "{{.Names}}")
+
+    while IFS= read -r service; do
+        # Check if service is running
+        local status="stopped"
+        local status_color=$RED
+
+        if echo "$running_containers" | grep -q "^${service}$\|^.*[-_]${service}[-_].*$"; then
+            status="running"
+            status_color=$GREEN
+        fi
+
+        # Get service details
+        local image=$(yq eval ".services.${service}.image // \"N/A\"" "$PROJECT_ROOT/docker/docker-compose.custom.yml")
+        local ports=$(yq eval ".services.${service}.ports[]? // \"N/A\"" "$PROJECT_ROOT/docker/docker-compose.custom.yml" | tr '\n' ', ' | sed 's/,$//')
+
+        echo -e "  ${BOLD}${service}${NC}"
+        echo -e "    Status: ${status_color}${status}${NC}"
+        echo -e "    Image:  ${image}"
+        if [ "$ports" != "N/A" ] && [ -n "$ports" ]; then
+            echo -e "    Ports:  ${ports}"
+        fi
+        echo ""
+    done <<< "$services"
+}
+
+add_custom_service() {
+    log_section "Add Custom Service"
+
+    local service_name="$1"
+
+    # Interactive mode if no service name provided
+    if [ -z "$service_name" ]; then
+        echo -e "${BOLD}Available service templates:${NC}"
+        echo "  1) postgres   - PostgreSQL database"
+        echo "  2) redis      - Redis cache"
+        echo "  3) mongodb    - MongoDB database"
+        echo "  4) mysql      - MySQL database"
+        echo "  5) nginx      - Nginx web server"
+        echo "  6) custom     - Custom service (manual configuration)"
+        echo ""
+        read -p "Select a template (1-6) or press Enter to cancel: " template_choice
+
+        case $template_choice in
+            1) service_name="postgres" ;;
+            2) service_name="redis" ;;
+            3) service_name="mongodb" ;;
+            4) service_name="mysql" ;;
+            5) service_name="nginx" ;;
+            6) service_name="custom" ;;
+            *)
+                info "Cancelled."
+                exit 0
+                ;;
+        esac
+
+        # Get custom name if not using template name
+        if [ "$service_name" != "custom" ]; then
+            read -p "Service name [${service_name}]: " custom_name
+            if [ -n "$custom_name" ]; then
+                service_name="$custom_name"
+            fi
+        else
+            read -p "Enter service name: " service_name
+            if [ -z "$service_name" ]; then
+                fatal "Service name cannot be empty."
+            fi
+        fi
+    fi
+
+    # Create docker-compose.custom.yml if it doesn't exist
+    if [ ! -f "$PROJECT_ROOT/docker/docker-compose.custom.yml" ]; then
+        info "Creating new docker-compose.custom.yml..."
+        cat > "$PROJECT_ROOT/docker/docker-compose.custom.yml" << 'EOF'
+version: '3.8'
+
+services:
+EOF
+    fi
+
+    # Check if service already exists
+    if yq eval ".services.${service_name}" "$PROJECT_ROOT/docker/docker-compose.custom.yml" | grep -qv "null"; then
+        fatal "Service '${service_name}' already exists in docker-compose.custom.yml"
+    fi
+
+    # Get service template
+    local template=""
+    case $template_choice in
+        1)
+            template=$(cat << 'EOF'
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: miniprem
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - miniprem-network
+
+volumes:
+  postgres_data:
+EOF
+            )
+            ;;
+        2)
+            template=$(cat << 'EOF'
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - miniprem-network
+
+volumes:
+  redis_data:
+EOF
+            )
+            ;;
+        3)
+            template=$(cat << 'EOF'
+  mongodb:
+    image: mongo:6
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - miniprem-network
+
+volumes:
+  mongodb_data:
+EOF
+            )
+            ;;
+        4)
+            template=$(cat << 'EOF'
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: miniprem
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - miniprem-network
+
+volumes:
+  mysql_data:
+EOF
+            )
+            ;;
+        5)
+            template=$(cat << 'EOF'
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - ./nginx/html:/usr/share/nginx/html
+    networks:
+      - miniprem-network
+EOF
+            )
+            ;;
+        *)
+            template=$(cat << EOF
+  ${service_name}:
+    image: # TODO: Specify image
+    ports:
+      - "8080:80"  # TODO: Configure ports
+    environment:
+      # TODO: Add environment variables
+    networks:
+      - miniprem-network
+EOF
+            )
+            ;;
+    esac
+
+    # Replace template service name with actual service name
+    template=$(echo "$template" | sed "s/^  [a-z]*:/  ${service_name}:/")
+
+    # Append to custom file
+    echo "$template" >> "$PROJECT_ROOT/docker/docker-compose.custom.yml"
+
+    success "$CHECKMARK Service '${service_name}' added to docker-compose.custom.yml"
+
+    # Run merge
+    info "Merging custom services with official configuration..."
+    bash "$PROJECT_ROOT/docker/scripts/merge-compose.sh"
+    if [ $? -eq 0 ] || [ $? -eq 2 ]; then
+        success "$CHECKMARK Merge completed successfully."
+        info "You can now start the service with: ./miniprem.sh restart"
+    else
+        warning "Merge encountered issues. Please review docker-compose.custom.yml"
+    fi
+}
+
 # Check if the user provided an argument
 if [ -z "$1" ]; then
     usage
@@ -132,10 +490,40 @@ case "$1" in
     setup)
         setup_flowise
         ;;
+    pull)
+        pull_updates "$2"
+        ;;
+    validate)
+        validate_custom_services
+        ;;
+    config)
+        show_config "$2"
+        ;;
+    custom)
+        case "$2" in
+            list)
+                list_custom_services
+                ;;
+            add)
+                add_custom_service "$3"
+                ;;
+            *)
+                error "Unknown custom command: $2"
+                echo ""
+                echo "Usage: $0 custom [list|add]"
+                echo ""
+                echo "  list       - List all custom services"
+                echo "  add [name] - Add a new custom service"
+                exit 1
+                ;;
+        esac
+        ;;
     -h|--help)
         usage
         ;;
     *)
+        error "Unknown command: $1"
+        echo ""
         usage
         ;;
 esac

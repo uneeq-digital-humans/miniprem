@@ -16,6 +16,12 @@ docker/docker-compose.miniprem.services.yml
 docker/docker-compose.multiple.yml
 docker/docker-compose.single.yml
 
+# Generated docker-compose override files (auto-generated, not source)
+# These are created by install scripts and should not be tracked in git
+# Note: docker-compose.custom.yml and docker-compose.custom.template.yml ARE tracked
+docker/docker-compose.override.yml
+docker/docker-compose.*.override.yml
+
 # Utility scripts and files
 docker/get_eleven_labs_voices.py
 install_miniprem_updated.sh

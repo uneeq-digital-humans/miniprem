@@ -20,6 +20,8 @@
   * [Renny](guides/renny.md)
   * [RIME AI Integration](guides/rime.md)
   * [Whisper Speech Recognition](guides/whisper.md)
+  * [Custom Services](guides/custom-services.md)
+    * [Merge Compose Script](guides/merge-compose-script.md)
 * [Harbor Registry](guides/harbor-registry.md)
 * [FastWhisper GPU Setup](fastwhisper_gpu_setup.md)
 * [API Reference](api/README.md)

@@ -2017,6 +2017,175 @@ EOF
     info "Double-click 'Start MiniPrem' on your desktop to launch after reboot"
 }
 
+# Function to prompt user for custom Docker services setup
+prompt_custom_services() {
+    local template_file="$PROJECT_ROOT/docker/docker-compose.custom.template.yml"
+    local custom_file="$PROJECT_ROOT/docker/docker-compose.custom.yml"
+    local merge_script="$PROJECT_ROOT/docker/scripts/merge-compose.sh"
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  🔧 Custom Docker Services Setup"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    info "Would you like to add custom Docker services (database, cache, etc.)?"
+    echo ""
+
+    local max_retries=3
+    local attempts=0
+    local user_response=""
+
+    while [ $attempts -lt $max_retries ]; do
+        read -p "Add custom services? [y/N]: " user_response
+
+        # Default to 'no' if user just presses enter
+        if [[ -z "$user_response" ]]; then
+            user_response="n"
+        fi
+
+        case "${user_response,,}" in
+            y|yes)
+                info "Setting up custom services configuration..."
+
+                # Check if template file exists
+                if [[ ! -f "$template_file" ]]; then
+                    warning "Template file not found: $template_file"
+                    info "You can add custom services later with: ./miniprem.sh custom add"
+                    return 0
+                fi
+
+                # Copy template to custom file
+                if ! cp "$template_file" "$custom_file"; then
+                    warning "Failed to copy template file"
+                    info "You can manually copy it with: cp $template_file $custom_file"
+                    return 0
+                fi
+
+                success "$CHECKMARK Created docker-compose.custom.yml from template"
+
+                # Detect and launch editor
+                local editor="${EDITOR:-}"
+                if [[ -z "$editor" ]]; then
+                    # Try to detect available editors in order of preference
+                    if command -v code &> /dev/null; then
+                        editor="code"
+                    elif command -v nano &> /dev/null; then
+                        editor="nano"
+                    elif command -v vim &> /dev/null; then
+                        editor="vim"
+                    elif command -v vi &> /dev/null; then
+                        editor="vi"
+                    else
+                        warning "No suitable editor found. Please edit manually: $custom_file"
+                        info "You can add custom services later with: ./miniprem.sh custom add"
+                        return 0
+                    fi
+                fi
+
+                info "Opening $custom_file in $editor..."
+                info "Uncomment and modify the services you need, then save and exit."
+                echo ""
+                read -p "Press Enter to open the editor..." _
+
+                # Open editor and wait for user to finish
+                if [[ "$editor" == "code" ]]; then
+                    # VSCode: open and wait for window to close
+                    "$editor" --wait "$custom_file"
+                else
+                    # Terminal editors
+                    "$editor" "$custom_file"
+                fi
+
+                # Validate YAML syntax
+                info "Validating YAML syntax..."
+                if command -v yq &> /dev/null; then
+                    if ! yq eval '.' "$custom_file" > /dev/null 2>&1; then
+                        warning "YAML syntax validation failed"
+                        read -p "Would you like to re-edit the file? [y/N]: " reedit
+                        if [[ "${reedit,,}" =~ ^(y|yes)$ ]]; then
+                            "$editor" "$custom_file"
+                            # Re-validate after editing
+                            if ! yq eval '.' "$custom_file" > /dev/null 2>&1; then
+                                warning "YAML syntax still invalid. Skipping merge."
+                                info "Fix the YAML syntax and run: $merge_script"
+                                return 0
+                            fi
+                        else
+                            info "Fix the YAML syntax and run: $merge_script"
+                            return 0
+                        fi
+                    fi
+                    success "$CHECKMARK YAML syntax is valid"
+                else
+                    info "yq not found, skipping YAML validation"
+                    info "Install yq for validation: brew install yq (macOS)"
+                fi
+
+                # Check if merge script exists
+                if [[ ! -f "$merge_script" ]]; then
+                    warning "Merge script not found: $merge_script"
+                    info "Your custom services file has been created at: $custom_file"
+                    info "You'll need to manually integrate it with docker-compose"
+                    return 0
+                fi
+
+                # Run merge script with --check first
+                info "Checking for conflicts with official services..."
+                if "$merge_script" --check 2>&1 | grep -q "conflict"; then
+                    warning "Conflicts detected between custom and official services"
+                    echo ""
+                    "$merge_script" --check 2>&1 | grep -E "WARN|conflict"
+                    echo ""
+                    read -p "Continue with merge? Custom services will override official ones. [y/N]: " continue_merge
+                    if [[ ! "${continue_merge,,}" =~ ^(y|yes)$ ]]; then
+                        info "Skipping merge. Edit $custom_file to resolve conflicts."
+                        info "Run merge manually when ready: $merge_script"
+                        return 0
+                    fi
+                fi
+
+                # Perform the merge
+                info "Merging custom services with official configuration..."
+                if "$merge_script" --prefer-custom; then
+                    success "$CHECKMARK Custom services merged successfully"
+                    success "$CHECKMARK Generated: $PROJECT_ROOT/docker/docker-compose.override.yml"
+                    echo ""
+                    info "Your custom services have been configured!"
+                    info "Restart MiniPrem to apply changes: $PROJECT_ROOT/miniprem.sh restart"
+                else
+                    local merge_exit_code=$?
+                    if [[ $merge_exit_code -eq 2 ]]; then
+                        warning "Merge completed with conflicts (resolved automatically)"
+                        info "Review the generated file: $PROJECT_ROOT/docker/docker-compose.override.yml"
+                        info "Restart MiniPrem to apply changes: $PROJECT_ROOT/miniprem.sh restart"
+                    else
+                        warning "Merge failed. Check the error messages above."
+                        info "You can retry manually with: $merge_script"
+                        return 0
+                    fi
+                fi
+
+                return 0
+                ;;
+            n|no)
+                info "Skipping custom services setup"
+                info "You can add custom services later with: ./miniprem.sh custom add"
+                return 0
+                ;;
+            *)
+                attempts=$((attempts + 1))
+                if [ $attempts -lt $max_retries ]; then
+                    echo "Please enter 'y' or 'n'. (Attempt $attempts/$max_retries)"
+                else
+                    warning "Invalid response after $max_retries attempts. Skipping custom services."
+                    info "You can add custom services later with: ./miniprem.sh custom add"
+                    return 0
+                fi
+                ;;
+        esac
+    done
+}
+
 main() {
     print_logo
 
@@ -2288,6 +2457,9 @@ main() {
     info "- Renny service health at http://localhost:8081/health"
     info ""
     info "To stop the services, use: $PROJECT_ROOT/miniprem.sh stop"
+
+    # Prompt for custom Docker services setup
+    prompt_custom_services
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

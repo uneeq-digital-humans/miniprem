@@ -1,0 +1,107 @@
+# Example Custom Docker Compose File
+#
+# This file demonstrates how to add custom services to your MiniPrem deployment.
+# Copy this file to docker-compose.custom.yml and modify as needed.
+#
+# Usage:
+#   1. cp docker-compose.custom.yml.example docker-compose.custom.yml
+#   2. Edit docker-compose.custom.yml with your custom services
+#   3. Run: ./scripts/merge-compose.sh
+#   4. Start services: docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+#
+# The merge script will:
+#   - Add your custom services to the official compose file
+#   - Merge volumes and networks
+#   - Handle conflicts based on your chosen strategy
+#   - Generate docker-compose.override.yml
+
+name: uneeq-miniprem
+
+services:
+  # Example 1: Custom database service
+  custom-postgres:
+    image: postgres:15-alpine
+    container_name: custom-postgres
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # Example 2: Custom API service that depends on official services
+  custom-api:
+    image: node:20-alpine
+    container_name: custom-api
+    working_dir: /app
+    command: npm start
+    environment:
+      - NODE_ENV=production
+      - REDIS_URL=redis://localhost:6379
+      - API_PORT=4000
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./custom-api:/app
+      - custom_node_modules:/app/node_modules
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      - custom-postgres
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+  # Example 3: Custom monitoring service
+  custom-logger:
+    image: fluent/fluent-bit:latest
+    container_name: custom-logger
+    volumes:
+      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf
+      - /var/log:/var/log:ro
+    restart: unless-stopped
+    network_mode: host
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres_data:
+    driver: local
+  custom_node_modules:
+    driver: local
+
+networks:
+  custom_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
