@@ -27,38 +27,37 @@ MiniPrem supports two deployment architectures to match your needs:
 
 | Deployment | Best For | Setup Time | Scale | Cost |
 |-----------|----------|------------|-------|------|
-| **[Docker (Local)](/guides/getting-started.md)** | Development, demos, testing | 5-10 minutes | 1-5 instances | $100-500/mo |
-| **[Kubernetes](/guides/kubernetes-overview.md)** | Production, enterprise | 30-45 minutes | 10-20+ instances | $9,000+/mo |
+| **[Docker (Local)](guides/getting-started.md)** | Development, demos, testing | 5-10 minutes | 1-5 instances | $100-500/mo |
+| **[Kubernetes/EKS](guides/kubernetes.md)** | Production, enterprise | 30-45 minutes | 10-20+ instances | $9,000+/mo |
 
 **Start Here:**
-- **[Getting Started Guide](/guides/getting-started.md)** - Docker installation and initial setup
-- **[Kubernetes Deployment](/guides/kubernetes-overview.md)** - Production-ready multi-cloud infrastructure
-- **[Services Overview](/guides/services.md)** - Understanding MiniPrem architecture
+- **[Getting Started Guide](guides/getting-started.md)** - Docker installation and initial setup
+- **[Kubernetes/EKS Deployment](guides/kubernetes.md)** - Production-ready infrastructure with auto-scaling
+- **[Services Overview](guides/services.md)** - Understanding MiniPrem architecture
 
 ## Guides
 
 Detailed guides for each component:
 
-- **[Harbor Registry](/guides/harbor-registry.md)** - Container image registry setup and configuration
-- **[Renny Integration](/guides/renny.md)** - Digital human configuration and management
-- **[Flowise Configuration](/guides/flowise.md)** - Workflow automation setup
-- **[vLLM Integration](/guides/vllm.md)** - Large language model configuration
-- **[Monitoring Guide](/guides/monitoring.md)** - Prometheus and Grafana setup
-- **[RIME Guide](/guides/rime.md)** - Text-to-speech API integration
-- **[Whisper Guide](/guides/whisper.md)** - Speech recognition configuration
+- **[Renny Integration](guides/renny.md)** - Digital human configuration and management
+- **[Flowise Configuration](guides/flowise.md)** - Workflow automation setup
+- **[vLLM Integration](guides/vllm.md)** - Large language model configuration
+- **[Monitoring Guide](guides/monitoring.md)** - Prometheus and Grafana setup
+- **[RIME Guide](guides/rime.md)** - Text-to-speech API integration
+- **[Whisper Guide](guides/whisper.md)** - Speech recognition configuration
 
 ## API Documentation
 
 Technical API references:
 
-- **[Health Check API](/api/health.md)** - Service health monitoring endpoints
-- **[Container Logs API](/api/container-logs.md)** - Docker container log access
+- **[Health Check API](api/health.md)** - Service health monitoring endpoints
+- **[Container Logs API](api/container-logs.md)** - Docker container log access
 
 ## Troubleshooting
 
 Having issues? Check our troubleshooting resources:
 
-- **[Troubleshooting Guide](/troubleshooting.md)** - Common problems and solutions
+- **[Troubleshooting Guide](troubleshooting.md)** - Common problems and solutions
 - **Docker Issues**: Check container logs with `docker logs <container_name>`
 - **GPU Issues**: Verify GPU with `nvidia-smi`
 - **Service Issues**: Run `./miniprem.sh status` for service health
@@ -67,15 +66,15 @@ Having issues? Check our troubleshooting resources:
 
 Stay updated with the latest changes:
 
-- **[Release Notes](/announcements/)** - Version updates and new features
+- **[Release Notes](announcements/)** - Version updates and new features
 
 ---
 
 ## Additional Resources
 
-- **[Kubernetes Overview](/guides/kubernetes-overview.md)** - Multi-cloud production deployment
-- **[MiniPrem Monitor](/guides/miniprem-monitor.md)** - Real-time monitoring dashboard
-- **[Custom Services](/guides/custom-services.md)** - Adding custom Docker services
+- **[Main README](../README.md)** - Project overview and quick start
+- **[Kubernetes Deployment](../kubernetes/README.md)** - Production EKS deployment guide
+- **[MiniPrem Monitor](../miniprem-monitor/README.md)** - Real-time monitoring dashboard
 
 ## Contributing
 
@@ -89,7 +88,7 @@ For documentation improvements:
 
 ## License
 
-This documentation is part of the MiniPrem platform, licensed under the MIT License.
+This documentation is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
 
 ---
 
