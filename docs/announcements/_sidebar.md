@@ -1,8 +1,14 @@
 <!-- docs/announcements/_sidebar.md -->
 
-* [📢 Announcements](./)
-* [MiniPrem v5.6mha Upgrade](ue56-upgrade.md)
+* [← Back to Home](/)
 
 ---
 
-* [← Back to Main Documentation](../)
+* [📢 Announcements](/announcements/)
+  * [MiniPrem v5.6mha Upgrade](/announcements/ue56-upgrade.md)
+
+---
+
+* [Getting Started](/guides/getting-started.md)
+* [Services](/guides/services.md)
+* [Troubleshooting](/troubleshooting.md)

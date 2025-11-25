@@ -35,11 +35,19 @@
       name: 'MiniPrem',
       repo: 'https://gitlab.com/tgmerritt/miniprem-2025',
       loadSidebar: true,
-      subMaxLevel: 2,
+      subMaxLevel: 3,
       coverpage: true,
       auto2top: true,
       noCompile: false,
-      themeColor: '#42b983',
+      themeColor: '#F47C6A',
+      mergeNavbar: true,
+      relativePath: true,
+      alias: {
+        '/announcements/.*': '/announcements/_sidebar.md',
+        '/guides/.*': '/guides/_sidebar.md',
+        '/api/.*': '/api/_sidebar.md',
+        '/.*': '/_sidebar.md'
+      },
       plugins: [],
 
     };
