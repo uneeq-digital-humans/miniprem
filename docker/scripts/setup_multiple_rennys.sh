@@ -470,7 +470,7 @@ function generate_service_definition() {
       - HEARTBEAT_INTERVAL_SECONDS=900
       - PLATFORM=docker
       - INSTALLATION_ID_FILE=/app/data/installation_id
-    image: "facemeproduction/renny:0.758-f9e3f"
+    image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
     network_mode: "host"
     runtime: nvidia
     privileged: true
