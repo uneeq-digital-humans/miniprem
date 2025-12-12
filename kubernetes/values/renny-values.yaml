@@ -1,7 +1,7 @@
 # Renny Helm values
 # Image is pulled from UneeQ's Harbor registry (cr.uneeq.io)
 # Contact help@uneeq.com for Harbor robot account credentials
-image: "cr.uneeq.io/uneeq/renny-renderer:latest"
+image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
 
 # Image pull secret for Harbor registry authentication
 imagePullSecrets:
