@@ -1753,9 +1753,9 @@ enable_nat_ha = $CONFIGURED_NAT_HA
 dhop_tenant_id = ""  # Your DHOP tenant ID
 dhop_api_key = ""    # Your DHOP API key (base64 encoded)
 
-# Docker Hub Credentials
-docker_username = ""  # Your Docker Hub username with access to UneeQ repos
-docker_password = ""  # Your Docker Hub password
+# Harbor Registry Credentials (contact help@uneeq.com for robot account)
+harbor_username = ""  # Harbor robot username (e.g., robot$customer-name)
+harbor_password = ""  # Harbor robot password
 
 # Optional: Override default values
 # aws_region = "us-east-2"
@@ -1768,8 +1768,8 @@ EOF
         echo "Required values:"
         echo "  - dhop_tenant_id: Your DHOP tenant ID"
         echo "  - dhop_api_key: Your DHOP API key (base64 encoded)"
-        echo "  - docker_username: Docker Hub username"
-        echo "  - docker_password: Docker Hub password"
+        echo "  - harbor_username: Harbor robot username (e.g., robot\$customer-name)"
+        echo "  - harbor_password: Harbor robot password"
         exit 1
     fi
     
@@ -1780,8 +1780,8 @@ EOF
         exit 1
     fi
     
-    if grep -q 'docker_username = ""' "$TERRAFORM_DIR/terraform.tfvars" || grep -q 'docker_password = ""' "$TERRAFORM_DIR/terraform.tfvars"; then
-        echo -e "${RED}❌ terraform.tfvars contains empty Docker credentials${NC}"
+    if grep -q 'harbor_username = ""' "$TERRAFORM_DIR/terraform.tfvars" || grep -q 'harbor_password = ""' "$TERRAFORM_DIR/terraform.tfvars"; then
+        echo -e "${RED}❌ terraform.tfvars contains empty Harbor credentials${NC}"
         echo "Please fill in all required values in kubernetes/terraform/terraform.tfvars"
         exit 1
     fi
@@ -3228,12 +3228,12 @@ validate_terraform_credentials() {
         echo ""
         echo -e "${CYAN}How to fix:${NC}"
         echo ""
-        echo -e "${YELLOW}1. Docker Hub Credentials:${NC}"
-        echo "   - Your Docker Hub account must have access to UneeQ repositories"
-        echo "   - Contact UneeQ support for repository access"
+        echo -e "${YELLOW}1. Harbor Registry Credentials:${NC}"
+        echo "   - Contact help@uneeq.com to get a Harbor robot account"
+        echo "   - Robot accounts use format: robot\$customer-name"
         echo "   - Update in: $terraform_file"
-        echo "     docker_username = \"your-dockerhub-username\""
-        echo "     docker_password = \"your-dockerhub-password\""
+        echo "     harbor_username = \"robot\$your-customer-name\""
+        echo "     harbor_password = \"your-robot-password\""
         echo ""
         echo -e "${YELLOW}2. DHOP Credentials:${NC}"
         echo "   - Get from UneeQ platform or contact UneeQ support"

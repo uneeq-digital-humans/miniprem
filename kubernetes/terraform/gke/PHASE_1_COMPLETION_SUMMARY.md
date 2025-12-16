@@ -224,7 +224,7 @@ renny_min_size, renny_max_size, renny_desired_size
 
 # Application config
 dhop_url, dhop_tenant_id, dhop_api_key
-docker_username, docker_password
+harbor_username, harbor_password
 ```
 
 ### Pattern 2: Resource Labeling

@@ -32,9 +32,9 @@ dhop_url       = "wss://api.enterprise.uneeq.io:443/signalling-service"
 dhop_tenant_id = "your-dhop-tenant-id-here"  # Get from UneeQ platform
 dhop_api_key   = "your-dhop-api-key-here"    # Get from UneeQ platform
 
-# Docker Registry Credentials (REQUIRED)
-docker_username = "your-docker-username"
-docker_password = "your-docker-password"
+# Harbor Registry Credentials (REQUIRED - contact help@uneeq.com for robot account)
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-harbor-robot-password"
 
 # ESTIMATED MONTHLY COSTS (10 nodes, us-central1):
 # - GPU Nodes (10x n1-standard-16 + T4): ~$8,000

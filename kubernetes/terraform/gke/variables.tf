@@ -116,15 +116,15 @@ variable "dhop_api_key" {
   sensitive   = true
 }
 
-# Docker Registry Configuration
-variable "docker_username" {
-  description = "Docker registry username"
+# Harbor Registry Credentials (contact help@uneeq.com for robot account)
+variable "harbor_username" {
+  description = "Harbor registry robot username (e.g., robot$customer-name)"
   type        = string
   sensitive   = true
 }
 
-variable "docker_password" {
-  description = "Docker registry password"
+variable "harbor_password" {
+  description = "Harbor registry robot password"
   type        = string
   sensitive   = true
 }

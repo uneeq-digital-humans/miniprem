@@ -388,8 +388,10 @@ client_secret   = "your-client-secret"
 # Required Renny credentials
 dhop_tenant_id  = "your-uneeq-tenant-id"
 dhop_api_key    = "your-uneeq-api-key"
-docker_username = "your-dockerhub-username"
-docker_password = "your-dockerhub-password"
+
+# Harbor registry credentials (contact help@uneeq.com for robot account)
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-harbor-robot-password"
 
 # Optional: Override defaults
 azure_region = "eastus"  # Change to your preferred region

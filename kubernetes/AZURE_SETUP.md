@@ -632,8 +632,10 @@ azure_client_secret   = "super-secret-password-here"
 # Required Renny credentials
 dhop_tenant_id  = "your-uneeq-tenant-id"
 dhop_api_key    = "your-uneeq-api-key"
-docker_username = "your-dockerhub-username"
-docker_password = "your-dockerhub-password"
+
+# Harbor registry credentials (contact help@uneeq.com for robot account)
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-harbor-robot-password"
 
 # Optional: Override defaults
 azure_region = "westus3"  # Change to your preferred region
@@ -1078,8 +1080,8 @@ Before running the deployment script, ensure you have:
   - `azure_client_secret`
   - `dhop_tenant_id` (UneeQ)
   - `dhop_api_key` (UneeQ)
-  - `docker_username` (Docker Hub)
-  - `docker_password` (Docker Hub)
+  - `harbor_username` (Harbor registry robot account)
+  - `harbor_password` (Harbor registry robot password)
 - [ ] **VNet CIDR planned** (e.g., `10.20.0.0/16`)
 - [ ] **Resource group name decided** (e.g., `renny-production-eastus`)
 - [ ] **kubectl, Helm, and Terraform installed** (versions verified)

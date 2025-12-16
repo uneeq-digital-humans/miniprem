@@ -51,9 +51,9 @@ renny_desired_size = 10
 dhop_tenant_id = "your-tenant-id"
 dhop_api_key = "base64-encoded-api-key"
 
-# Docker Registry
-docker_username = "your-docker-username"
-docker_password = "your-docker-password"
+# Harbor Registry (contact help@uneeq.com for robot account)
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-harbor-robot-password"
 ```
 
 ## Usage

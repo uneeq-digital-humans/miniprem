@@ -126,10 +126,10 @@ if [[ -f "terraform.tfvars" ]]; then
         print_status "warning" "dhop_tenant_id not found in terraform.tfvars"
     fi
 
-    if grep -q 'docker_username.*=' terraform.tfvars; then
-        print_status "ok" "docker_username configured"
+    if grep -q 'harbor_username.*=' terraform.tfvars; then
+        print_status "ok" "harbor_username configured"
     else
-        print_status "warning" "docker_username not found in terraform.tfvars"
+        print_status "warning" "harbor_username not found in terraform.tfvars"
     fi
 else
     print_status "error" "terraform.tfvars not found"

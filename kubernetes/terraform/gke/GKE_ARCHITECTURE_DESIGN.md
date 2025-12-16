@@ -804,15 +804,15 @@ variable "dhop_api_key" {
   sensitive   = true
 }
 
-# Docker Registry Credentials
-variable "docker_username" {
-  description = "Docker Hub username with access to UneeQ repositories"
+# Harbor Registry Credentials (contact help@uneeq.com for robot account)
+variable "harbor_username" {
+  description = "Harbor registry robot username (e.g., robot$customer-name)"
   type        = string
   sensitive   = true
 }
 
-variable "docker_password" {
-  description = "Docker Hub password or Personal Access Token"
+variable "harbor_password" {
+  description = "Harbor registry robot password"
   type        = string
   sensitive   = true
 }

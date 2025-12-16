@@ -50,7 +50,7 @@ kubernetes/terraform/gke/
 | Cloud identifier | `{cloud}_*` | `gcp_project_id`, `gcp_region` |
 | Network ranges | `*_cidr` | `subnet_cidr`, `pods_cidr`, `service_cidr` |
 | Node sizing | `renny_*` | `renny_min_size`, `renny_max_size`, `renny_desired_size` |
-| Application config | `dhop_*`, `docker_*` | `dhop_url`, `docker_username` |
+| Application config | `dhop_*`, `harbor_*` | `dhop_url`, `harbor_username` |
 | Common metadata | `project_name`, `environment`, `deployment_id` | Consistent across clouds |
 
 **GKE-Specific Variables**:
@@ -159,15 +159,15 @@ variable "dhop_api_key" {
   sensitive   = true
 }
 
-# Docker registry - sensitive in all clouds
-variable "docker_username" {
-  description = "Docker Hub username with access to UneeQ repositories"
+# Harbor registry - sensitive in all clouds (contact help@uneeq.com for robot account)
+variable "harbor_username" {
+  description = "Harbor registry robot username (e.g., robot$customer-name)"
   type        = string
   sensitive   = true
 }
 
-variable "docker_password" {
-  description = "Docker Hub password or Personal Access Token"
+variable "harbor_password" {
+  description = "Harbor registry robot password"
   type        = string
   sensitive   = true
 }
@@ -1144,15 +1144,15 @@ variable "dhop_api_key" {
   sensitive   = true
 }
 
-# Docker Registry Credentials
-variable "docker_username" {
-  description = "Docker Hub username with access to UneeQ repositories"
+# Harbor Registry Credentials (contact help@uneeq.com for robot account)
+variable "harbor_username" {
+  description = "Harbor registry robot username (e.g., robot$customer-name)"
   type        = string
   sensitive   = true
 }
 
-variable "docker_password" {
-  description = "Docker Hub password or Personal Access Token"
+variable "harbor_password" {
+  description = "Harbor registry robot password"
   type        = string
   sensitive   = true
 }
@@ -1353,12 +1353,12 @@ dhop_tenant_id = "YOUR_DHOP_TENANT_ID"    # UUID format
 dhop_api_key   = "YOUR_DHOP_API_KEY"      # Base64 encoded
 
 # ============================================================================
-# Docker Registry Credentials
+# Harbor Registry Credentials
 # ============================================================================
 
-# Docker Hub credentials for UneeQ repositories
-docker_username = "YOUR_DOCKER_USERNAME"
-docker_password = "YOUR_DOCKER_PASSWORD_OR_PAT"
+# Harbor registry credentials (contact help@uneeq.com for robot account)
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-robot-password"
 
 # ============================================================================
 # Cost Estimate (based on default values)

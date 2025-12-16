@@ -208,8 +208,10 @@ Create `kubernetes/terraform/terraform.tfvars`:
 # Required credentials
 dhop_tenant_id  = "your-tenant-id"
 dhop_api_key    = "your-api-key"  # Plain text API key
-docker_username = "your-dockerhub-username"
-docker_password = "your-dockerhub-password"
+
+# Harbor registry credentials (contact help@uneeq.com for robot account)
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-harbor-robot-password"
 
 # Optional: Override defaults
 aws_region = "us-east-2"  # Change to your preferred region

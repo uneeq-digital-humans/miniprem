@@ -75,9 +75,9 @@ azure_subscription_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 dhop_tenant_id = "your-tenant-id"
 dhop_api_key   = "your-api-key"
 
-# Docker Hub credentials (must have UneeQ repository access)
-docker_username = "your-docker-username"
-docker_password = "your-docker-password"
+# Harbor registry credentials (contact help@uneeq.com for robot account)
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-harbor-robot-password"
 ```
 
 ### 2. Optional Configuration

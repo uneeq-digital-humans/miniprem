@@ -5,10 +5,11 @@
 dhop_tenant_id = "YOUR_DHOP_TENANT_ID"                                                 # e.g., "361b9233-8c52-42fc-90f1-70ba93eba281"
 dhop_api_key   = "YOUR_DHOP_API_KEY" # Must be base64 encoded
 
-# REQUIRED: Docker Hub Credentials
-# Your Docker Hub account must have access to UneeQ repositories
-docker_username = "YOUR_DOCKER_USERNAME"
-docker_password = "YOUR_DOCKER_PASSWORD"
+# REQUIRED: Harbor Registry Credentials (Robot Account)
+# Contact help@uneeq.com to obtain Harbor robot account credentials
+# Robot account format: robot$customer-name
+harbor_username = "robot$your-customer-name"
+harbor_password = "your-harbor-robot-password"
 
 # OPTIONAL: Override default values
 # Uncomment and modify as needed
