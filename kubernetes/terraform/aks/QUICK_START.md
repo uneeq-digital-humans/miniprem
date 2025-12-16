@@ -31,8 +31,10 @@ vim terraform.tfvars
 azure_subscription_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 dhop_tenant_id        = "your-tenant-id"
 dhop_api_key          = "your-api-key"
-docker_username       = "your-docker-username"
-docker_password       = "your-docker-password"
+
+# Harbor registry credentials (contact help@uneeq.com for robot account)
+harbor_username       = "robot$your-customer-name"
+harbor_password       = "your-robot-password"
 ```
 
 ## Deployment
@@ -82,12 +84,12 @@ kubectl exec -n gpu-operator \
 # 1. Create namespace
 kubectl create namespace uneeq-renderer
 
-# 2. Create Docker secret
-kubectl create secret docker-registry dockerhub-secret \
+# 2. Create Harbor registry secret
+kubectl create secret docker-registry harbor-credentials \
   --namespace uneeq-renderer \
-  --docker-server=docker.io \
-  --docker-username=$(terraform output -raw docker_username) \
-  --docker-password=$(terraform output -raw docker_password)
+  --docker-server=https://cr.uneeq.io \
+  --docker-username=$(terraform output -raw harbor_username) \
+  --docker-password=$(terraform output -raw harbor_password)
 
 # 3. Deploy Renny
 kubectl apply -f ../manifests/renny/

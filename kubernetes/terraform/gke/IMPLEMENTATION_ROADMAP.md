@@ -205,7 +205,7 @@ kubernetes/manifests/gke/
 ├── namespace/
 │   └── uneeq-renderer.yaml
 ├── secrets/
-│   ├── docker-registry-secret.yaml
+│   ├── harbor-credentials-secret.yaml
 │   └── dhop-credentials-secret.yaml
 ├── gpu-operator/ (optional)
 │   ├── namespace.yaml
@@ -232,12 +232,12 @@ metadata:
     workload: digital-human
 ```
 
-**2. Docker Registry Secret**
+**2. Harbor Registry Secret**
 ```bash
-kubectl create secret docker-registry uneeq-registry \
-  --docker-server=docker.io \
-  --docker-username=$DOCKER_USERNAME \
-  --docker-password=$DOCKER_PASSWORD \
+kubectl create secret docker-registry harbor-credentials \
+  --docker-server=https://cr.uneeq.io \
+  --docker-username=$HARBOR_USERNAME \
+  --docker-password=$HARBOR_PASSWORD \
   --namespace=uneeq-renderer
 ```
 

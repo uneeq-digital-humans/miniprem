@@ -241,12 +241,12 @@ aks-system-12345678-vmss000000     <none>           <none>
 # Create namespace
 kubectl create namespace uneeq-renderer
 
-# Create Docker registry secret
-kubectl create secret docker-registry dockerhub-secret \
+# Create Harbor registry secret
+kubectl create secret docker-registry harbor-credentials \
   --namespace uneeq-renderer \
-  --docker-server=docker.io \
-  --docker-username=$(terraform output -raw docker_username) \
-  --docker-password=$(terraform output -raw docker_password)
+  --docker-server=https://cr.uneeq.io \
+  --docker-username=$(terraform output -raw harbor_username) \
+  --docker-password=$(terraform output -raw harbor_password)
 
 # Apply Renny manifests
 kubectl apply -f ../manifests/renny/

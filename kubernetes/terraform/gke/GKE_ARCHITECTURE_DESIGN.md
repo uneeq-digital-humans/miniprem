@@ -1683,11 +1683,11 @@ rules:
 
 **Kubernetes Secrets:**
 ```bash
-# Create Docker registry secret
-kubectl create secret docker-registry uneeq-registry \
-  --docker-server=docker.io \
-  --docker-username=USERNAME \
-  --docker-password=PASSWORD \
+# Create Harbor registry secret
+kubectl create secret docker-registry harbor-credentials \
+  --docker-server=https://cr.uneeq.io \
+  --docker-username=HARBOR_ROBOT_USERNAME \
+  --docker-password=HARBOR_ROBOT_PASSWORD \
   --namespace=uneeq-renderer
 
 # Create DHOP credentials secret
