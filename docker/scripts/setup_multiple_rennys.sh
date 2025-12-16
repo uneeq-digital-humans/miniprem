@@ -152,6 +152,46 @@ function validate_installation() {
         fatal "Environment file not found: $DOCKER_DIR/docker-compose.env"
     fi
     success "Environment file: docker-compose.env"
+
+    # Validate API key configuration
+    validate_api_key
+}
+
+################################################################################
+# Function: validate_api_key
+# Description: Verify DHOP API key is properly configured (not placeholder)
+################################################################################
+function validate_api_key() {
+    local env_file="$DOCKER_DIR/docker-compose.env"
+    local api_key=$(grep "^DHOP_APIKEY=" "$env_file" | cut -d'=' -f2)
+    local tenant_id=$(grep "^DHOP_TENANTID=" "$env_file" | cut -d'=' -f2)
+
+    # Check if API key is missing or set to placeholder value
+    if [ -z "$api_key" ] || [ "$api_key" = "123" ]; then
+        echo ""
+        error "UneeQ Platform API key is not configured!"
+        echo ""
+        echo "The DHOP_APIKEY in docker-compose.env is set to a placeholder value."
+        echo "This will cause Renny containers to fail silently when connecting to the platform."
+        echo ""
+        echo "To fix this, either:"
+        echo "  1. Run the installation script: ./docker/scripts/install_miniprem.sh"
+        echo "  2. Manually edit docker/docker-compose.env and set DHOP_APIKEY to your API key"
+        echo ""
+        fatal "Please configure your UneeQ API key before setting up multiple Renny instances."
+    fi
+
+    # Check if tenant ID is missing or set to placeholder
+    if [ -z "$tenant_id" ] || [ "$tenant_id" = "123" ]; then
+        echo ""
+        error "UneeQ Tenant ID is not configured!"
+        echo ""
+        echo "The DHOP_TENANTID in docker-compose.env is set to a placeholder value."
+        echo ""
+        fatal "Please configure your UneeQ Tenant ID before setting up multiple Renny instances."
+    fi
+
+    success "UneeQ API credentials: configured"
 }
 
 ################################################################################
