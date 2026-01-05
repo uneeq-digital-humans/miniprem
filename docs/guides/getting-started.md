@@ -65,7 +65,7 @@ You'll need the following information during installation:
 | Renny Image           | Docker image for Renny digital human        | facemeproduction/renny:latest                |
 | RIME API Key          | Docker image for RIME text-to-speech        | your_rime_api_key                            |
 | Huggingface Token     | Token for access to Huggingface             | your_huggingface_token                       |
-| UneeQ Docker Hub Token | Token for access to UneeQ's image repo     | your_personal_access_token                   |
+| UneeQ Harbor Token | Token for access to UneeQ's image repo     | your_personal_access_token                   |
 
 ### 4. Verify Installation
 

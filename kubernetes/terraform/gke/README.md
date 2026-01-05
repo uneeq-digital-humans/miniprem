@@ -181,7 +181,7 @@ Total: ~830 lines of Terraform code
 ### Credentials
 
 - UneeQ DHOP credentials (tenant ID, API key)
-- Docker Hub credentials (for Renny image)
+- Harbor credentials (for Renny image)
 - Azure Speech API key (for TTS)
 - ElevenLabs API key (optional)
 

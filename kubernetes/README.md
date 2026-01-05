@@ -102,7 +102,7 @@ See [MULTI_CLOUD_GUIDE.md](./MULTI_CLOUD_GUIDE.md) for detailed comparison.
 3. **Terraform** >= 1.0 (see installation below)
 4. **kubectl** >= 1.28
 5. **Helm** >= 3.0
-6. **Docker Hub** account with access to UneeQ repositories
+6. **Harbor** account with access to UneeQ repositories
 7. **Renny Helm chart** (renny-chart.tar file)
 
 #### Install Required Tools
@@ -1552,7 +1552,7 @@ kubectl exec -n gpu-operator $(kubectl get pods -n gpu-operator -l app=nvidia-dr
 | `kernel headers not found` | Missing development packages | `apt install linux-headers-$(uname -r)` |
 | `GLIBC version too old` | Ubuntu version incompatible | Ensure Ubuntu 22.04+ |
 | `nvidia driver compilation failed` | System requirements | Check all prerequisites above |
-| `ImagePullBackOff` on driver pods | Network/registry issues | Check Docker Hub credentials |
+| `ImagePullBackOff` on driver pods | Network/registry issues | Check Harbor credentials |
 
 #### **GPU Operator General Issues**
 ```bash

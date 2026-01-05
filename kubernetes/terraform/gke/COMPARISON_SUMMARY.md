@@ -451,7 +451,7 @@ google_service_account
 ### Data Migration Considerations
 
 **Same for All Migrations**:
-- [ ] Container images (can use same Docker Hub registry)
+- [ ] Container images (can use same Harbor registry)
 - [ ] Application configuration (Helm values)
 - [ ] Secrets (re-create in new cluster)
 - [ ] Persistent data (no PVs in Renny deployment)

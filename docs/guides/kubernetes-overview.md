@@ -157,7 +157,7 @@ All cloud providers require:
 
 3. **Credentials:**
    - UneeQ tenant ID and API key
-   - Docker Hub credentials
+   - Harbor credentials
    - Cloud provider credentials
 
 ### Deployment Commands

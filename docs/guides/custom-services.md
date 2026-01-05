@@ -1063,7 +1063,7 @@ docker inspect my-service               # Detailed info
    ```bash
    docker compose logs my-service | grep -i "error\|failed"
    ```
-   **Solution:** Check image name, Docker Hub authentication
+   **Solution:** Check image name, Harbor authentication
 
 4. **Health check failure**
    ```bash

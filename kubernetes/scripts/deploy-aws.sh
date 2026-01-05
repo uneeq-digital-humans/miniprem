@@ -1488,14 +1488,14 @@ validate_network_config() {
 test_external_dependencies() {
     echo "🔗 Testing external service connectivity..."
     
-    # Test Docker Hub connectivity
-    echo "Testing Docker Hub connectivity..."
-    if ! curl -s --connect-timeout 10 https://index.docker.io/v2/ > /dev/null; then
-        echo -e "${RED}❌ Cannot reach Docker Hub (https://index.docker.io)${NC}"
+    # Test Harbor connectivity
+    echo "Testing Harbor connectivity..."
+    if ! curl -s --connect-timeout 10 https://cr.uneeq.io/v2/ > /dev/null; then
+        echo -e "${RED}❌ Cannot reach Harbor (https://cr.uneeq.io)${NC}"
         echo "Check your internet connection and firewall settings"
         exit 1
     fi
-    debug_log "✅ Docker Hub connectivity verified"
+    debug_log "✅ Harbor connectivity verified"
     
     # Test AWS API connectivity
     echo "Testing AWS API connectivity..."
@@ -2157,8 +2157,8 @@ _check_registry_http() {
             # Kubernetes registry check (limited public access)
             return 1
             ;;
-        "docker.io"*)
-            # Docker Hub requires more complex authentication
+        "cr.uneeq.io"*)
+            # Harbor requires more complex authentication
             return 1
             ;;
     esac
@@ -3223,7 +3223,7 @@ validate_terraform_credentials() {
         echo -e "${YELLOW}⚠️  WARNING: Critical credentials are missing or using placeholder values${NC}"
         echo ""
         echo -e "${CYAN}What will fail:${NC}"
-        echo "  • Docker Hub: Image pull failures (cannot download Renny containers)"
+        echo "  • Harbor: Image pull failures (cannot download Renny containers)"
         echo "  • DHOP: Renny connection failures (cannot connect to UneeQ platform)"
         echo ""
         echo -e "${CYAN}How to fix:${NC}"

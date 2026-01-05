@@ -59,7 +59,7 @@ Successfully implemented complete Azure Kubernetes Service (AKS) Terraform infra
 - Service: 10.117.0.0/16 (internal ClusterIP services)
 
 **NAT Gateway**: Outbound internet for private nodes
-- Container image pulls (Docker Hub, ACR)
+- Container image pulls (Harbor, ACR)
 - Kubernetes API calls
 - External services (UneeQ DHOP)
 

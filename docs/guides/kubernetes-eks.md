@@ -116,7 +116,7 @@ Total GPU Utilization: ~60% (optimal cost/performance)
 3. **Terraform** >= 1.0
 4. **kubectl** (Kubernetes CLI)
 5. **Helm** >= 3.0 (Kubernetes package manager)
-6. **Docker Hub** account with access to UneeQ repositories
+6. **Harbor** account with access to UneeQ repositories
 7. **Renny Helm chart** (renny-chart.tgz file)
 
 ### macOS-Specific Requirement

@@ -47,7 +47,7 @@ resource "azurerm_public_ip" "nat" {
 # NAT Gateway
 # Provides secure outbound internet access for nodes
 # Required for:
-#   - Pulling container images from Docker Hub/ACR
+#   - Pulling container images from Harbor/ACR
 #   - Kubernetes API calls
 #   - External service communication (UneeQ DHOP, etc.)
 resource "azurerm_nat_gateway" "main" {

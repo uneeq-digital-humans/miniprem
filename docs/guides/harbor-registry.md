@@ -28,7 +28,7 @@ UneeQ hosts container images for MiniPrem and Renny digital human renderer on a 
 **Cost Optimization**
 - Reduced bandwidth costs through private registry hosting
 - Efficient image layer caching and storage
-- No public Docker Hub rate limiting or pulling costs
+- No Harbor rate limiting or pulling costs
 
 **Enhanced Security**
 - Centralized credential management

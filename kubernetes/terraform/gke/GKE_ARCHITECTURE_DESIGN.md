@@ -1028,7 +1028,7 @@ Provisioned: /16 = 65,536 IPs (headroom for future scaling)
 **Purpose**: Outbound internet access for private nodes
 
 **Requirements:**
-- Container image pulls (Docker Hub, GCR, Artifact Registry)
+- Container image pulls (Harbor, GCR, Artifact Registry)
 - External API calls (UneeQ DHOP WebSocket)
 - Software updates and package downloads
 
