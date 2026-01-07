@@ -244,7 +244,12 @@ pull_docker_images() {
         fatal "Please contact UneeQ Support for further assistance."
     fi
     success "$CHECKMARK Successfully logged in to Harbor registry."
-    
+
+    # Save credentials for future use (e.g., after reboot)
+    update_env_variable "HARBOR_USERNAME" "$HARBOR_USERNAME"
+    update_env_variable "HARBOR_PASSWORD" "$HARBOR_PASSWORD"
+    success "$CHECKMARK Harbor credentials saved for future sessions"
+
     # Pull images for the selected install type
     info "Pulling Docker images for selected install type..."
     {
