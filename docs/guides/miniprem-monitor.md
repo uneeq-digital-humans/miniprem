@@ -383,3 +383,26 @@ For issues or questions:
 2. Review container logs: `docker logs miniprem-monitor`
 3. See [MiniPrem Monitor README](../../miniprem-monitor/README.md) for detailed troubleshooting
 4. Contact UneeQ support with logs and error messages
+
+---
+
+## License
+
+The MiniPrem documentation and installation scripts are open source under the MIT License - see the [LICENSE](../../LICENSE) file for details. Note: The Renny digital human application itself is commercially licensed by UneeQ and is not covered by this license.
+
+---
+
+## Copyright
+
+<div align="center">
+
+**© 2025 UneeQ. All rights reserved.**
+
+<img src="../images/logos/logo-horizontal-color.png" alt="UneeQ Logo" class="logo-light-mode" />
+<img src="../images/logos/logo-white.png" alt="UneeQ Logo" class="logo-dark-mode" />
+
+**Digital Humans. Unlimited Possibilities.**
+
+[www.digitalhumans.com](https://www.digitalhumans.com) | [support@digitalhumans.com](mailto:support@digitalhumans.com)
+
+</div>

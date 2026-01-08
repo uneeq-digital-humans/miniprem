@@ -5,6 +5,7 @@
 ---
 
 * [Getting Started](/guides/getting-started.md)
+* [First Steps](/guides/first-steps.md)
 
 * **Deployment Options**
   * [Docker (Local)](/guides/docker-deployment.md)
@@ -14,8 +15,7 @@
     * [Azure AKS Deployment](/guides/kubernetes-aks.md)
     * [Multi-Cloud Comparison](/guides/kubernetes-multi-cloud.md)
 
-* **Services**
-  * [Services Overview](/guides/services.md)
+* [Services](/guides/services.md)
   * [MiniPrem Monitor](/guides/miniprem-monitor.md)
   * [Flowise](/guides/flowise.md)
   * [vLLM](/guides/vllm.md)
@@ -24,8 +24,7 @@
   * [RIME AI Integration](/guides/rime.md)
   * [Whisper Speech Recognition](/guides/whisper.md)
 
-* **Custom Services**
-  * [Custom Services Overview](/guides/custom-services.md)
+* [Custom Services](/guides/custom-services.md)
   * [Merge Compose Script](/guides/merge-compose-script.md)
 
 * [Harbor Registry](/guides/harbor-registry.md)

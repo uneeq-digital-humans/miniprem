@@ -119,11 +119,13 @@ Once your MiniPrem platform is up and running, proceed to:
 2. [Monitor Performance](https://miniprem-2025-6da807.gitlab.io/#/guides/monitoring) using Grafana dashboards
 3. [Customize Renny](https://miniprem-2025-6da807.gitlab.io/#/guides/renny) for your specific use case
 
+**Having issues?** Check out [First Steps](first-steps.md) for a beginner-friendly guide to diagnosing problems before contacting support.
+
 ---
 
 ## License
 
-This guide is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+The MiniPrem documentation and installation scripts are open source under the MIT License - see the [LICENSE](../../LICENSE) file for details. Note: The Renny digital human application itself is commercially licensed by UneeQ and is not covered by this license.
 
 ---
 

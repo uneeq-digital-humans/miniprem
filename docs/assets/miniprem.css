@@ -899,6 +899,17 @@ pre, code {
   border-right-color: var(--uneeq-accent-blue-dark);
 }
 
+/* Copyright section styling - ensure visibility in dark mode */
+.markdown-section div[align="center"] strong,
+.markdown-section div[align="center"] b {
+  color: inherit;
+}
+
+.dark .markdown-section div[align="center"] strong,
+.dark .markdown-section div[align="center"] b {
+  color: var(--dark-text-primary) !important;
+}
+
 /* Dark Mode MiniPrem Components */
 .dark .api-endpoint,
 .dark .terminal-container,
