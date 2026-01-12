@@ -1,0 +1,1 @@
+"""PDF styling resources."""

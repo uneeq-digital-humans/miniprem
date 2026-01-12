@@ -39,6 +39,8 @@ fresh_installation_steps.md
 docs/translate_docs.py
 docs/requirements.txt
 docs/venv
+docs/*.pdf
+docs/*.debug.html
 
 docker/fast-whisper/voice-input.sh
 temp_venv/

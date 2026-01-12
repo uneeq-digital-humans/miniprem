@@ -15,7 +15,6 @@
 - [Guides](#guides)
 - [API Documentation](#api-documentation)
 - [Troubleshooting](#troubleshooting)
-- [Announcements](#announcements)
 
 ## Getting Started
 
@@ -61,14 +60,6 @@ Having issues? Check our troubleshooting resources:
 - **Docker Issues**: Check container logs with `docker logs <container_name>`
 - **GPU Issues**: Verify GPU with `nvidia-smi`
 - **Service Issues**: Run `./miniprem.sh status` for service health
-
-## Announcements
-
-Stay updated with the latest changes:
-
-- **[Release Notes](announcements/)** - Version updates and new features
-
----
 
 ## Additional Resources
 

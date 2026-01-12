@@ -1,0 +1,10 @@
+# MiniPrem PDF Generator Dependencies
+# Install system dependencies first:
+#   macOS: brew install pango cairo libffi gdk-pixbuf
+#   Ubuntu: apt-get install -y libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 libffi-dev
+
+weasyprint>=60.0      # HTML/CSS to PDF rendering
+markdown>=3.5         # Markdown parsing
+Pygments>=2.17        # Syntax highlighting for code blocks
+Jinja2>=3.1           # HTML templating
+python-dateutil>=2.8  # Date formatting utilities
