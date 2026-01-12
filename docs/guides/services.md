@@ -130,7 +130,7 @@ These health checks are used to coordinate service startup dependencies.
 
 ## License
 
-This guide is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../../LICENSE) file for details.
+The MiniPrem documentation and installation scripts are open source under the MIT License - see the [LICENSE](../../LICENSE) file for details. Note: The Renny digital human application itself is commercially licensed by UneeQ and is not covered by this license.
 
 ---
 

@@ -1,9 +1,8 @@
 <!-- docs/_sidebar.md -->
 
 * [Home](/)
-* [📢 Announcements](announcements/)
-  * [MiniPrem v5.6mha Upgrade](announcements/ue56-upgrade.md)
 * [Getting Started](guides/getting-started.md)
+* [First Steps](guides/first-steps.md)
 * [Deployment Options](#)
   * [Docker (Local)](guides/docker-deployment.md)
     * [Multiple Rennys](guides/README_SETUP_MULTIPLE.md)
@@ -36,4 +35,6 @@
   * [Design System](DESIGN_SYSTEM.md)
   * [Metrics Dashboard Setup](METRICS_DASHBOARD_SETUP.md)
   * [Identifiers Cheatsheet](IDENTIFIERS_CHEATSHEET.md)
+* [Utilities](#)
+  * [PDF Documentation Generator](guides/pdf-generator.md)
 * [Troubleshooting](troubleshooting.md)

@@ -9,6 +9,8 @@
 
 </div>
 
+> **New to troubleshooting?** Start with our [First Steps](guides/first-steps.md) guide - a beginner-friendly walkthrough for gathering diagnostic information before contacting support.
+
 ## Table of Contents
 
 - [General Troubleshooting Steps](#general-troubleshooting-steps)
@@ -332,7 +334,7 @@ If you want to add more services or change your install type, re-run the install
 
 ## License
 
-This troubleshooting guide is part of the MiniPrem platform, licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
+The MiniPrem documentation and installation scripts are open source under the MIT License - see the [LICENSE](../LICENSE) file for details. Note: The Renny digital human application itself is commercially licensed by UneeQ and is not covered by this license.
 
 ---
 
