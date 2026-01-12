@@ -32,4 +32,6 @@
 ---
 
 * [API Reference](/api/)
+* **Utilities**
+  * [PDF Documentation Generator](/guides/pdf-generator.md)
 * [Troubleshooting](/troubleshooting.md)

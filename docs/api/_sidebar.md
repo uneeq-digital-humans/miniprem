@@ -19,4 +19,6 @@
 ---
 
 * [Services](/guides/services.md)
+* **Utilities**
+  * [PDF Documentation Generator](/guides/pdf-generator.md)
 * [Troubleshooting](/troubleshooting.md)
