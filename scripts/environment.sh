@@ -11,16 +11,23 @@ read_env_variable() {
     if [ -f "$env_file" ]; then
         value=$(grep "^${var_name}=" "$env_file" | cut -d '=' -f 2-)
         value=$(echo "$value" | sed 's/^"//;s/"$//') # Remove surrounding quotes if any
+        # Unescape $$ back to $ (Docker Compose escaping for literal $)
+        value="${value//\$\$/\$}"
     fi
 
     echo "$value"
 }
 
 # Function to update an environment variable in the .env file
+# Escapes $ as $$ for Docker Compose compatibility (literal $ characters)
 update_env_variable() {
     local var_name="$1"
     local new_value="$2"
     local env_file="docker/docker-compose.env"
+
+    # Escape $ as $$ for Docker Compose .env file compatibility
+    # Harbor robot usernames contain $ (e.g., robot$customer-name)
+    local escaped_value="${new_value//\$/\$\$}"
 
     # Ensure the file exists
     if [[ ! -f "$env_file" ]]; then
@@ -38,10 +45,10 @@ update_env_variable() {
 
     if grep -q "^${var_name}=" "$env_file"; then
         # Update the existing variable
-        sed -i "s|^${var_name}=.*|${var_name}=${new_value}|" "$env_file"
+        sed -i "s|^${var_name}=.*|${var_name}=${escaped_value}|" "$env_file"
     else
         # Add the variable if it does not exist
-        echo "${var_name}=${new_value}" >> "$env_file"
+        echo "${var_name}=${escaped_value}" >> "$env_file"
     fi
 }
 
