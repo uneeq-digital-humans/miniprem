@@ -6,6 +6,7 @@ cd "$(dirname "$0")" || { echo "Failed to change directory to script location"; 
 # Source the scripts
 source scripts/logging.sh
 source scripts/docker.sh
+source scripts/environment.sh
 
 # Add this line after changing to the script's directory
 PROJECT_ROOT=$(pwd)
@@ -53,6 +54,12 @@ EOF
 
 start_services() {
     log_section "Starting MiniPrem Services"
+
+    # Ensure Harbor credentials are available (will prompt if needed)
+    if ! ensure_harbor_credentials; then
+        fatal "Cannot start services without valid Harbor credentials"
+    fi
+
     start_docker_compose "$COMPOSE_FILE"
 }
 
