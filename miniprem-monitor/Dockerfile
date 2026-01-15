@@ -43,7 +43,7 @@ RUN apt-get update && apt-get install -y \
 # Install Docker CLI (static binary for cross-platform compatibility)
 RUN ARCH=$(uname -m) && \
     if [ "$ARCH" = "x86_64" ]; then ARCH="x86_64"; elif [ "$ARCH" = "aarch64" ]; then ARCH="aarch64"; fi && \
-    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-24.0.7.tgz" -o docker.tgz && \
+    curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-27.4.1.tgz" -o docker.tgz && \
     tar xzf docker.tgz && \
     mv docker/docker /usr/local/bin/ && \
     rm -rf docker docker.tgz && \
