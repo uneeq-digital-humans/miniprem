@@ -17,7 +17,7 @@ services:
       # Kubernetes config for cluster monitoring (optional)
       - ~/.kube:/root/.kube:ro
       # Installation ID for telemetry (optional, created during install)
-      - /tmp/miniprem_installation_id:/app/data/installation_id:ro
+      - /var/lib/miniprem/installation_id:/app/data/installation_id:ro
       # Telemetry state directory (persistent across restarts)
       - /tmp/miniprem_telemetry_state:/app/telemetry_state
     restart: unless-stopped
@@ -64,7 +64,7 @@ services:
       - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
       - ./renny-entrypoint.sh:/opt/renny/renny-entrypoint.sh:ro
       - ./renny-telemetry-client.sh:/opt/renny/telemetry-client.sh:ro
-      - /tmp/miniprem_installation_id:/app/data/installation_id
+      - /var/lib/miniprem/installation_id:/app/data/installation_id
       - /tmp/miniprem_telemetry_state:/app/telemetry_state
     healthcheck:
       test: "curl -f http://localhost:8081/health"

@@ -131,7 +131,7 @@ Under privacy regulations (GDPR, CCPA), you have the right to:
 To exercise these rights:
 
 1. Email: [privacy@uneeq.io](mailto:privacy@uneeq.io)
-2. Include: Your installation ID (found in `/tmp/miniprem_installation_id`)
+2. Include: Your installation ID (found in `/var/lib/miniprem/installation_id`)
 3. Specify: Export or deletion request
 
 We will respond within 30 days.

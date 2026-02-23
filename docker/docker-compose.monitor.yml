@@ -25,7 +25,7 @@ services:
       # AWS credentials for EKS authentication (optional)
       - ~/.aws:/root/.aws:ro
       # Installation ID for telemetry (optional, created during install)
-      - /tmp/miniprem_installation_id:/app/data/installation_id:ro
+      - /var/lib/miniprem/installation_id:/app/data/installation_id:ro
       # Telemetry state directory (persistent across restarts)
       - /tmp/miniprem_telemetry_state:/app/telemetry_state
     restart: unless-stopped
