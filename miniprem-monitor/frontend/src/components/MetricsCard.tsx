@@ -169,13 +169,26 @@ export function MetricsCard({ metrics, loading, onMetricClick }: MetricsCardProp
         }}
         data-testid="gpu-metrics-card"
       >
-        <div>
+        <div className="flex-1">
           <div className="metric-label" data-testid="gpu-label">
-            {hasGpus ? `GPU ${gpus.length > 1 ? `(${gpus.length})` : ''}` : 'GPU'}
+            {hasGpus ? `GPU${gpus.length > 1 ? ` (${gpus.length})` : ''}` : 'GPU'}
           </div>
-          {hasGpus && avgGpuTemp !== null ? (
-            <div className="metric-value text-uneeq-orange" data-testid="gpu-value">
-              {avgGpuTemp.toFixed(1)}°C
+          {hasGpus ? (
+            <div className="flex flex-col gap-0.5" data-testid="gpu-values">
+              {gpus.slice(0, 4).map((gpu, idx) => (
+                <div key={idx} className="flex items-center justify-between text-xs" data-testid={`gpu-${idx}-stats`}>
+                  <span className={`font-semibold ${getUsageColor(gpu.utilization_percent || 0)}`}>
+                    {gpu.utilization_percent !== null && gpu.utilization_percent !== undefined
+                      ? `${gpu.utilization_percent.toFixed(0)}%`
+                      : 'N/A'}
+                  </span>
+                  <span className="text-gray-500 dark:text-gray-400 ml-2">
+                    {gpu.temperature_celsius !== null && gpu.temperature_celsius !== undefined
+                      ? `${gpu.temperature_celsius.toFixed(0)}°C`
+                      : ''}
+                  </span>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="text-sm text-gray-500 dark:text-gray-400" data-testid="gpu-value-na">

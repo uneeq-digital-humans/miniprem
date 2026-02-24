@@ -15,8 +15,9 @@ PLATFORM="${PLATFORM:-docker-ubuntu}"
 DEPLOYMENT_ID="${DEPLOYMENT_ID:-}"
 VERSION="${VERSION:-renny-0.713}"  # Default version if not provided
 
-# Installation ID persistence
-INSTALLATION_ID_FILE="${INSTALLATION_ID_FILE:-/tmp/miniprem_installation_id}"
+# Installation ID persistence (mounted from /var/lib/miniprem/installation_id on host for Docker,
+# or generated at runtime for Kubernetes pods)
+INSTALLATION_ID_FILE="${INSTALLATION_ID_FILE:-/app/data/installation_id}"
 
 # Logging function (output to stderr to avoid polluting function returns)
 log() {

@@ -519,7 +519,7 @@ function generate_service_definition() {
       - ./configuration.dat:/opt/renny/Renny/Binaries/Linux/configuration.dat
       - ./renny-entrypoint.sh:/opt/renny/renny-entrypoint.sh:ro
       - ./renny-telemetry-client.sh:/opt/renny/telemetry-client.sh:ro
-      - /tmp/miniprem_installation_id:/app/data/installation_id
+      - /var/lib/miniprem/installation_id:/app/data/installation_id
       - /tmp/miniprem_telemetry_state:/app/telemetry_state
     healthcheck:
       test: "curl -f http://localhost:${health_port}/health"
