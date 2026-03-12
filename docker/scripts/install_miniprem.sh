@@ -1032,6 +1032,37 @@ update_env_file() {
     fi
 }
 
+# Function to configure region-specific endpoints
+configure_region_endpoints() {
+    local env_file="$PROJECT_ROOT/docker/docker-compose.env"
+    local region="${UNEEQ_REGION:-us}"
+
+    if [ "$region" = "eu" ]; then
+        info "Configuring endpoints for region: eu"
+        sed -i 's|api.enterprise.uneeq.io|api-eu.enterprise.uneeq.io|g' "$env_file"
+    else
+        info "Configuring endpoints for region: us (default)"
+    fi
+}
+
+# Function to prompt user for region selection
+prompt_for_region() {
+    if [ -n "${UNEEQ_REGION:-}" ]; then
+        info "Using region from CLI argument: $UNEEQ_REGION"
+        return
+    fi
+    echo ""
+    echo "Select UneeQ region:"
+    echo "1) US (default)"
+    echo "2) EU"
+    read -p "Enter choice [1-2, default 1]: " region_choice
+    case "$region_choice" in
+        2) UNEEQ_REGION="eu" ;;
+        *) UNEEQ_REGION="us" ;;
+    esac
+    info "Region selected: $UNEEQ_REGION"
+}
+
 # Function to ensure docker-compose.env exists by copying from example if needed
 ensure_env_file_exists() {
     local env_file="$PROJECT_ROOT/docker/docker-compose.env"
@@ -2225,9 +2256,6 @@ main() {
     # Ensure docker-compose.env exists
     ensure_env_file_exists
 
-    # Configure region-specific endpoints (uses UNEEQ_REGION if set via --region)
-    configure_region_endpoints
-
     # Select TTS provider before configuring
     select_tts_provider
 
@@ -2352,6 +2380,8 @@ main() {
     # Called here after argument parsing so --deployment-target CLI arg takes precedence
     prompt_deployment_target
     prompt_for_region
+    configure_region_endpoints
+    PLATFORM_ADDRESS=$(read_env_variable "DHOP_ADDRESS")
     configure_renny_quality
 
     # Check if all required values are already provided
