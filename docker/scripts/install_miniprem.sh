@@ -130,15 +130,21 @@ mark_installation_marker_created() {
 }
 
 usage() {
-    echo -e $WHITE
     cat <<EOF
-$(basename "$0") [--platform-address <UneeQ platform address>] [--platform-key <UneeQ platform API key>] [--tenant <Tenant ID>] [--azure-region <Azure region>] [--azure-speech-key <Azure speech key>] [--renny-image <Docker image name for Renny>] [h]
+$(basename "$0") [OPTIONS]
 Install and configure Renny digital human with internal speech processing on a laptop/kiosk
 
 Options:
-    -h: usage
+    --platform-address <addr>    UneeQ platform address
+    --platform-key <key>         UneeQ platform API key
+    --tenant-id <id>             Tenant ID
+    --azure-region <region>      Azure region for speech services
+    --azure-speech-key <key>     Azure speech subscription key
+    --renny-image <image>        Docker image name for Renny
+    --region <us|eu>             UneeQ region (us or eu, default: us)
+    --deployment-target <type>   Deployment target (hardware or cloud)
+    --help                       Show this help message
 EOF
-    echo -e $NC
 }
 
 # Function to check if a command exists
@@ -1024,6 +1030,37 @@ update_env_file() {
         rm -f "$temp_file"
         info "No environment variable updates needed"
     fi
+}
+
+# Function to configure region-specific endpoints
+configure_region_endpoints() {
+    local env_file="$PROJECT_ROOT/docker/docker-compose.env"
+    local region="${UNEEQ_REGION:-us}"
+
+    if [ "$region" = "eu" ]; then
+        info "Configuring endpoints for region: eu"
+        sed -i 's|api.enterprise.uneeq.io|api-eu.enterprise.uneeq.io|g' "$env_file"
+    else
+        info "Configuring endpoints for region: us (default)"
+    fi
+}
+
+# Function to prompt user for region selection
+prompt_for_region() {
+    if [ -n "${UNEEQ_REGION:-}" ]; then
+        info "Using region from CLI argument: $UNEEQ_REGION"
+        return
+    fi
+    echo ""
+    echo "Select UneeQ region:"
+    echo "1) US (default)"
+    echo "2) EU"
+    read -p "Enter choice [1-2, default 1]: " region_choice
+    case "$region_choice" in
+        2) UNEEQ_REGION="eu" ;;
+        *) UNEEQ_REGION="us" ;;
+    esac
+    info "Region selected: $UNEEQ_REGION"
 }
 
 # Function to ensure docker-compose.env exists by copying from example if needed
@@ -2187,6 +2224,20 @@ prompt_custom_services() {
 }
 
 main() {
+    # Parse command line arguments using getopt (before any interactive prompts)
+    OPTIONS=$(getopt -o '' --long help,platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target:,region: -- "$@")
+    if [ $? -ne 0 ]; then
+        usage
+        exit 1
+    fi
+
+    # Handle --help early before any system checks or prompts
+    if echo "$OPTIONS" | grep -q -- '--help'; then
+        print_logo
+        usage
+        exit 0
+    fi
+
     print_logo
 
     # Install type
@@ -2202,15 +2253,9 @@ main() {
     # Validate system resources before proceeding
     validate_system_resources
 
-    # Parse command line arguments using getopt
-    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target: -- "$@")
-    if [ $? -ne 0 ]; then
-        usage
-    fi
-
     # Ensure docker-compose.env exists
     ensure_env_file_exists
-    
+
     # Select TTS provider before configuring
     select_tts_provider
 
@@ -2278,6 +2323,10 @@ main() {
     # Extract options and their arguments into variables
     while true; do
         case "$1" in
+            --help)
+                usage
+                exit 0
+                ;;
             --platform-address)
                 PLATFORM_ADDRESS="$2"
                 shift 2
@@ -2300,6 +2349,10 @@ main() {
                 ;;
             --renny-image)
                 RENNY_IMAGE="$2"
+                shift 2
+                ;;
+            --region)
+                UNEEQ_REGION="$2"
                 shift 2
                 ;;
             --deployment-target)
@@ -2326,6 +2379,9 @@ main() {
     # Deployment target & quality configuration
     # Called here after argument parsing so --deployment-target CLI arg takes precedence
     prompt_deployment_target
+    prompt_for_region
+    configure_region_endpoints
+    PLATFORM_ADDRESS=$(read_env_variable "DHOP_ADDRESS")
     configure_renny_quality
 
     # Check if all required values are already provided
@@ -2397,7 +2453,7 @@ main() {
 
     # Make sure PLATFORM_ADDRESS has a default value if it's empty
     if [ -z "$PLATFORM_ADDRESS" ]; then
-        PLATFORM_ADDRESS="wss://api.enterprise.uneeq.io/signalling-service/v1/ws/renderer"
+        PLATFORM_ADDRESS="wss://$(get_dhop_api_hostname)/signalling-service/v1/ws/renderer"
         # Also update it in the env file
         if grep -q "^DHOP_ADDRESS=" "$PROJECT_ROOT/docker/docker-compose.env"; then
             local escaped_platform_address=$(printf '%s\n' "$PLATFORM_ADDRESS" | sed -e 's/[\/&]/\\&/g')
@@ -2406,7 +2462,7 @@ main() {
     fi
 
     # Validate network connectivity before proceeding
-    validate_network_connectivity "api.enterprise.uneeq.io"
+    validate_network_connectivity "$(get_dhop_api_hostname)"
 
     # check to make sure the cloud services are reachable
     check_cloud_services "$PLATFORM_ADDRESS" "$PLATFORM_ADDRESS"

@@ -34,6 +34,8 @@ speech_input.sh
 *.swo
 *~
 .miniprem_install_type
+.miniprem_deployment_target
+.miniprem_region
 fresh_installation_steps.md
 
 docs/translate_docs.py

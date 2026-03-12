@@ -81,7 +81,7 @@ variable "renny_desired_size" {
 
 # DHOP Configuration
 variable "dhop_url" {
-  description = "DHOP URL"
+  description = "DHOP URL. US: wss://api.enterprise.uneeq.io:443/signalling-service, EU: wss://api-eu.enterprise.uneeq.io:443/signalling-service"
   type        = string
   default     = "wss://api.enterprise.uneeq.io:443/signalling-service"
 }

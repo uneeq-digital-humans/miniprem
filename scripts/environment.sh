@@ -158,3 +158,29 @@ ensure_harbor_credentials() {
         return 1
     fi
 }
+
+# Get the DHOP API hostname for the selected region
+get_dhop_api_hostname() {
+    case "${UNEEQ_REGION:-us}" in
+        eu) echo "api-eu.enterprise.uneeq.io" ;;
+        *)  echo "api.enterprise.uneeq.io" ;;
+    esac
+}
+
+# Get the CDN hostname for the selected region
+get_cdn_hostname() {
+    case "${UNEEQ_REGION:-us}" in
+        eu) echo "cdn-eu.enterprise.uneeq.io" ;;
+        *)  echo "cdn.enterprise.uneeq.io" ;;
+    esac
+}
+
+# Configure region-specific endpoints in the env file
+configure_region_endpoints() {
+    local api_host
+    api_host=$(get_dhop_api_hostname)
+
+    update_env_variable "DHOP_ADDRESS" "wss://${api_host}/signalling-service/v2/ws/renderer"
+    update_env_variable "DHOP_PIXELSTREAMING_ADDRESS" "wss://${api_host}:443/signalling-service/v1/ws/pixelstreaming"
+    info "Configured endpoints for region: ${UNEEQ_REGION:-us} (${api_host})"
+}

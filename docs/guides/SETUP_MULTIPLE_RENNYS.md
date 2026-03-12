@@ -210,15 +210,13 @@ After deployment, the script:
 Each environment file (`renny-{ordinal}.env`) contains:
 
 ```bash
-# Speech processing (same for all instances)
-NEW_SPEECH_OVERRIDE=1
-
 # Audio2face settings (same for all instances)
 A2F_ADDRESS=http://audio2face-gateway:52000
 A2F_AUDIO_DELAY_TIME_MS=240
 A2F_AUDIO_SAMPLE_RATE=16000
 
 # Platform settings (same for all instances)
+# US: api.enterprise.uneeq.io / EU: api-eu.enterprise.uneeq.io
 DHOP_ADDRESS=wss://api.enterprise.uneeq.io/signalling-service/v2/ws/renderer
 DHOP_PIXELSTREAMING_ADDRESS=wss://api.enterprise.uneeq.io:443/signalling-service/v1/ws/pixelstreaming
 

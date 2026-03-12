@@ -1,5 +1,9 @@
 'use client';
 
+const cdnHostname = process.env.NEXT_PUBLIC_UNEEQ_REGION === 'eu'
+  ? 'cdn-eu.enterprise.uneeq.io'
+  : '${cdnHostname}';
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { useWebSocket } from '../hooks/useWebSocket.simple';
 import { useMetricsHistory } from '../hooks/useMetricsHistory';
@@ -764,8 +768,8 @@ Available Clusters: ${availableClusters.length}`;
                   <a
                     href={
                       tenantId && tenantId !== 'YOUR_TENANT_ID'
-                        ? `https://cdn.enterprise.uneeq.io/admin/customers/${tenantId}/tenants`
-                        : 'https://cdn.enterprise.uneeq.io/admin/'
+                        ? `https://${cdnHostname}/admin/customers/${tenantId}/tenants`
+                        : `https://${cdnHostname}/admin/`
                     }
                     target="_blank"
                     rel="noopener noreferrer"

@@ -343,6 +343,9 @@ harbor_password = "your-harbor-robot-password"
 
 # Optional: Override defaults
 aws_region = "us-east-2"  # Change to your preferred region
+
+# For EU Enterprise deployments, override the DHOP URL:
+# dhop_url = "wss://api-eu.enterprise.uneeq.io:443/signalling-service"
 ```
 
 The region will be used by all scripts automatically. You can also override other settings like instance types and scaling parameters - see `terraform.tfvars.example` for all options.
@@ -1686,7 +1689,7 @@ kubectl logs <renny-pod> -n uneeq-renderer | grep -i "speech\|NEW_SPEECH_OVERRID
 
 **Key Log Messages to Look For**:
 
-✅ **Healthy Renny logs**:
+✅ **Healthy Renny logs** (US region shown; EU uses `api-eu.enterprise.uneeq.io`):
 ```
 "Connecting to DHOP at wss://api.enterprise.uneeq.io:443/signalling-service"
 "DHOP connected. About to send the auth request"

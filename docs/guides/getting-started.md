@@ -57,7 +57,7 @@ You'll need the following information during installation:
 
 | Configuration         | Description                                 | Example                                      |
 |-----------------------|---------------------------------------------|----------------------------------------------|
-| UneeQ Platform Address | Address of the UneeQ signaling service      | api.enterprise.uneeq.io                                 |
+| UneeQ Platform Address | Address of the UneeQ signaling service      | api.enterprise.uneeq.io (US) / api-eu.enterprise.uneeq.io (EU) |
 | UneeQ Platform API Key | API key for UneeQ platform                  | your_uneeq_api_key_here                      |
 | Tenant ID             | Your UneeQ tenant identifier                | your_tenant_id_here                          |
 | Azure Region          | Azure region for speech services            | your_azure_region                            |
@@ -66,6 +66,8 @@ You'll need the following information during installation:
 | RIME API Key          | Docker image for RIME text-to-speech        | your_rime_api_key                            |
 | Huggingface Token     | Token for access to Huggingface             | your_huggingface_token                       |
 | UneeQ Harbor Token | Token for access to UneeQ's image repo     | your_personal_access_token                   |
+
+> **EU Enterprise deployments:** Use `--region eu` during installation or set `UNEEQ_REGION=eu` to configure EU-specific endpoints (`api-eu.enterprise.uneeq.io`, `cdn-eu.enterprise.uneeq.io`).
 
 ### 4. Verify Installation
 
