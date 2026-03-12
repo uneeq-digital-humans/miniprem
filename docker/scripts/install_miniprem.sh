@@ -130,7 +130,6 @@ mark_installation_marker_created() {
 }
 
 usage() {
-    echo -e $WHITE
     cat <<EOF
 $(basename "$0") [OPTIONS]
 Install and configure Renny digital human with internal speech processing on a laptop/kiosk
@@ -146,7 +145,6 @@ Options:
     --deployment-target <type>   Deployment target (hardware or cloud)
     --help                       Show this help message
 EOF
-    echo -e $NC
 }
 
 # Function to check if a command exists
