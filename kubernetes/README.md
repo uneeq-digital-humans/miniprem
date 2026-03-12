@@ -61,8 +61,9 @@ kubernetes/
 │   ├── destroy.sh      # Full cleanup (~15-20 min)
 │   ├── status.sh       # Check deployment status
 │   ├── cleanup.sh      # Emergency cleanup (no confirmations)
-│   ├── check-aws-prerequisites.sh # Verify AWS setup
-│   └── check-vpc-usage.sh # Analyze VPC usage and limits
+│   └── eks/            # AWS EKS-specific scripts
+│       ├── check-aws-prerequisites.sh # Verify AWS setup
+│       └── check-vpc-usage.sh         # Analyze VPC usage and limits
 └── README.md           # This file
 ```
 
@@ -263,17 +264,17 @@ aws_region = "us-west-2"  # Change to desired region
 **Verify your AWS setup:**
 ```bash
 # Check prerequisites with current profile
-./scripts/check-aws-prerequisites.sh
+./scripts/eks/check-aws-prerequisites.sh
 
 # Check prerequisites with specific profile
-./scripts/check-aws-prerequisites.sh --profile your-profile-name
+./scripts/eks/check-aws-prerequisites.sh --profile your-profile-name
 ```
 
 #### **🌐 VPC Availability & Configuration Management**
 
 **Check VPC availability (Critical - AWS has VPC limits):**
 ```bash
-./scripts/check-vpc-usage.sh
+./scripts/eks/check-vpc-usage.sh
 ```
 
 This deployment creates a new VPC, so you need to ensure you haven't hit the VPC limit (5 per region by default).
@@ -311,16 +312,16 @@ vpc_cidr = "192.168.0.0/16"  # Private network standard
 **VPC Checker Usage Examples:**
 ```bash
 # Check all VPCs in your configured region
-./scripts/check-vpc-usage.sh
+./scripts/eks/check-vpc-usage.sh
 
 # Check VPCs in a specific region
-./scripts/check-vpc-usage.sh --region us-west-2
+./scripts/eks/check-vpc-usage.sh --region us-west-2
 
-# Analyze a specific VPC 
-./scripts/check-vpc-usage.sh --vpc vpc-123456789
+# Analyze a specific VPC
+./scripts/eks/check-vpc-usage.sh --vpc vpc-123456789
 
 # Analyze specific VPC in specific region
-./scripts/check-vpc-usage.sh --region us-west-2 --vpc vpc-123456789
+./scripts/eks/check-vpc-usage.sh --region us-west-2 --vpc vpc-123456789
 ```
 
 The script will show you which VPCs are safe to delete and provide deletion commands if needed.

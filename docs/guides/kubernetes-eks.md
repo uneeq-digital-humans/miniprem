@@ -190,12 +190,12 @@ aws configure
 
 **Verify AWS setup:**
 ```bash
-./scripts/check-aws-prerequisites.sh
+./scripts/eks/check-aws-prerequisites.sh
 ```
 
 **Check VPC availability:**
 ```bash
-./scripts/check-vpc-usage.sh
+./scripts/eks/check-vpc-usage.sh
 # AWS has a default limit of 5 VPCs per region
 # This script helps identify unused VPCs
 ```

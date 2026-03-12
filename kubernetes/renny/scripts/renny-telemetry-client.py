@@ -37,8 +37,9 @@ class TelemetryClient:
         self.heartbeat_interval = int(os.getenv('HEARTBEAT_INTERVAL_SECONDS', '900'))
         self.platform = os.getenv('PLATFORM', 'docker-ubuntu')
 
-        # Installation ID persistence
-        self.installation_id_file = '/tmp/miniprem_installation_id'
+        # Installation ID persistence (mounted from /var/lib/miniprem/installation_id on host for Docker,
+        # or generated at runtime for Kubernetes pods)
+        self.installation_id_file = '/app/data/installation_id'
         self.installation_id = self._get_or_generate_installation_id()
 
         # Machine ID (GPU-based, for deduplication)

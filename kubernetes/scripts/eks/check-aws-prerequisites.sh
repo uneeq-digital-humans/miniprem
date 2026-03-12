@@ -12,6 +12,27 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
+# Helper function to convert float strings to integers
+# AWS CLI service-quotas returns values like "5.0" instead of "5"
+# This function handles both "5" and "5.0" formats safely
+to_int() {
+    local value="$1"
+    local default="${2:-0}"
+
+    # Handle empty or null values
+    if [ -z "$value" ] || [ "$value" = "null" ] || [ "$value" = "None" ]; then
+        echo "$default"
+        return
+    fi
+
+    # Remove any whitespace and newlines
+    value=$(echo "$value" | tr -d '[:space:]')
+
+    # Truncate decimal portion (5.0 -> 5, 100.0 -> 100)
+    # This handles both integer and float formats
+    echo "$value" | cut -d'.' -f1
+}
+
 # Parse command line arguments
 AWS_PROFILE_ARG=""
 
@@ -161,8 +182,10 @@ echo "========================="
 
 # Check VPC quota
 echo -n "Checking VPC quota... "
-CURRENT_VPCS=$(aws ec2 describe-vpcs --region $REGION --query 'length(Vpcs)' --output text 2>/dev/null || echo "0")
-VPC_LIMIT=$(aws service-quotas get-service-quota --service-code vpc --quota-code L-F678F1CE --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "5")
+CURRENT_VPCS_RAW=$(aws ec2 describe-vpcs --region $REGION --query 'length(Vpcs)' --output text 2>/dev/null || echo "0")
+VPC_LIMIT_RAW=$(aws service-quotas get-service-quota --service-code vpc --quota-code L-F678F1CE --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "5")
+CURRENT_VPCS=$(to_int "$CURRENT_VPCS_RAW" 0)
+VPC_LIMIT=$(to_int "$VPC_LIMIT_RAW" 5)
 if [ "$CURRENT_VPCS" -lt "$VPC_LIMIT" ]; then
     echo -e "${GREEN}✓${NC} ($CURRENT_VPCS/$VPC_LIMIT used)"
     ((CHECKS_PASSED++))
@@ -173,8 +196,10 @@ fi
 
 # Check EKS cluster quota
 echo -n "Checking EKS cluster quota... "
-CURRENT_CLUSTERS=$(aws eks list-clusters --region $REGION --query 'length(clusters)' --output text 2>/dev/null || echo "0")
-EKS_LIMIT=$(aws service-quotas get-service-quota --service-code eks --quota-code L-1194D53C --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "100")
+CURRENT_CLUSTERS_RAW=$(aws eks list-clusters --region $REGION --query 'length(clusters)' --output text 2>/dev/null || echo "0")
+EKS_LIMIT_RAW=$(aws service-quotas get-service-quota --service-code eks --quota-code L-1194D53C --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "100")
+CURRENT_CLUSTERS=$(to_int "$CURRENT_CLUSTERS_RAW" 0)
+EKS_LIMIT=$(to_int "$EKS_LIMIT_RAW" 100)
 if [ "$CURRENT_CLUSTERS" -lt "$EKS_LIMIT" ]; then
     echo -e "${GREEN}✓${NC} ($CURRENT_CLUSTERS/$EKS_LIMIT used)"
     ((CHECKS_PASSED++))
@@ -185,9 +210,10 @@ fi
 
 # Check EC2 instance quotas for g5.4xlarge
 echo -n "Checking G5 instance quota... "
-G5_LIMIT=$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-DB2E81BA --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "64")
+G5_LIMIT_RAW=$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-DB2E81BA --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "64")
+G5_LIMIT=$(to_int "$G5_LIMIT_RAW" 64)
 REQUIRED_G5=10  # 10 for Renny
-if [ $(echo "$G5_LIMIT >= $REQUIRED_G5" | bc) -eq 1 ]; then
+if [ "$G5_LIMIT" -ge "$REQUIRED_G5" ]; then
     echo -e "${GREEN}✓${NC} ($G5_LIMIT vCPUs available, need $REQUIRED_G5 minimum)"
     ((CHECKS_PASSED++))
 else
@@ -198,8 +224,10 @@ fi
 
 # Check Elastic IP quota
 echo -n "Checking Elastic IP quota... "
-CURRENT_EIPS=$(aws ec2 describe-addresses --region $REGION --query 'length(Addresses)' --output text 2>/dev/null || echo "0")
-EIP_LIMIT=$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-0263D0A3 --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "5")
+CURRENT_EIPS_RAW=$(aws ec2 describe-addresses --region $REGION --query 'length(Addresses)' --output text 2>/dev/null || echo "0")
+EIP_LIMIT_RAW=$(aws service-quotas get-service-quota --service-code ec2 --quota-code L-0263D0A3 --region $REGION --query 'Quota.Value' --output text 2>/dev/null || echo "5")
+CURRENT_EIPS=$(to_int "$CURRENT_EIPS_RAW" 0)
+EIP_LIMIT=$(to_int "$EIP_LIMIT_RAW" 5)
 REQUIRED_EIPS=3  # For NAT gateways
 AVAILABLE_EIPS=$((EIP_LIMIT - CURRENT_EIPS))
 if [ $AVAILABLE_EIPS -ge $REQUIRED_EIPS ]; then

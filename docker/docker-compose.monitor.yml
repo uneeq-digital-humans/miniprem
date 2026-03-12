@@ -14,10 +14,6 @@ services:
       dockerfile: Dockerfile
     container_name: miniprem-monitor
     runtime: nvidia
-    # Network Mode:
-    # - Linux: Can use 'host' for optimal performance (direct port binding)
-    # - macOS/Windows: Must use bridge mode (host networking not supported)
-    # Using bridge mode for cross-platform compatibility
     ports:
       - "3001:3001"  # Frontend access
       - "8000:8000"  # Backend API and WebSocket (needed for terminal)
@@ -29,7 +25,7 @@ services:
       # AWS credentials for EKS authentication (optional)
       - ~/.aws:/root/.aws:ro
       # Installation ID for telemetry (optional, created during install)
-      - /tmp/miniprem_installation_id:/app/data/installation_id:ro
+      - /var/lib/miniprem/installation_id:/app/data/installation_id:ro
       # Telemetry state directory (persistent across restarts)
       - /tmp/miniprem_telemetry_state:/app/telemetry_state
     restart: unless-stopped

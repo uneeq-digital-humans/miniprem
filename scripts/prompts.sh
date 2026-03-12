@@ -144,9 +144,19 @@ EOF
         # Initialize installation ID variable
         INSTALLATION_ID=""
 
+        # Persistent storage location (survives reboots and reinstalls)
+        local MINIPREM_DATA_DIR="/var/lib/miniprem"
+        local INSTALLATION_ID_FILE="$MINIPREM_DATA_DIR/installation_id"
+
+        # Create persistent data directory if it doesn't exist
+        if [ ! -d "$MINIPREM_DATA_DIR" ]; then
+            sudo mkdir -p "$MINIPREM_DATA_DIR" 2>/dev/null || mkdir -p "$MINIPREM_DATA_DIR"
+            sudo chmod 755 "$MINIPREM_DATA_DIR" 2>/dev/null || chmod 755 "$MINIPREM_DATA_DIR"
+        fi
+
         # Check if installation ID already exists (reuse for reinstalls/upgrades)
-        if [ -f "/tmp/miniprem_installation_id" ] && [ -s "/tmp/miniprem_installation_id" ]; then
-            INSTALLATION_ID=$(cat /tmp/miniprem_installation_id 2>/dev/null | tr -d '[:space:]')
+        if [ -f "$INSTALLATION_ID_FILE" ] && [ -s "$INSTALLATION_ID_FILE" ]; then
+            INSTALLATION_ID=$(cat "$INSTALLATION_ID_FILE" 2>/dev/null | tr -d '[:space:]')
             if [ -n "$INSTALLATION_ID" ]; then
                 success "$CHECKMARK Reusing existing installation ID: ${INSTALLATION_ID:0:8}..."
             else
@@ -158,8 +168,8 @@ EOF
         # Generate new installation ID if none exists
         if [ -z "$INSTALLATION_ID" ]; then
             # Remove if it exists as a directory (Docker may have created it)
-            if [ -d "/tmp/miniprem_installation_id" ]; then
-                sudo rm -rf /tmp/miniprem_installation_id 2>/dev/null || rm -rf /tmp/miniprem_installation_id
+            if [ -d "$INSTALLATION_ID_FILE" ]; then
+                sudo rm -rf "$INSTALLATION_ID_FILE" 2>/dev/null || rm -rf "$INSTALLATION_ID_FILE"
             fi
 
             # Generate using uuidgen (POSIX-compatible)
@@ -171,10 +181,9 @@ EOF
                 INSTALLATION_ID="${INSTALLATION_ID:0:8}-${INSTALLATION_ID:8:4}-${INSTALLATION_ID:12:4}-${INSTALLATION_ID:16:4}-${INSTALLATION_ID:20:12}"
             fi
 
-            # Save installation ID to /tmp (will be mounted into container)
-            # Always use sudo tee to avoid permission errors
-            echo "$INSTALLATION_ID" | sudo tee /tmp/miniprem_installation_id > /dev/null
-            sudo chmod 644 /tmp/miniprem_installation_id
+            # Save installation ID to persistent location (survives reboots)
+            echo "$INSTALLATION_ID" | sudo tee "$INSTALLATION_ID_FILE" > /dev/null
+            sudo chmod 644 "$INSTALLATION_ID_FILE"
 
             success "$CHECKMARK Installation ID generated: ${INSTALLATION_ID:0:8}..."
         fi
@@ -217,7 +226,7 @@ PAYLOAD_EOF
         update_env_variable "MINIPREM_TELEMETRY_DISABLED" "1"
 
         # Don't create installation ID file
-        sudo rm -f /tmp/miniprem_installation_id 2>/dev/null || rm -f /tmp/miniprem_installation_id 2>/dev/null || true
+        sudo rm -f /var/lib/miniprem/installation_id 2>/dev/null || rm -f /var/lib/miniprem/installation_id 2>/dev/null || true
 
         info "Telemetry disabled - continuing with installation"
     fi
