@@ -132,11 +132,19 @@ mark_installation_marker_created() {
 usage() {
     echo -e $WHITE
     cat <<EOF
-$(basename "$0") [--platform-address <UneeQ platform address>] [--platform-key <UneeQ platform API key>] [--tenant <Tenant ID>] [--azure-region <Azure region>] [--azure-speech-key <Azure speech key>] [--renny-image <Docker image name for Renny>] [h]
+$(basename "$0") [OPTIONS]
 Install and configure Renny digital human with internal speech processing on a laptop/kiosk
 
 Options:
-    -h: usage
+    --platform-address <addr>    UneeQ platform address
+    --platform-key <key>         UneeQ platform API key
+    --tenant-id <id>             Tenant ID
+    --azure-region <region>      Azure region for speech services
+    --azure-speech-key <key>     Azure speech subscription key
+    --renny-image <image>        Docker image name for Renny
+    --region <us|eu>             UneeQ region (us or eu, default: us)
+    --deployment-target <type>   Deployment target (hardware or cloud)
+    --help                       Show this help message
 EOF
     echo -e $NC
 }
@@ -2187,6 +2195,20 @@ prompt_custom_services() {
 }
 
 main() {
+    # Parse command line arguments using getopt (before any interactive prompts)
+    OPTIONS=$(getopt -o '' --long help,platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target:,region: -- "$@")
+    if [ $? -ne 0 ]; then
+        usage
+        exit 1
+    fi
+
+    # Handle --help early before any system checks or prompts
+    if echo "$OPTIONS" | grep -q -- '--help'; then
+        print_logo
+        usage
+        exit 0
+    fi
+
     print_logo
 
     # Install type
@@ -2201,12 +2223,6 @@ main() {
 
     # Validate system resources before proceeding
     validate_system_resources
-
-    # Parse command line arguments using getopt
-    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target:,region: -- "$@")
-    if [ $? -ne 0 ]; then
-        usage
-    fi
 
     # Ensure docker-compose.env exists
     ensure_env_file_exists
@@ -2281,6 +2297,10 @@ main() {
     # Extract options and their arguments into variables
     while true; do
         case "$1" in
+            --help)
+                usage
+                exit 0
+                ;;
             --platform-address)
                 PLATFORM_ADDRESS="$2"
                 shift 2
