@@ -4,22 +4,31 @@
    Adapted for Docsify framework
    ============================================ */
 
-/* Import Manrope font from Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+/* Import Manrope (headings) and Inter (body) fonts from Google Fonts */
+/* Per UneeQ Brand Guidelines - March 2023 */
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
   /* UneeQ Brand Colors (March 2023) - Official Brand Guidelines */
-  --uneeq-primary: #F47C6A;         /* Orange - primary accent */
-  --uneeq-blue: #5F56DA;            /* Blue - links and accents */
+  --uneeq-orange: #F47C6A;          /* Orange - highlighted text and accents */
+  --uneeq-primary: #F47C6A;         /* Alias for orange (primary accent) */
+  --uneeq-blue: #5F56DA;            /* Blue - hyperlinked text */
   --uneeq-pink: #FF1888;            /* Pink - alternative accent */
   --uneeq-yellow: #FFB648;          /* Yellow - warnings and highlights */
-  --uneeq-liquorice: #232236;       /* Secondary background (dark mode) */
-  --uneeq-dark-bg: #0E0B33;         /* Official dark blue gradient start */
+  --uneeq-liquorice: #232236;       /* Liquorice - secondary background */
+  --uneeq-bg-dark-gradient-start: #0E0B33;  /* Dark blue gradient start */
+  --uneeq-bg-dark-gradient-end: #0D0B5D;    /* Dark blue gradient end */
+  --uneeq-dark-bg: #0E0B33;         /* Alias for gradient start */
   --uneeq-dark: #232236;            /* Liquorice - dark text color */
   --uneeq-dark-light: #34495E;      /* Lighter navy for secondary text */
-  --uneeq-light: #FFFFFF;           /* Clean white */
+  --uneeq-white: #FFFFFF;           /* Clean white */
+  --uneeq-light: #FFFFFF;           /* Alias for white */
   --uneeq-light-gray: #F8F9FA;      /* Very light gray */
   --uneeq-gray: #6C757D;            /* Medium gray */
+
+  /* Typography (UneeQ Brand Guidelines) */
+  --font-heading: 'Manrope', sans-serif;  /* Headings - Manrope Bold */
+  --font-body: 'Inter', sans-serif;       /* Body copy - Inter */
 
   /* Alert Colors */
   --success-color: #28A745;
@@ -63,13 +72,14 @@ html {
 }
 
 body {
-  font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-body), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.6;
   color: var(--uneeq-dark);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--content-background);
   font-size: 16px;
+  font-weight: 400;
 }
 
 #main,
@@ -87,10 +97,20 @@ body {
 }
 
 /* Typography - Light Mode: Orange for Main Headers, Dark for Body */
+/* Headings use Manrope Bold per UneeQ Brand Guidelines */
+.markdown-section h1,
+.markdown-section h2,
+.markdown-section h3,
+.markdown-section h4,
+.markdown-section h5,
+.markdown-section h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+}
+
 .markdown-section h1 {
   font-size: 2.5rem;
-  color: var(--uneeq-primary);
-  font-weight: 600;
+  color: var(--uneeq-orange);
   margin-bottom: 1rem;
   line-height: 1.3;
 }
@@ -98,18 +118,16 @@ body {
 .markdown-section h2 {
   font-size: 2rem;
   color: var(--uneeq-dark);
-  font-weight: 600;
   margin-bottom: 1rem;
   margin-top: 2rem;
   line-height: 1.3;
-  border-bottom: 2px solid var(--uneeq-primary);
+  border-bottom: 2px solid var(--uneeq-orange);
   padding-bottom: 0.5rem;
 }
 
 .markdown-section h3 {
   font-size: 1.5rem;
   color: var(--uneeq-dark);
-  font-weight: 600;
   margin-bottom: 1rem;
   margin-top: 1.5rem;
   line-height: 1.3;
@@ -118,16 +136,29 @@ body {
 .markdown-section h4 {
   font-size: 1.25rem;
   color: var(--uneeq-dark);
-  font-weight: 600;
   margin-bottom: 1rem;
   line-height: 1.3;
+}
+
+/* Body text uses Inter per UneeQ Brand Guidelines */
+.markdown-section p,
+.markdown-section li,
+.markdown-section td,
+.markdown-section span {
+  font-family: var(--font-body);
+  font-weight: 400;
 }
 
 .markdown-section p {
   margin-bottom: 1.5rem;
   font-size: 1rem;
   line-height: 1.6;
-  font-weight: 400;  /* Normal weight, but Manrope renders well */
+}
+
+/* Bold text for highlighting (Inter Bold) */
+.markdown-section strong,
+.markdown-section b {
+  font-weight: 700;
 }
 
 /* Logo Sizing Constraints - WCAG and UX Best Practices */

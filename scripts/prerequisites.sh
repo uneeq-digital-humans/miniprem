@@ -19,7 +19,7 @@ validate_docker_daemon() {
 }
 
 # Define required total GPU memory (in MB)
-MIN_GPU_MEMORY=16000
+MIN_GPU_MEMORY=6000
 
 # Define required minimum NVIDIA driver version
 MIN_NVIDIA_DRIVER_VERSION=580
@@ -31,7 +31,7 @@ MIN_CUDA_VERSION=12.0
 MIN_CPU_CORES=8
 
 # Define minimum amount of RAM (in MB)
-MIN_RAM=16000
+MIN_RAM=6000
 
 # Define minimum free SSD space (in GB)
 MIN_FREE_SSD_SPACE=64
