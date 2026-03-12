@@ -38,8 +38,10 @@ renderer:
   dhop:
     apiKey: "your-dhop-api-key-here"
     tenantId: "your-dhop-tenant-id-here"
+    # US: wss://api.enterprise.uneeq.io:443/signalling-service
+    # EU: wss://api-eu.enterprise.uneeq.io:443/signalling-service
     url: wss://api.enterprise.uneeq.io:443/signalling-service
-  
+
   tts:
     # ⚠️  CRITICAL: AT LEAST ONE TTS provider must be configured or Renny will not start properly.
     # Choose ONE provider below and fill in ALL required fields for that provider.

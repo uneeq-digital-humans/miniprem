@@ -2203,14 +2203,17 @@ main() {
     validate_system_resources
 
     # Parse command line arguments using getopt
-    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target: -- "$@")
+    OPTIONS=$(getopt -o '' --long platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target:,region: -- "$@")
     if [ $? -ne 0 ]; then
         usage
     fi
 
     # Ensure docker-compose.env exists
     ensure_env_file_exists
-    
+
+    # Configure region-specific endpoints (uses UNEEQ_REGION if set via --region)
+    configure_region_endpoints
+
     # Select TTS provider before configuring
     select_tts_provider
 
@@ -2302,6 +2305,10 @@ main() {
                 RENNY_IMAGE="$2"
                 shift 2
                 ;;
+            --region)
+                UNEEQ_REGION="$2"
+                shift 2
+                ;;
             --deployment-target)
                 DEPLOYMENT_TARGET="$2"
                 # Validate deployment target value
@@ -2326,6 +2333,7 @@ main() {
     # Deployment target & quality configuration
     # Called here after argument parsing so --deployment-target CLI arg takes precedence
     prompt_deployment_target
+    prompt_for_region
     configure_renny_quality
 
     # Check if all required values are already provided
@@ -2397,7 +2405,7 @@ main() {
 
     # Make sure PLATFORM_ADDRESS has a default value if it's empty
     if [ -z "$PLATFORM_ADDRESS" ]; then
-        PLATFORM_ADDRESS="wss://api.enterprise.uneeq.io/signalling-service/v1/ws/renderer"
+        PLATFORM_ADDRESS="wss://$(get_dhop_api_hostname)/signalling-service/v1/ws/renderer"
         # Also update it in the env file
         if grep -q "^DHOP_ADDRESS=" "$PROJECT_ROOT/docker/docker-compose.env"; then
             local escaped_platform_address=$(printf '%s\n' "$PLATFORM_ADDRESS" | sed -e 's/[\/&]/\\&/g')
@@ -2406,7 +2414,7 @@ main() {
     fi
 
     # Validate network connectivity before proceeding
-    validate_network_connectivity "api.enterprise.uneeq.io"
+    validate_network_connectivity "$(get_dhop_api_hostname)"
 
     # check to make sure the cloud services are reachable
     check_cloud_services "$PLATFORM_ADDRESS" "$PLATFORM_ADDRESS"

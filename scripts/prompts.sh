@@ -99,6 +99,46 @@ prompt_deployment_target() {
     fi
 }
 
+# Function to prompt for UneeQ platform region (US or EU)
+prompt_for_region() {
+    # Check CLI argument first
+    if [ -n "${UNEEQ_REGION:-}" ]; then
+        info "Using region from CLI argument: $UNEEQ_REGION"
+        echo "$UNEEQ_REGION" > "$PROJECT_ROOT/.miniprem_region"
+        export UNEEQ_REGION
+        return
+    fi
+
+    # Check persisted value
+    if [ -f "$PROJECT_ROOT/.miniprem_region" ]; then
+        UNEEQ_REGION=$(cat "$PROJECT_ROOT/.miniprem_region")
+        info "Using previously selected region: $UNEEQ_REGION"
+        export UNEEQ_REGION
+        return
+    fi
+
+    # Interactive prompt
+    echo ""
+    echo "Select UneeQ platform region:"
+    echo "  1) US Enterprise (default)"
+    echo "  2) EU Enterprise"
+    echo ""
+    read -r -p "Enter choice [1-2]: " choice
+
+    case "$choice" in
+        2)
+            UNEEQ_REGION="eu"
+            ;;
+        *)
+            UNEEQ_REGION="us"
+            ;;
+    esac
+
+    echo "$UNEEQ_REGION" > "$PROJECT_ROOT/.miniprem_region"
+    export UNEEQ_REGION
+    info "Selected region: $UNEEQ_REGION"
+}
+
 # Function to prompt user for telemetry consent and send initial notification
 prompt_for_telemetry_consent() {
     log_section "MiniPrem Telemetry Notice"

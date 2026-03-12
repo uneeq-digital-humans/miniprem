@@ -28,6 +28,8 @@ renny_desired_size  = 10                # Initial nodes
 gpu_time_slicing_replicas = 2  # 2 Renny pods per GPU
 
 # UneeQ Platform Credentials (REQUIRED)
+# US (default): wss://api.enterprise.uneeq.io:443/signalling-service
+# EU: wss://api-eu.enterprise.uneeq.io:443/signalling-service
 dhop_url       = "wss://api.enterprise.uneeq.io:443/signalling-service"
 dhop_tenant_id = "your-dhop-tenant-id-here"  # Get from UneeQ platform
 dhop_api_key   = "your-dhop-api-key-here"    # Get from UneeQ platform

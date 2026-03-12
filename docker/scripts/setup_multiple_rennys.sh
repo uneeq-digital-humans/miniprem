@@ -504,7 +504,6 @@ function generate_service_definition() {
     env_file:
       - renny-${ordinal_name}.env
     environment:
-      - NEW_SPEECH_OVERRIDE=1
       - MINIPREM_TELEMETRY_DISABLED=\${MINIPREM_TELEMETRY_DISABLED:-0}
       - TELEMETRY_BACKEND_URL=https://renny.services.uneeq.io
       - HEARTBEAT_INTERVAL_SECONDS=900

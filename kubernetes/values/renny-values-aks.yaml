@@ -73,6 +73,8 @@ renderer:
   dhop:
     apiKey: "placeholder-dhop-api-key"        # Override in my-renny-values.yml
     tenantId: "placeholder-dhop-tenant-id"    # Override in my-renny-values.yml
+    # US: wss://api.enterprise.uneeq.io:443/signalling-service
+    # EU: wss://api-eu.enterprise.uneeq.io:443/signalling-service
     url: wss://api.enterprise.uneeq.io:443/signalling-service
 
   # ===== REQUIRED: Text-to-Speech Configuration =====
