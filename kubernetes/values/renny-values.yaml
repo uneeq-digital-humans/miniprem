@@ -211,6 +211,8 @@ env:
     value: "all"
   - name: NEW_SPEECH_OVERRIDE
     value: "1"
+  - name: RENNY_TTS_USE_PROTO_API_KEY
+    value: "1"
   - name: A2F_ADDRESS
     value: "http://localhost:52000"
   - name: A2F_AUDIO_DELAY_TIME_MS
