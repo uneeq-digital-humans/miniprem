@@ -46,6 +46,11 @@ NVIDIA Cloud Native Stack (CNS) provides a complete platform for running GPU-acc
 2. **Internet connectivity** for package downloads
 3. **NGC API Key** for NVIDIA model access
 
+> **Note:** The deployment scripts will automatically install additional dependencies including:
+> - `snapd` (required for MicroK8s)
+> - `Google Chrome` (required for MiniPrem kiosk interface)
+> - Common tools: `curl`, `wget`, `jq`, `git`
+
 ## Getting an NGC API Key
 
 1. Visit [https://ngc.nvidia.com/](https://ngc.nvidia.com/)

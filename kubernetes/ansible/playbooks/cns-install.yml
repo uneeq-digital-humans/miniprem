@@ -62,7 +62,84 @@
               - lsb-release
               - software-properties-common
               - jq
+              - git
             state: present
+
+        - name: Install snapd (required for MicroK8s)
+          package:
+            name: snapd
+            state: present
+          when: cns_k8s_type == 'microk8s'
+
+        - name: Enable snapd socket
+          systemd:
+            name: snapd.socket
+            enabled: yes
+            state: started
+          when: cns_k8s_type == 'microk8s'
+
+        - name: Create snap symlink for classic support
+          file:
+            src: /var/lib/snapd/snap
+            dest: /snap
+            state: link
+            force: yes
+          when: cns_k8s_type == 'microk8s'
+          failed_when: false
+
+        - name: Wait for snapd to be ready
+          pause:
+            seconds: 5
+          when: cns_k8s_type == 'microk8s'
+
+        - name: Check if Google Chrome is installed
+          command: which google-chrome-stable
+          register: chrome_check
+          failed_when: false
+          changed_when: false
+
+        - name: Download Google Chrome (Debian/Ubuntu)
+          get_url:
+            url: https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+            dest: /tmp/google-chrome.deb
+          when:
+            - chrome_check.rc != 0
+            - ansible_os_family == "Debian"
+
+        - name: Install Google Chrome (Debian/Ubuntu)
+          apt:
+            deb: /tmp/google-chrome.deb
+            state: present
+          when:
+            - chrome_check.rc != 0
+            - ansible_os_family == "Debian"
+
+        - name: Add Google Chrome repo (RHEL/CentOS)
+          yum_repository:
+            name: google-chrome
+            description: Google Chrome
+            baseurl: https://dl.google.com/linux/chrome/rpm/stable/x86_64
+            gpgkey: https://dl.google.com/linux/linux_signing_key.pub
+            gpgcheck: yes
+            enabled: yes
+          when:
+            - chrome_check.rc != 0
+            - ansible_os_family == "RedHat"
+
+        - name: Install Google Chrome (RHEL/CentOS)
+          package:
+            name: google-chrome-stable
+            state: present
+          when:
+            - chrome_check.rc != 0
+            - ansible_os_family == "RedHat"
+
+        - name: Cleanup Chrome installer
+          file:
+            path: /tmp/google-chrome.deb
+            state: absent
+          when: ansible_os_family == "Debian"
+          failed_when: false
 
         - name: Check for NVIDIA GPU
           shell: lspci | grep -i nvidia

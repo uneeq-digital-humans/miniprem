@@ -64,6 +64,92 @@ check_root() {
     fi
 }
 
+install_prerequisites() {
+    info "Installing system prerequisites..."
+
+    # Detect package manager
+    if command -v apt-get &> /dev/null; then
+        PKG_MANAGER="apt"
+    elif command -v dnf &> /dev/null; then
+        PKG_MANAGER="dnf"
+    elif command -v yum &> /dev/null; then
+        PKG_MANAGER="yum"
+    else
+        warning "Unknown package manager. Some prerequisites may need manual installation."
+        return
+    fi
+
+    # Install snapd (required for MicroK8s)
+    if ! command -v snap &> /dev/null; then
+        info "Installing snapd..."
+        case "$PKG_MANAGER" in
+            apt)
+                apt-get update
+                apt-get install -y snapd
+                # Ensure snapd socket is running
+                systemctl enable --now snapd.socket
+                # Create symlink for classic snap support
+                ln -sf /var/lib/snapd/snap /snap 2>/dev/null || true
+                # Wait for snapd to be ready
+                sleep 5
+                ;;
+            dnf|yum)
+                $PKG_MANAGER install -y snapd
+                systemctl enable --now snapd.socket
+                ln -sf /var/lib/snapd/snap /snap 2>/dev/null || true
+                sleep 5
+                ;;
+        esac
+        success "snapd installed"
+    else
+        success "snapd already installed"
+    fi
+
+    # Install Google Chrome (required for MiniPrem kiosk interface)
+    if ! command -v google-chrome &> /dev/null && ! command -v google-chrome-stable &> /dev/null; then
+        info "Installing Google Chrome..."
+        case "$PKG_MANAGER" in
+            apt)
+                # Download and install Chrome
+                wget -q -O /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+                apt-get install -y /tmp/google-chrome.deb || {
+                    # If dependencies fail, fix them
+                    apt-get install -f -y
+                    apt-get install -y /tmp/google-chrome.deb
+                }
+                rm -f /tmp/google-chrome.deb
+                ;;
+            dnf|yum)
+                # Add Chrome repo and install
+                cat > /etc/yum.repos.d/google-chrome.repo << 'REPO'
+[google-chrome]
+name=google-chrome
+baseurl=https://dl.google.com/linux/chrome/rpm/stable/x86_64
+enabled=1
+gpgcheck=1
+gpgkey=https://dl.google.com/linux/linux_signing_key.pub
+REPO
+                $PKG_MANAGER install -y google-chrome-stable
+                ;;
+        esac
+        success "Google Chrome installed"
+    else
+        success "Google Chrome already installed"
+    fi
+
+    # Install other common prerequisites
+    info "Installing additional tools..."
+    case "$PKG_MANAGER" in
+        apt)
+            apt-get install -y curl wget jq git
+            ;;
+        dnf|yum)
+            $PKG_MANAGER install -y curl wget jq git
+            ;;
+    esac
+    success "Prerequisites installed"
+}
+
 check_os() {
     info "Checking operating system..."
 
@@ -144,9 +230,10 @@ check_ngc_api_key() {
 install_microk8s() {
     info "Installing MicroK8s..."
 
-    # Install snapd if not present
+    # Verify snapd is available (should be installed in prerequisites)
     if ! command -v snap &> /dev/null; then
-        apt-get update && apt-get install -y snapd
+        error "snapd is not installed. Run install_prerequisites first."
+        exit 1
     fi
 
     # Install MicroK8s
@@ -431,10 +518,21 @@ main() {
     check_os
     check_nvidia_gpu
     check_nvidia_driver
+
+    echo ""
+    info "Installing system prerequisites..."
+    echo ""
+
+    # Install prerequisites (snap, Chrome, etc.)
+    install_prerequisites
+
+    echo ""
+
+    # NGC API key (after prerequisites so we have wget/curl)
     check_ngc_api_key
 
     echo ""
-    info "Starting installation..."
+    info "Starting Kubernetes installation..."
     echo ""
 
     # Install Kubernetes distribution
