@@ -1,0 +1,143 @@
+---
+# MiniPrem CNS Validation Playbook
+#
+# Validates CNS deployment health and configuration.
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/validate.yml
+
+- name: Validate CNS Deployment
+  hosts: cns
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Check System Prerequisites
+      block:
+        - name: Check NVIDIA GPU
+          shell: lspci | grep -i nvidia
+          register: gpu_check
+          changed_when: false
+
+        - name: Check NVIDIA driver
+          command: nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+          register: nvidia_smi
+          changed_when: false
+          failed_when: false
+
+        - name: Display GPU info
+          debug:
+            msg: |
+              GPU Hardware: {{ gpu_check.stdout_lines }}
+              Driver Info: {{ nvidia_smi.stdout | default('Driver not installed') }}
+      tags: gpu
+
+    - name: Check Kubernetes
+      block:
+        - name: Check MicroK8s status
+          command: microk8s status
+          register: microk8s_status
+          changed_when: false
+          when: cns_k8s_type == 'microk8s'
+
+        - name: Check cluster nodes
+          command: kubectl get nodes -o wide
+          register: nodes
+          changed_when: false
+
+        - name: Check cluster info
+          command: kubectl cluster-info
+          register: cluster_info
+          changed_when: false
+
+        - name: Display Kubernetes status
+          debug:
+            msg: |
+              {{ microk8s_status.stdout | default('') }}
+              Nodes:
+              {{ nodes.stdout }}
+      tags: kubernetes
+
+    - name: Check GPU Operator
+      block:
+        - name: Get GPU Operator pods
+          command: kubectl get pods -n gpu-operator
+          register: gpu_operator_pods
+          changed_when: false
+
+        - name: Check GPU resources on nodes
+          shell: kubectl get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}'
+          register: gpu_resources
+          changed_when: false
+
+        - name: Display GPU Operator status
+          debug:
+            msg: |
+              GPU Operator Pods:
+              {{ gpu_operator_pods.stdout }}
+
+              GPU Resources:
+              {{ gpu_resources.stdout }}
+      tags: gpu-operator
+
+    - name: Check MiniPrem Components
+      block:
+        - name: Get namespaces
+          command: kubectl get namespaces
+          register: namespaces
+          changed_when: false
+
+        - name: Check Renny deployment
+          command: kubectl get deployment -n {{ renny_namespace | default('uneeq') }}
+          register: renny_deployment
+          changed_when: false
+          failed_when: false
+
+        - name: Check all MiniPrem pods
+          shell: kubectl get pods -A | grep -E "uneeq|nim|riva|phoenix"
+          register: miniprem_pods
+          changed_when: false
+          failed_when: false
+
+        - name: Display MiniPrem status
+          debug:
+            msg: |
+              Renny Deployment:
+              {{ renny_deployment.stdout | default('Not deployed') }}
+
+              All MiniPrem Pods:
+              {{ miniprem_pods.stdout | default('No pods found') }}
+      tags: miniprem
+
+    - name: Check Services
+      block:
+        - name: Get all services
+          command: kubectl get svc -A
+          register: services
+          changed_when: false
+
+        - name: Display services
+          debug:
+            msg: |
+              Services:
+              {{ services.stdout }}
+      tags: services
+
+    - name: Generate Summary Report
+      debug:
+        msg: |
+
+          ╔═══════════════════════════════════════════════════════════════╗
+          ║              CNS Validation Summary                            ║
+          ╚═══════════════════════════════════════════════════════════════╝
+
+          Host: {{ ansible_hostname }}
+          OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          Kubernetes: {{ cns_k8s_type }}
+
+          GPU Status: {{ 'OK' if nvidia_smi.rc == 0 else 'DRIVER NOT INSTALLED' }}
+          Cluster Status: {{ 'OK' if nodes.rc == 0 else 'NOT ACCESSIBLE' }}
+          GPU Resources: {{ gpu_resources.stdout_lines | length }} node(s) with GPU
+
+          ════════════════════════════════════════════════════════════════
+      tags: summary

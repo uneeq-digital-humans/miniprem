@@ -4,8 +4,8 @@
 # MiniPrem Multi-Cloud Kubernetes Status Router
 #
 # This script provides a unified entry point for checking the status of MiniPrem
-# deployments across multiple cloud platforms. It handles:
-#   - Interactive platform selection (AWS, Azure, GCP)
+# deployments across multiple cloud platforms and on-premises environments. It handles:
+#   - Interactive platform selection (AWS, Azure, GCP, NVIDIA CNS)
 #   - CLI tool validation with OS-specific install instructions
 #   - Authentication verification using environment variables and CLI
 #   - Delegation to platform-specific status scripts
@@ -67,37 +67,47 @@ select_platform() {
 ╚═══════════════════════════════════════════════════════════════╝
 "
 
-    echo "Select your cloud platform:"
+    echo "Select your deployment platform:"
     echo ""
-    echo "  1) Amazon Web Services (AWS)"
-    echo "  2) Microsoft Azure"
-    echo "  3) Google Cloud Platform (GCP)"
+    print_color "$BLUE" "  Cloud Managed Kubernetes:"
+    echo "    1) Amazon Web Services (AWS EKS)"
+    echo "    2) Microsoft Azure (AKS)"
+    echo "    3) Google Cloud Platform (GKE)"
     echo ""
-    echo -n "Enter your choice (1-3): "
+    print_color "$BLUE" "  On-Premises:"
+    echo "    4) NVIDIA Cloud Native Stack (CNS)"
+    echo ""
+    echo -n "Enter your choice (1-4): "
 
     read -r choice
 
     case $choice in
         1)
             PLATFORM="aws"
-            PLATFORM_NAME="Amazon Web Services (AWS)"
+            PLATFORM_NAME="Amazon Web Services (AWS EKS)"
             CLI_TOOL="aws"
-            STATUS_SCRIPT="status-aws.sh"
+            STATUS_SCRIPT="aws/status.sh"
             ;;
         2)
             PLATFORM="azure"
-            PLATFORM_NAME="Microsoft Azure"
+            PLATFORM_NAME="Microsoft Azure (AKS)"
             CLI_TOOL="az"
-            STATUS_SCRIPT="status-azure.sh"
+            STATUS_SCRIPT="azure/status.sh"
             ;;
         3)
             PLATFORM="gcp"
-            PLATFORM_NAME="Google Cloud Platform (GCP)"
+            PLATFORM_NAME="Google Cloud Platform (GKE)"
             CLI_TOOL="gcloud"
-            STATUS_SCRIPT="status-gcp.sh"
+            STATUS_SCRIPT="gke/status.sh"
+            ;;
+        4)
+            PLATFORM="cns"
+            PLATFORM_NAME="NVIDIA Cloud Native Stack (CNS)"
+            CLI_TOOL="kubectl"
+            STATUS_SCRIPT="cns/status.sh"
             ;;
         *)
-            error "Invalid choice. Please run the script again and select 1, 2, or 3."
+            error "Invalid choice. Please run the script again and select 1-4."
             exit 1
             ;;
     esac

@@ -1,0 +1,455 @@
+---
+# MiniPrem CNS Full Installation Playbook
+#
+# Installs NVIDIA Cloud Native Stack with MiniPrem on target servers.
+#
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/cns-install.yml
+#
+# Tags:
+#   - prerequisites: System prerequisites only
+#   - kubernetes: Kubernetes installation only
+#   - gpu-operator: GPU Operator only
+#   - miniprem: MiniPrem deployment only
+#   - phoenix: Phoenix observability only
+#   - validate: Run validation checks
+
+- name: MiniPrem CNS Installation
+  hosts: cns
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../vars/cns_versions.yml
+
+  pre_tasks:
+    - name: Display deployment configuration
+      debug:
+        msg: |
+          CNS Installation Configuration:
+          - Kubernetes Type: {{ cns_k8s_type }}
+          - GPU Time-Slicing: {{ gpu_timeslice_replicas }} replicas/GPU
+          - Renny Replicas: {{ renny_replicas }}
+          - Phoenix Enabled: {{ phoenix_enabled | default(true) }}
+          - NGC API Key: {{ 'Configured' if ngc_api_key else 'Not Set' }}
+
+    - name: Verify NGC API key is set
+      fail:
+        msg: "NGC_API_KEY environment variable is required. Get one at https://ngc.nvidia.com/"
+      when: ngc_api_key is not defined or ngc_api_key == ''
+      tags: always
+
+  tasks:
+    ##########################################################################
+    # Prerequisites
+    ##########################################################################
+    - name: Install system prerequisites
+      block:
+        - name: Update apt cache
+          apt:
+            update_cache: yes
+            cache_valid_time: 3600
+          when: ansible_os_family == "Debian"
+
+        - name: Install required packages
+          package:
+            name:
+              - curl
+              - wget
+              - apt-transport-https
+              - ca-certificates
+              - gnupg
+              - lsb-release
+              - software-properties-common
+              - jq
+            state: present
+
+        - name: Check for NVIDIA GPU
+          shell: lspci | grep -i nvidia
+          register: nvidia_gpu_check
+          failed_when: false
+          changed_when: false
+
+        - name: Fail if no NVIDIA GPU detected
+          fail:
+            msg: "No NVIDIA GPU detected. CNS requires NVIDIA GPU hardware."
+          when: nvidia_gpu_check.rc != 0
+
+        - name: Display detected GPU
+          debug:
+            msg: "{{ nvidia_gpu_check.stdout_lines }}"
+      tags: prerequisites
+
+    ##########################################################################
+    # MicroK8s Installation
+    ##########################################################################
+    - name: Install MicroK8s
+      block:
+        - name: Install snapd
+          package:
+            name: snapd
+            state: present
+
+        - name: Install MicroK8s
+          snap:
+            name: microk8s
+            classic: yes
+            channel: "{{ microk8s_channel }}"
+
+        - name: Add user to microk8s group
+          user:
+            name: "{{ ansible_user }}"
+            groups: microk8s
+            append: yes
+
+        - name: Wait for MicroK8s to be ready
+          command: microk8s status --wait-ready
+          changed_when: false
+          retries: 10
+          delay: 30
+          register: microk8s_status
+          until: microk8s_status.rc == 0
+
+        - name: Enable MicroK8s addons
+          command: "microk8s enable {{ item }}"
+          loop:
+            - dns
+            - hostpath-storage
+            - helm3
+          changed_when: false
+
+        - name: Enable NVIDIA addon
+          command: microk8s enable nvidia
+          changed_when: false
+
+        - name: Create kubectl symlink
+          file:
+            src: /snap/bin/microk8s.kubectl
+            dest: /usr/local/bin/kubectl
+            state: link
+            force: yes
+
+        - name: Create helm symlink
+          file:
+            src: /snap/bin/microk8s.helm3
+            dest: /usr/local/bin/helm
+            state: link
+            force: yes
+
+      when: cns_k8s_type == 'microk8s'
+      tags: kubernetes
+
+    ##########################################################################
+    # kubeadm Installation (alternative)
+    ##########################################################################
+    - name: Install Kubernetes via kubeadm
+      block:
+        - name: Install containerd
+          package:
+            name: containerd
+            state: present
+
+        - name: Add Kubernetes apt key
+          apt_key:
+            url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Add Kubernetes apt repository
+          apt_repository:
+            repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+            state: present
+          when: ansible_os_family == "Debian"
+
+        - name: Install kubeadm, kubelet, kubectl
+          package:
+            name:
+              - kubelet
+              - kubeadm
+              - kubectl
+            state: present
+
+        - name: Initialize Kubernetes cluster
+          command: kubeadm init --pod-network-cidr=10.244.0.0/16
+          args:
+            creates: /etc/kubernetes/admin.conf
+
+        - name: Create .kube directory
+          file:
+            path: /root/.kube
+            state: directory
+            mode: '0755'
+
+        - name: Copy admin.conf
+          copy:
+            src: /etc/kubernetes/admin.conf
+            dest: /root/.kube/config
+            remote_src: yes
+            mode: '0600'
+
+        - name: Install Calico CNI
+          command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
+          changed_when: false
+
+        - name: Remove control-plane taint for single-node
+          command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+          failed_when: false
+          changed_when: false
+
+      when: cns_k8s_type == 'kubeadm'
+      tags: kubernetes
+
+    ##########################################################################
+    # GPU Operator
+    ##########################################################################
+    - name: Install NVIDIA GPU Operator
+      block:
+        - name: Add NVIDIA Helm repository
+          command: helm repo add nvidia https://helm.ngc.nvidia.com/nvidia
+          changed_when: false
+          failed_when: false
+
+        - name: Update Helm repositories
+          command: helm repo update
+          changed_when: false
+
+        - name: Create gpu-operator namespace
+          command: kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
+          changed_when: false
+
+        - name: Install GPU Operator
+          command: >
+            helm upgrade --install gpu-operator nvidia/gpu-operator
+            --namespace gpu-operator
+            --version {{ gpu_operator_version }}
+            --set driver.enabled={{ gpu_operator_driver_enabled | default(true) }}
+            --set toolkit.enabled=true
+            --set devicePlugin.enabled=true
+            --set dcgmExporter.enabled=true
+            --wait --timeout 10m
+          changed_when: false
+
+        - name: Wait for GPU resources
+          shell: kubectl get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}'
+          register: gpu_resources
+          until: gpu_resources.stdout != "" and gpu_resources.stdout != "0"
+          retries: 30
+          delay: 10
+          changed_when: false
+
+        - name: Display available GPUs
+          debug:
+            msg: "GPU resources available: {{ gpu_resources.stdout }}"
+
+      when: cns_k8s_type == 'kubeadm'  # MicroK8s handles this via nvidia addon
+      tags: gpu-operator
+
+    ##########################################################################
+    # GPU Time-Slicing
+    ##########################################################################
+    - name: Configure GPU Time-Slicing
+      block:
+        - name: Create time-slicing ConfigMap
+          copy:
+            dest: /tmp/gpu-timeslice.yaml
+            content: |
+              apiVersion: v1
+              kind: ConfigMap
+              metadata:
+                name: time-slicing-config
+                namespace: gpu-operator
+              data:
+                any: |-
+                  version: v1
+                  flags:
+                    migStrategy: none
+                  sharing:
+                    timeSlicing:
+                      renameByDefault: false
+                      failRequestsGreaterThanOne: false
+                      resources:
+                        - name: nvidia.com/gpu
+                          replicas: {{ gpu_timeslice_replicas }}
+
+        - name: Apply time-slicing ConfigMap
+          command: kubectl apply -f /tmp/gpu-timeslice.yaml
+          changed_when: false
+
+        - name: Patch cluster policy for time-slicing
+          command: >
+            kubectl patch clusterpolicies.nvidia.com/cluster-policy
+            -n gpu-operator --type merge
+            -p '{"spec": {"devicePlugin": {"config": {"name": "time-slicing-config", "default": "any"}}}}'
+          changed_when: false
+          failed_when: false
+
+      tags: gpu-timeslicing
+
+    ##########################################################################
+    # MiniPrem Stack
+    ##########################################################################
+    - name: Deploy MiniPrem Stack
+      block:
+        - name: Create namespaces
+          command: kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
+          loop:
+            - "{{ renny_namespace }}"
+            - nim-operator
+            - nim-models
+            - nim-rag
+          changed_when: false
+
+        - name: Create NGC API secret
+          command: >
+            kubectl create secret generic ngc-api-key
+            --from-literal=NGC_API_KEY="{{ ngc_api_key }}"
+            --namespace nim-operator
+            --dry-run=client -o yaml | kubectl apply -f -
+          changed_when: false
+
+        - name: Install NIM Operator
+          command: >
+            helm upgrade --install nim-operator nvidia/k8s-nim-operator
+            --namespace nim-operator
+            --version {{ nim_operator_version }}
+            --wait --timeout 5m
+          changed_when: false
+          when: nim_operator_enabled | default(true)
+
+        # Note: Renny Helm chart would be deployed here
+        # This is a placeholder - actual chart deployment depends on chart location
+        - name: Check for Renny Helm chart
+          stat:
+            path: /home/{{ ansible_user }}/miniprem-cns/renny/Chart.yaml
+          register: renny_chart
+
+        - name: Deploy Renny via Helm
+          command: >
+            helm upgrade --install renny /home/{{ ansible_user }}/miniprem-cns/renny
+            --namespace {{ renny_namespace }}
+            --set replicas={{ renny_replicas }}
+            --wait --timeout 10m
+          when: renny_chart.stat.exists
+          changed_when: false
+
+      tags: miniprem
+
+    ##########################################################################
+    # Phoenix Observability
+    ##########################################################################
+    - name: Deploy Phoenix Observability
+      block:
+        - name: Create observability namespace
+          command: kubectl create namespace {{ phoenix_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+          changed_when: false
+
+        - name: Deploy Phoenix
+          command: >
+            kubectl apply -f - <<EOF
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: phoenix
+              namespace: {{ phoenix_namespace }}
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
+                  app: phoenix
+              template:
+                metadata:
+                  labels:
+                    app: phoenix
+                spec:
+                  containers:
+                  - name: phoenix
+                    image: arizephoenix/phoenix:{{ phoenix_version }}
+                    ports:
+                    - containerPort: 6006
+                      name: ui
+                    - containerPort: 4317
+                      name: otlp
+                    - containerPort: 9090
+                      name: prometheus
+                    env:
+                    - name: PHOENIX_ENABLE_PROMETHEUS
+                      value: "true"
+                    resources:
+                      requests:
+                        memory: "2Gi"
+                        cpu: "1000m"
+                      limits:
+                        memory: "4Gi"
+                        cpu: "2000m"
+            ---
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: phoenix
+              namespace: {{ phoenix_namespace }}
+            spec:
+              selector:
+                app: phoenix
+              ports:
+              - name: ui
+                port: 6006
+                targetPort: 6006
+              - name: otlp
+                port: 4317
+                targetPort: 4317
+              - name: prometheus
+                port: 9090
+                targetPort: 9090
+            EOF
+          changed_when: false
+
+      when: phoenix_enabled | default(true)
+      tags: phoenix
+
+    ##########################################################################
+    # Validation
+    ##########################################################################
+    - name: Validate deployment
+      block:
+        - name: Check cluster status
+          command: kubectl get nodes
+          register: nodes_status
+          changed_when: false
+
+        - name: Check GPU Operator pods
+          command: kubectl get pods -n gpu-operator
+          register: gpu_operator_pods
+          changed_when: false
+
+        - name: Check MiniPrem pods
+          command: kubectl get pods -n {{ renny_namespace }}
+          register: miniprem_pods
+          changed_when: false
+          failed_when: false
+
+        - name: Display deployment summary
+          debug:
+            msg: |
+
+              ========================================
+              CNS Installation Complete!
+              ========================================
+
+              Cluster Nodes:
+              {{ nodes_status.stdout }}
+
+              GPU Operator:
+              {{ gpu_operator_pods.stdout }}
+
+              MiniPrem Pods:
+              {{ miniprem_pods.stdout | default('No pods yet') }}
+
+              ========================================
+
+      tags: validate
+
+  handlers:
+    - name: restart kubelet
+      service:
+        name: kubelet
+        state: restarted
