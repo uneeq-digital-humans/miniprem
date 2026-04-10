@@ -1,0 +1,211 @@
+# Renny Helm values for NVIDIA Cloud Native Stack (CNS)
+# On-premises deployment on NVIDIA GPU hardware
+#
+# Key differences from cloud (EKS/AKS):
+#   - Uses local NIM for LLM inference (no external API)
+#   - Uses local Riva for TTS (optional, can still use cloud TTS)
+#   - No autoscaling (fixed hardware)
+#   - Simpler node selection (typically single server)
+
+image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
+
+# Image pull secret for Harbor registry authentication
+imagePullSecrets:
+  - name: harbor-credentials
+
+# GPU time-slicing configuration
+# On CNS, this is critical for running multiple Rennys on limited GPUs
+gpuTimeSlicing:
+  enabled: true
+  replicasPerGpu: 4  # CNS default: 4 Rennys per GPU (adjust based on GPU memory)
+  # A100 80GB: can handle 4-6 replicas
+  # A100 40GB: can handle 2-4 replicas
+  # T4 16GB: can handle 1-2 replicas
+
+  configMap:
+    name: time-slicing-config
+    namespace: gpu-operator
+
+deployment:
+  nodeType: ""  # Empty = no node selector (single server deployments)
+  totalReplicas: 4  # Match gpuTimeSlicing.replicasPerGpu × number of GPUs
+
+renderer:
+  # Audio2Face for lip-sync (local service)
+  a2f:
+    url: "http://localhost:52000"
+
+  # Conversation Platform (Flowise - local)
+  cp:
+    flowiseUrl: "http://localhost:3000"  # Local Flowise instance
+    flowiseApiKey: ""  # Set if Flowise auth is enabled
+
+  # DHOP connection (still connects to UneeQ cloud for session orchestration)
+  dhop:
+    apiKey: "your-dhop-api-key-here"
+    tenantId: "your-dhop-tenant-id-here"
+    url: wss://api.enterprise.uneeq.io:443/signalling-service
+
+  launchDarkly:
+    key: ""  # Optional
+
+  # TTS Configuration
+  # For CNS, you have two options:
+  #
+  # OPTION A: Local NVIDIA Riva TTS (recommended for air-gapped/low-latency)
+  # Requires Riva deployment via NIM Operator
+  #
+  # OPTION B: Cloud TTS (Azure, ElevenLabs, etc.)
+  # Same as cloud deployments, just needs internet access
+
+  tts:
+    # --- OPTION A: NVIDIA Riva (local) ---
+    # Uncomment these for local Riva TTS
+    # rivaUrl: "localhost:50051"
+    # rivaUseSsl: false
+
+    # --- OPTION B: Cloud TTS (pick one) ---
+    # Azure Speech Services
+    azureRegion: ""
+    azureSpeechKey: ""
+
+    # ElevenLabs
+    elevenlabsApiKey: ""
+    elevenlabsModelId: "eleven_turbo_v2"
+    elevenlabsOptimizeLatencyLevel: "1"
+
+    # Google Cloud TTS
+    gcpCredentials: ""
+
+    # Veritone
+    veritoneApiKey: ""
+
+    # Custom proxy
+    proxyUrl: ""
+
+  unrealEngine:
+    config: ""  # Base64 encoded configuration.dat
+    args:
+      - "/Game/Live_Levels/BlankScene"
+      - "-RenderOffScreen"
+      - "-ResX=1920"
+      - "-ResY=1080"
+      - "-NoTextureStreaming"
+
+  health:
+    url: "http://0.0.0.0:8081/health"
+
+# Resource limits
+# Adjust based on your GPU (these are for A100)
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: "8Gi"
+    cpu: "4000m"
+  requests:
+    nvidia.com/gpu: 1
+    memory: "8Gi"
+    cpu: "4000m"
+
+# Node selector - typically empty for single-server CNS
+# For multi-node CNS clusters, you might use:
+#   uneeq.io/node-type: gpu
+nodeSelector: {}
+
+# GPU toleration
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Pod affinity - spread across GPUs if multiple available
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - renny
+        topologyKey: kubernetes.io/hostname
+
+# Service configuration
+service:
+  type: ClusterIP  # Use NodePort if external access needed without ingress
+  ports:
+    health: 8081
+    webrtc: 8888
+    pixelstream: 8080
+
+# Health checks
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 120  # Longer for CNS (GPU warmup)
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Autoscaling - DISABLED for CNS (fixed hardware)
+autoscaling:
+  enabled: false
+  # On CNS, you scale by changing deployment.totalReplicas manually
+  # or via: ./scale.sh <count>
+
+# Telemetry
+telemetry:
+  enabled: true
+  backendUrl: "https://renny.services.uneeq.io"
+  heartbeatInterval: 900
+  platform: "cns"  # Identifies this as on-premises deployment
+  deploymentId: ""  # Auto-generated during install
+
+# Environment variables
+env:
+  - name: NVIDIA_VISIBLE_DEVICES
+    value: "all"
+  - name: NVIDIA_DRIVER_CAPABILITIES
+    value: "all"
+  - name: NEW_SPEECH_OVERRIDE
+    value: "1"
+  - name: A2F_ADDRESS
+    value: "http://localhost:52000"
+  - name: A2F_AUDIO_DELAY_TIME_MS
+    value: "240"
+  - name: A2F_AUDIO_SAMPLE_RATE
+    value: "16000"
+  - name: RENNY_QUALITY_LEVEL
+    value: "max"  # CNS uses 'max' quality (local GPU, no bandwidth constraints)
+
+# --- CNS-Specific: Local LLM via NIM ---
+# These are used when Flowise connects to local vLLM/NIM instead of OpenAI
+nim:
+  enabled: true
+  # NIM endpoint (local vLLM or NIM container)
+  endpoint: "http://localhost:8000/v1"
+  # Model served by NIM
+  model: "meta/llama-3.1-8b-instruct"
+
+# --- CNS-Specific: Local Riva TTS/ASR ---
+riva:
+  enabled: false  # Set to true if using NVIDIA Riva
+  endpoint: "localhost:50051"
+  useSsl: false
+  # Riva models (deployed via NIM Operator)
+  ttsModel: "fastpitch_hifigan"
+  asrModel: "conformer"

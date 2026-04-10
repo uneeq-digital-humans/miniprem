@@ -47,6 +47,7 @@ error() { print_color "$RED" "❌ $*"; }
 CNS_K8S_TYPE="${CNS_K8S_TYPE:-microk8s}"
 NGC_API_KEY="${NGC_API_KEY:-}"
 NVIDIA_DIR="${NVIDIA_DIR:-$KUBERNETES_DIR/../nvidia}"
+RENNY_REPLICAS="${RENNY_REPLICAS:-4}"  # Number of Renny instances (adjust for GPU count)
 
 # Version pinning
 MICROK8S_CHANNEL="1.31/stable"
@@ -454,10 +455,19 @@ deploy_miniprem_stack() {
     # Deploy Renny via Helm
     info "Deploying Renny..."
     if [[ -f "$KUBERNETES_DIR/renny/Chart.yaml" ]]; then
+        # Use CNS-specific values file
+        local VALUES_FILE="$KUBERNETES_DIR/values/renny-values-cns.yaml"
+        if [[ ! -f "$VALUES_FILE" ]]; then
+            VALUES_FILE="$KUBERNETES_DIR/values/renny-values.yaml"
+            warning "CNS values file not found, using default values"
+        fi
+
         $HELM upgrade --install renny "$KUBERNETES_DIR/renny" \
             --namespace uneeq \
-            --values "$KUBERNETES_DIR/values/renny-values.yaml" \
-            --set replicas=2 \
+            --values "$VALUES_FILE" \
+            --set deployment.totalReplicas="${RENNY_REPLICAS:-4}" \
+            --set telemetry.platform="cns" \
+            --set nim.endpoint="http://localhost:8000/v1" \
             --wait --timeout 10m || warning "Renny deployment skipped or failed"
     else
         warning "Renny Helm chart not found at $KUBERNETES_DIR/renny"
