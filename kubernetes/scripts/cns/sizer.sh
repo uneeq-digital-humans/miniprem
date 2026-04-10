@@ -359,19 +359,238 @@ quick_estimate() {
     print_config_table "$gpu" "$vram" "1"
 }
 
+################################################################################
+# Apply Configuration
+################################################################################
+
+detect_kubectl() {
+    if command -v microk8s &> /dev/null; then
+        echo "microk8s kubectl"
+    elif command -v kubectl &> /dev/null; then
+        echo "kubectl"
+    else
+        echo ""
+    fi
+}
+
+detect_helm() {
+    if command -v microk8s &> /dev/null; then
+        echo "microk8s helm3"
+    elif command -v helm &> /dev/null; then
+        echo "helm"
+    else
+        echo ""
+    fi
+}
+
+apply_configuration() {
+    local renny_count=$1
+    local rennys_per_gpu=$2
+    local quality=$3
+    local resolution=$4
+
+    local KUBECTL=$(detect_kubectl)
+    local HELM=$(detect_helm)
+
+    if [[ -z "$KUBECTL" ]]; then
+        print_color "$RED" "Error: kubectl not found. Is Kubernetes installed?"
+        exit 1
+    fi
+
+    print_color "$BOLD" ""
+    print_color "$BOLD" "Applying Configuration..."
+    print_color "$BOLD" "========================="
+    echo ""
+    echo "  Renny Replicas: $renny_count"
+    echo "  GPU Time-Slice: $rennys_per_gpu per GPU"
+    echo "  Quality Mode:   $quality"
+    echo "  Resolution:     $resolution"
+    echo ""
+
+    # Confirm before applying
+    read -p "Apply this configuration? [y/N]: " confirm
+    if [[ "${confirm,,}" != "y" ]]; then
+        print_color "$YELLOW" "Aborted."
+        exit 0
+    fi
+
+    echo ""
+
+    # Step 1: Update GPU time-slicing ConfigMap
+    print_color "$BLUE" "Step 1/4: Updating GPU time-slicing ConfigMap..."
+    cat <<EOF | $KUBECTL apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: time-slicing-config
+  namespace: gpu-operator
+data:
+  any: |-
+    version: v1
+    flags:
+      migStrategy: none
+    sharing:
+      timeSlicing:
+        renameByDefault: false
+        failRequestsGreaterThanOne: false
+        resources:
+          - name: nvidia.com/gpu
+            replicas: $rennys_per_gpu
+EOF
+    if [[ $? -eq 0 ]]; then
+        print_color "$GREEN" "  ✓ Time-slicing ConfigMap updated"
+    else
+        print_color "$YELLOW" "  ⚠ ConfigMap update failed (may not exist yet)"
+    fi
+
+    # Step 2: Patch cluster policy (if exists)
+    print_color "$BLUE" "Step 2/4: Patching GPU Operator cluster policy..."
+    $KUBECTL patch clusterpolicies.nvidia.com/cluster-policy \
+        -n gpu-operator \
+        --type merge \
+        -p '{"spec": {"devicePlugin": {"config": {"name": "time-slicing-config", "default": "any"}}}}' 2>/dev/null
+    if [[ $? -eq 0 ]]; then
+        print_color "$GREEN" "  ✓ Cluster policy patched"
+    else
+        print_color "$YELLOW" "  ⚠ Cluster policy patch skipped (may not exist)"
+    fi
+
+    # Step 3: Scale Renny deployment
+    print_color "$BLUE" "Step 3/4: Scaling Renny deployment to $renny_count replicas..."
+
+    # Try to find Renny deployment
+    local RENNY_DEPLOY=$($KUBECTL get deployment -n uneeq -o name 2>/dev/null | grep -E "renny|renderer" | head -1)
+
+    if [[ -n "$RENNY_DEPLOY" ]]; then
+        $KUBECTL scale "$RENNY_DEPLOY" -n uneeq --replicas="$renny_count"
+        print_color "$GREEN" "  ✓ Scaled $RENNY_DEPLOY to $renny_count replicas"
+    else
+        print_color "$YELLOW" "  ⚠ No Renny deployment found in 'uneeq' namespace"
+        print_color "$YELLOW" "    Run deploy script first, or set RENNY_REPLICAS=$renny_count"
+    fi
+
+    # Step 4: Update environment variable (quality mode)
+    print_color "$BLUE" "Step 4/4: Updating quality mode to '$quality'..."
+
+    if [[ -n "$RENNY_DEPLOY" ]]; then
+        $KUBECTL set env "$RENNY_DEPLOY" -n uneeq RENNY_QUALITY_LEVEL="$quality" 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+            print_color "$GREEN" "  ✓ Quality mode set to '$quality'"
+        else
+            print_color "$YELLOW" "  ⚠ Could not set quality mode"
+        fi
+    fi
+
+    echo ""
+    print_color "$GREEN" "Configuration applied!"
+    echo ""
+
+    # Show current status
+    print_color "$BOLD" "Current Status:"
+    echo ""
+
+    if [[ -n "$RENNY_DEPLOY" ]]; then
+        $KUBECTL get pods -n uneeq -l app=renderer 2>/dev/null || \
+        $KUBECTL get pods -n uneeq 2>/dev/null | head -10
+    fi
+
+    echo ""
+    print_color "$CYAN" "Monitor rollout with:"
+    echo "  $KUBECTL rollout status $RENNY_DEPLOY -n uneeq"
+    echo ""
+    print_color "$CYAN" "Watch pods:"
+    echo "  $KUBECTL get pods -n uneeq -w"
+    echo ""
+    print_color "$CYAN" "Check GPU usage:"
+    echo "  nvidia-smi -l 1"
+}
+
+apply_interactive() {
+    print_header
+
+    # Detect GPU
+    local detected=$(detect_gpu)
+    local gpu_name=""
+    local vram_gb=""
+    local gpu_count=""
+
+    if [[ -n "$detected" ]]; then
+        gpu_name=$(echo "$detected" | cut -d'|' -f1)
+        vram_gb=$(echo "$detected" | cut -d'|' -f2)
+        gpu_count=$(get_gpu_count)
+
+        print_color "$GREEN" "Detected: $gpu_name (${vram_gb}GB) × $gpu_count"
+        echo ""
+    else
+        print_color "$RED" "No GPU detected. Cannot auto-configure."
+        echo ""
+        read -p "Enter GPU VRAM in GB: " vram_gb
+        gpu_count=1
+        gpu_name="Manual"
+    fi
+
+    # Show capacity table
+    print_config_table "$gpu_name" "$vram_gb" "$gpu_count"
+
+    # Get user preferences
+    echo ""
+    read -p "Resolution (1080p/4k) [1080p]: " resolution
+    resolution=${resolution:-1080p}
+
+    read -p "Quality mode (web/miniprem) [miniprem]: " quality
+    quality=${quality:-miniprem}
+
+    read -p "Include local LLM? (y/n) [y]: " include_llm
+    include_llm=${include_llm:-y}
+
+    local llm_type="7b"
+    if [[ "${include_llm,,}" != "y" ]]; then
+        llm_type="none"
+    fi
+
+    # Calculate
+    local result=$(calculate_renny_capacity "$vram_gb" "$resolution" "$quality" "$llm_type" "false")
+    local max_per_gpu=$(echo "$result" | cut -d'|' -f1)
+    local max_total=$((max_per_gpu * gpu_count))
+
+    echo ""
+    print_color "$CYAN" "Maximum Renny instances: $max_total"
+    read -p "How many Rennys to deploy? [$max_total]: " renny_count
+    renny_count=${renny_count:-$max_total}
+
+    # Validate
+    if [[ $renny_count -gt $max_total ]]; then
+        print_color "$YELLOW" "Warning: $renny_count exceeds recommended max ($max_total)"
+        read -p "Continue anyway? [y/N]: " force
+        if [[ "${force,,}" != "y" ]]; then
+            exit 1
+        fi
+    fi
+
+    # Calculate per-GPU slicing
+    local rennys_per_gpu=$(( (renny_count + gpu_count - 1) / gpu_count ))
+
+    # Apply
+    apply_configuration "$renny_count" "$rennys_per_gpu" "$quality" "$resolution"
+}
+
 usage() {
     echo "Usage: $0 [OPTIONS]"
     echo ""
     echo "Options:"
     echo "  --detect           Auto-detect GPU and show capacity"
     echo "  --gpu \"MODEL\"      Specify GPU model (e.g., \"A100 80GB\")"
+    echo "  --apply            Interactive mode with auto-apply to cluster"
+    echo "  --apply-quick      Auto-detect GPU and apply recommended config"
     echo "  --list             List known GPU models"
     echo "  --help             Show this help"
     echo ""
     echo "Examples:"
-    echo "  $0                          # Interactive mode"
-    echo "  $0 --detect                 # Auto-detect and show table"
-    echo "  $0 --gpu \"A100 80GB\"        # Show capacity for A100 80GB"
+    echo "  $0                          # Interactive calculator (no changes)"
+    echo "  $0 --detect                 # Auto-detect and show capacity table"
+    echo "  $0 --gpu \"A100 80GB\"        # Show capacity for specific GPU"
+    echo "  $0 --apply                  # Interactive mode, then apply to cluster"
+    echo "  $0 --apply-quick            # Auto-detect and apply recommended config"
     echo ""
 }
 
@@ -396,11 +615,39 @@ main() {
         --gpu)
             quick_estimate "${2:-}"
             ;;
+        --apply)
+            apply_interactive
+            ;;
+        --apply-quick)
+            print_header
+            local detected=$(detect_gpu)
+            if [[ -z "$detected" ]]; then
+                print_color "$RED" "No NVIDIA GPU detected"
+                exit 1
+            fi
+            local gpu_name=$(echo "$detected" | cut -d'|' -f1)
+            local vram_gb=$(echo "$detected" | cut -d'|' -f2)
+            local gpu_count=$(get_gpu_count)
+
+            print_color "$GREEN" "Detected: $gpu_name (${vram_gb}GB) × $gpu_count"
+            print_config_table "$gpu_name" "$vram_gb" "$gpu_count"
+
+            # Use defaults: 1080p, miniprem, with 7B LLM
+            local result=$(calculate_renny_capacity "$vram_gb" "1080p" "miniprem" "7b" "false")
+            local max_per_gpu=$(echo "$result" | cut -d'|' -f1)
+            local max_total=$((max_per_gpu * gpu_count))
+            local rennys_per_gpu=$max_per_gpu
+
+            print_color "$CYAN" "Recommended config: $max_total Rennys @ 1080p miniprem (with 7B LLM)"
+            echo ""
+
+            apply_configuration "$max_total" "$rennys_per_gpu" "miniprem" "1080p"
+            ;;
         --list)
             echo "Known GPU models:"
-            for gpu in "${!GPU_VRAM[@]}"; do
-                printf "  %-20s %3dGB\n" "$gpu" "${GPU_VRAM[$gpu]}"
-            done | sort
+            echo "  Datacenter: H100 80GB, A100 80GB, A100 40GB, L40, L40S, A10, A10G, T4"
+            echo "  Workstation: RTX 6000 Ada, RTX A6000, RTX A5000, RTX 5000 Ada"
+            echo "  Consumer: RTX 4090, RTX 4080, RTX 3090"
             ;;
         --help|-h)
             usage

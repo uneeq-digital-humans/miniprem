@@ -284,19 +284,22 @@ Set via Renny command arguments:
 
 The sizer tool (`kubernetes/scripts/cns/sizer.sh`) calculates how many Renny instances you can run based on your hardware configuration.
 
-**Important:** The sizer is a **calculator only**. It does NOT:
-- Restart Renny pods
-- Modify configurations
-- Apply changes to the cluster
+**Two modes:**
 
-It outputs recommended settings that you then apply manually or pass to the deploy script.
+| Mode | Flags | Behavior |
+|------|-------|----------|
+| Calculator | `--detect`, `--gpu`, (default) | Shows capacity table only - **no changes** |
+| Apply | `--apply`, `--apply-quick` | Calculates AND applies config to cluster |
+
+**Calculator mode outputs** recommended settings that you can apply manually.
+**Apply mode** actually modifies the cluster (time-slicing, replicas, quality mode).
 
 ### Usage
 
 ```bash
 cd kubernetes/scripts/cns
 
-# Interactive mode (prompts for inputs)
+# Interactive mode (calculator only - no changes made)
 ./sizer.sh
 
 # Auto-detect GPU from current system
@@ -309,6 +312,56 @@ cd kubernetes/scripts/cns
 
 # List known GPUs
 ./sizer.sh --list
+
+# === APPLY MODE (makes changes to cluster) ===
+
+# Interactive apply - prompts for settings, then applies to cluster
+./sizer.sh --apply
+
+# Quick apply - auto-detect GPU, use recommended settings, apply immediately
+./sizer.sh --apply-quick
+```
+
+### Apply Mode
+
+The `--apply` and `--apply-quick` flags actually modify your cluster:
+
+| Flag | What it does |
+|------|--------------|
+| `--apply` | Interactive prompts → confirms → applies config |
+| `--apply-quick` | Auto-detect GPU → use defaults (1080p, miniprem, 7B LLM) → applies |
+
+**What gets changed:**
+1. GPU time-slicing ConfigMap (replicas per GPU)
+2. GPU Operator cluster policy
+3. Renny deployment replica count
+4. Renny quality mode environment variable
+
+**Example apply session:**
+```
+$ ./sizer.sh --apply
+
+Detected: NVIDIA A100-SXM4-80GB (78GB) × 2
+
+Resolution (1080p/4k) [1080p]: 1080p
+Quality mode (web/miniprem) [miniprem]: miniprem
+Include local LLM? (y/n) [y]: y
+
+Maximum Renny instances: 36
+How many Rennys to deploy? [36]: 32
+
+Apply this configuration? [y/N]: y
+
+Step 1/4: Updating GPU time-slicing ConfigMap...
+  ✓ Time-slicing ConfigMap updated
+Step 2/4: Patching GPU Operator cluster policy...
+  ✓ Cluster policy patched
+Step 3/4: Scaling Renny deployment to 32 replicas...
+  ✓ Scaled deployment/renderer to 32 replicas
+Step 4/4: Updating quality mode to 'miniprem'...
+  ✓ Quality mode set to 'miniprem'
+
+Configuration applied!
 ```
 
 ### Output Example
@@ -358,20 +411,23 @@ Shared Services:
 Max Rennys = (GPU VRAM - Shared Services) / Per Renny VRAM
 ```
 
-### Applying Sizer Output
+### Manual Apply (Alternative to --apply)
 
-After running the sizer, apply the recommended configuration:
+If you prefer to apply settings manually instead of using `--apply`:
 
 ```bash
-# Option 1: Set environment variable and deploy
+# Option 1: Use --apply flag (recommended)
+./sizer.sh --apply
+
+# Option 2: Set environment variable and deploy fresh
 RENNY_REPLICAS=18 ./deploy-local.sh
 
-# Option 2: Edit values file directly
+# Option 3: Edit values file directly
 vim kubernetes/values/renny-values-cns.yaml
 # Change: deployment.totalReplicas: 18
 # Change: gpuTimeSlicing.replicasPerGpu: 18
 
-# Option 3: Helm upgrade (if already deployed)
+# Option 4: Helm upgrade (if already deployed)
 microk8s helm3 upgrade renny ./renny \
   --namespace uneeq \
   --set deployment.totalReplicas=18
