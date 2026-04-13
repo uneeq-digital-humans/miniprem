@@ -29,9 +29,13 @@ Before you begin, ensure you have the following:
 
 - **Software Requirements**:
   - Ubuntu 24.04 LTS or newer
-  - NVIDIA drivers (version 580+ recommended)
+  - NVIDIA drivers (version 580.82.x recommended — see [Driver Guide](nvidia-drivers.md))
   - Docker and Docker Compose
   - NVIDIA Container Toolkit
+
+!> **WSL (Windows Subsystem for Linux) is NOT supported.** MiniPrem requires native Ubuntu installed directly on hardware or in a cloud VM. WSL has known issues with GPU passthrough, Docker networking, and NVIDIA driver compatibility that prevent MiniPrem from functioning correctly.
+
+?> **Why driver version matters:** Not all 580.x driver sub-versions work correctly with MiniPrem. See the [NVIDIA Driver Guide](nvidia-drivers.md) for recommended versions and known issues.
 
 ## Installation
 
