@@ -108,6 +108,25 @@ spec:
           value: "http://0.0.0.0:8082/health"
         - name: NEW_SPEECH_OVERRIDE
           value: "1"
+        # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
+        - name: SDL_AUDIODRIVER
+          value: {{ .Values.renderer.sdlAudioDriver | default "pulse" | quote }}
+        # Quality Level: Controls UE5 rendering quality
+        # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
+        # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
+        - name: RENNY_QUALITY_LEVEL
+          value: {{ .Values.renderer.qualityLevel | default "web" | quote }}
+        # NVIDIA GPU visibility
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: {{ .Values.renderer.nvidia.visibleDevices | default "all" | quote }}
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: {{ .Values.renderer.nvidia.driverCapabilities | default "all" | quote }}
+        {{- if .Values.env }}
+        {{- range .Values.env }}
+        - name: {{ .name }}
+          value: {{ .value | quote }}
+        {{- end }}
+        {{- end }}
         volumeMounts:
         - name: gcp-creds
           readOnly: true
