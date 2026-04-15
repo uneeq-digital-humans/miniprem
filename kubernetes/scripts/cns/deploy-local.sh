@@ -380,15 +380,26 @@ EOF
     systemctl start xvfb || {
         warning "Failed to start Xvfb via systemd, starting manually..."
         pkill -9 Xvfb 2>/dev/null || true
+        rm -f /tmp/.X1-lock /tmp/.X99-lock 2>/dev/null || true
         nohup Xvfb :1 -screen 0 1920x1080x24 +extension GLX &>/dev/null &
-        sleep 2
     }
 
-    # Verify X11 socket exists
-    if [[ -S /tmp/.X11-unix/X1 ]]; then
-        success "Xvfb running on :1"
-    else
-        error "Failed to start Xvfb - /tmp/.X11-unix/X1 not found"
+    # Wait for X11 socket with retry loop (can take longer on fresh boot)
+    info "Waiting for Xvfb socket to be ready..."
+    local xvfb_retries=10
+    while [[ $xvfb_retries -gt 0 ]]; do
+        if [[ -S /tmp/.X11-unix/X1 ]]; then
+            success "Xvfb running on :1"
+            break
+        fi
+        echo "  Waiting for Xvfb socket... ($xvfb_retries attempts remaining)"
+        sleep 2
+        ((xvfb_retries--))
+    done
+
+    if [[ ! -S /tmp/.X11-unix/X1 ]]; then
+        error "Failed to start Xvfb - /tmp/.X11-unix/X1 not found after 20 seconds"
+        echo "  Try running manually: sudo Xvfb :1 -screen 0 1920x1080x24 &"
         exit 1
     fi
 
@@ -464,6 +475,15 @@ install_microk8s() {
     if [[ ! -f /usr/local/bin/helm ]]; then
         ln -sf /snap/bin/microk8s.helm3 /usr/local/bin/helm
     fi
+
+    # Label all nodes for Renny scheduling
+    # The Helm chart uses nodeSelector with uneeq.io/node-type label
+    info "Labeling nodes for Renny scheduling..."
+    local nodes=$(microk8s kubectl get nodes -o jsonpath='{.items[*].metadata.name}')
+    for node in $nodes; do
+        microk8s kubectl label node "$node" uneeq.io/node-type= --overwrite 2>/dev/null || true
+    done
+    success "Nodes labeled for Renny scheduling"
 }
 
 ################################################################################
@@ -679,6 +699,10 @@ deploy_miniprem_stack() {
             VALUES_FILE="$KUBERNETES_DIR/values/renny-values.yaml"
             warning "CNS values file not found, using default values"
         fi
+
+        # Delete existing renderer secret to ensure clean update
+        # Helm doesn't always update existing secrets during upgrade
+        $KUBECTL delete secret renderer -n uneeq --ignore-not-found 2>/dev/null || true
 
         $HELM upgrade --install renny "$KUBERNETES_DIR/renny" \
             --namespace uneeq \
