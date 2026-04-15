@@ -191,6 +191,9 @@ env:
     value: "16000"
   - name: RENNY_QUALITY_LEVEL
     value: "max"  # CNS uses 'max' quality (local GPU, no bandwidth constraints)
+  # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
+  - name: SDL_AUDIODRIVER
+    value: "dummy"
 
 # --- CNS-Specific: Local LLM via NIM ---
 # These are used when Flowise connects to local vLLM/NIM instead of OpenAI
