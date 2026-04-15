@@ -189,8 +189,11 @@ env:
     value: "240"
   - name: A2F_AUDIO_SAMPLE_RATE
     value: "16000"
+  # Quality Level: Controls UE5 rendering quality and resource optimization
+  # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
+  # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
   - name: RENNY_QUALITY_LEVEL
-    value: "max"  # CNS uses 'max' quality (local GPU, no bandwidth constraints)
+    value: "miniprem"
   # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
   - name: SDL_AUDIODRIVER
     value: "dummy"
