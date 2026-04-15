@@ -48,6 +48,7 @@ CNS_K8S_TYPE="${CNS_K8S_TYPE:-microk8s}"
 NGC_API_KEY="${NGC_API_KEY:-}"
 NVIDIA_DIR="${NVIDIA_DIR:-$KUBERNETES_DIR/../nvidia}"
 RENNY_REPLICAS="${RENNY_REPLICAS:-4}"  # Number of Renny instances (adjust for GPU count)
+GPU_TIMESLICE_REPLICAS="${GPU_TIMESLICE_REPLICAS:-8}"  # GPU time-slices per physical GPU
 
 # Version pinning
 MICROK8S_CHANNEL="1.31/stable"
@@ -379,17 +380,33 @@ configure_gpu_timeslicing() {
     info "Configuring GPU time-slicing..."
 
     local KUBECTL="kubectl"
+    local GPU_OPERATOR_NS="gpu-operator"
+
     if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
         KUBECTL="microk8s kubectl"
+        GPU_OPERATOR_NS="gpu-operator-resources"  # MicroK8s uses different namespace
     fi
 
+    # Wait for GPU operator to be ready
+    info "Waiting for GPU operator pods to be ready..."
+    $KUBECTL wait --for=condition=ready pod -l app=gpu-operator -n "$GPU_OPERATOR_NS" --timeout=300s || true
+
+    # Fix known symlink creation bug (affects systemd cgroup setups)
+    info "Applying GPU operator fixes..."
+    $KUBECTL patch clusterpolicy/cluster-policy --type=merge \
+        -p '{"spec":{"validator":{"driver":{"env":[{"name":"DISABLE_DEV_CHAR_SYMLINK_CREATION","value":"true"}]}}}}' || true
+
+    # Wait for pods to restart after patch
+    sleep 10
+
     # Create time-slicing ConfigMap
+    info "Creating time-slicing configuration..."
     cat <<EOF | $KUBECTL apply -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: time-slicing-config
-  namespace: gpu-operator
+  namespace: $GPU_OPERATOR_NS
 data:
   any: |-
     version: v1
@@ -401,16 +418,25 @@ data:
         failRequestsGreaterThanOne: false
         resources:
           - name: nvidia.com/gpu
-            replicas: 4
+            replicas: ${GPU_TIMESLICE_REPLICAS:-8}
 EOF
 
-    # Patch cluster policy
+    # Patch cluster policy for time-slicing
     $KUBECTL patch clusterpolicies.nvidia.com/cluster-policy \
-        -n gpu-operator \
         --type merge \
         -p '{"spec": {"devicePlugin": {"config": {"name": "time-slicing-config", "default": "any"}}}}' || true
 
-    success "GPU time-slicing configured (4 replicas per GPU)"
+    # Wait for device plugin to restart
+    info "Waiting for GPU resources to update..."
+    sleep 30
+
+    # Verify time-slicing is working
+    local gpu_count=$($KUBECTL get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || echo "0")
+    if [[ "$gpu_count" -gt 1 ]]; then
+        success "GPU time-slicing configured ($gpu_count GPU replicas available)"
+    else
+        warning "Time-slicing may not be active yet. GPU count: $gpu_count"
+    fi
 }
 
 ################################################################################
