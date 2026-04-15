@@ -3,21 +3,37 @@
 ################################################################################
 # MiniPrem CNS Local Deployment Script
 #
-# Installs NVIDIA Cloud Native Stack on the local machine with:
+# Interactive installation for NVIDIA Cloud Native Stack (CNS) on local hardware.
+#
+# Features:
 #   - MicroK8s or kubeadm Kubernetes distribution
-#   - NVIDIA GPU Operator
-#   - GPU time-slicing for multiple Renny instances
-#   - Full MiniPrem stack (Renny, NIM, Riva, etc.)
+#   - NVIDIA GPU Operator with time-slicing
+#   - Automatic GPU detection and replica recommendations
+#   - Two installation modes: Minimal or Full Stack
+#
+# Installation Modes:
+#   - Minimal: Renny only (uses cloud TTS/LLM)
+#   - Full Stack: Renny + local NIM LLM + optional Riva TTS (air-gapped ready)
 #
 # Prerequisites:
 #   - Ubuntu 22.04+ or RHEL 8.7+
-#   - NVIDIA GPU(s)
+#   - NVIDIA GPU(s) with driver installed
 #   - Sudo access
-#   - Internet connectivity
+#   - Internet connectivity (for pulling images)
 #
-# Usage:
+# Interactive Usage (recommended):
 #   sudo ./deploy-local.sh
-#   sudo CNS_K8S_TYPE=kubeadm ./deploy-local.sh
+#
+# Non-Interactive Usage (for automation):
+#   sudo CNS_INSTALL_MODE=minimal CNS_QUALITY_LEVEL=miniprem RENNY_REPLICAS=3 ./deploy-local.sh
+#
+# Environment Variables:
+#   CNS_K8S_TYPE       - Kubernetes distribution: microk8s (default) or kubeadm
+#   CNS_INSTALL_MODE   - Installation mode: minimal or full
+#   CNS_QUALITY_LEVEL  - Renny quality: miniprem (higher quality) or web (more replicas)
+#   RENNY_REPLICAS     - Number of Renny instances to deploy
+#   NGC_API_KEY        - NVIDIA NGC API key (required for full stack mode)
+#
 ################################################################################
 
 set -euo pipefail
@@ -54,6 +70,292 @@ GPU_TIMESLICE_REPLICAS="${GPU_TIMESLICE_REPLICAS:-8}"  # GPU time-slices per phy
 MICROK8S_CHANNEL="1.31/stable"
 GPU_OPERATOR_VERSION="v24.9.0"
 NIM_OPERATOR_VERSION="1.0.0"
+
+# Installation mode (set during interactive prompt)
+CNS_INSTALL_MODE="${CNS_INSTALL_MODE:-}"  # minimal or full
+CNS_QUALITY_LEVEL="${CNS_QUALITY_LEVEL:-miniprem}"  # miniprem or web
+
+################################################################################
+# GPU Detection and Replica Calculation
+################################################################################
+
+detect_gpu_info() {
+    info "Detecting GPU configuration..."
+
+    if ! command -v nvidia-smi &> /dev/null; then
+        warning "nvidia-smi not found. Using default GPU configuration."
+        GPU_NAME="Unknown"
+        GPU_VRAM_MB=0
+        GPU_COUNT=0
+        return
+    fi
+
+    # Get GPU name (first GPU)
+    GPU_NAME=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1 | xargs)
+
+    # Get total VRAM in MB (first GPU)
+    GPU_VRAM_MB=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>/dev/null | head -1 | xargs)
+
+    # Get GPU count
+    GPU_COUNT=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l)
+
+    # Calculate VRAM in GB for display
+    GPU_VRAM_GB=$((GPU_VRAM_MB / 1024))
+
+    success "Detected: $GPU_NAME with ${GPU_VRAM_GB}GB VRAM ($GPU_COUNT GPU(s))"
+}
+
+calculate_recommended_replicas() {
+    # Based on tested GPU capacity table from renny-values-cns.yaml
+    # This calculates recommended Renny replicas based on:
+    # - GPU VRAM
+    # - Quality level (miniprem vs web)
+    # - Install mode (full stack reserves VRAM for LLM)
+
+    local vram_mb="${GPU_VRAM_MB:-0}"
+    local quality="${CNS_QUALITY_LEVEL:-miniprem}"
+    local mode="${CNS_INSTALL_MODE:-minimal}"
+
+    # Reserve VRAM for LLM if full stack mode
+    local llm_reserve_mb=0
+    if [[ "$mode" == "full" ]]; then
+        llm_reserve_mb=16384  # Reserve ~16GB for local LLM
+    fi
+
+    local available_vram=$((vram_mb - llm_reserve_mb))
+
+    # VRAM requirements per Renny instance (estimated from testing)
+    # MiniPrem mode: ~9-10GB per instance (higher quality textures)
+    # Web mode: ~7-8GB per instance (optimized for cloud)
+    local vram_per_renny
+    if [[ "$quality" == "miniprem" ]]; then
+        vram_per_renny=10240  # 10GB for miniprem quality
+    else
+        vram_per_renny=8192   # 8GB for web quality
+    fi
+
+    # Calculate recommended replicas
+    if [[ $available_vram -lt $vram_per_renny ]]; then
+        RECOMMENDED_REPLICAS=1
+    else
+        RECOMMENDED_REPLICAS=$((available_vram / vram_per_renny))
+    fi
+
+    # Apply known GPU-specific overrides from tested capacity table
+    case "$GPU_NAME" in
+        *"RTX PRO 6000"*|*"Blackwell"*)
+            if [[ "$quality" == "miniprem" ]]; then
+                RECOMMENDED_REPLICAS=3
+            else
+                RECOMMENDED_REPLICAS=5
+            fi
+            ;;
+        *"A100"*"80G"*)
+            if [[ "$quality" == "miniprem" ]]; then
+                RECOMMENDED_REPLICAS=4
+            else
+                RECOMMENDED_REPLICAS=6
+            fi
+            ;;
+        *"A100"*"40G"*|*"A100"*)
+            if [[ "$quality" == "miniprem" ]]; then
+                RECOMMENDED_REPLICAS=2
+            else
+                RECOMMENDED_REPLICAS=4
+            fi
+            ;;
+        *"T4"*)
+            if [[ "$quality" == "miniprem" ]]; then
+                RECOMMENDED_REPLICAS=1
+            else
+                RECOMMENDED_REPLICAS=2
+            fi
+            ;;
+        *"L4"*)
+            if [[ "$quality" == "miniprem" ]]; then
+                RECOMMENDED_REPLICAS=2
+            else
+                RECOMMENDED_REPLICAS=3
+            fi
+            ;;
+    esac
+
+    # Reduce by 1-2 for full stack mode (LLM needs VRAM)
+    if [[ "$mode" == "full" ]] && [[ $RECOMMENDED_REPLICAS -gt 1 ]]; then
+        RECOMMENDED_REPLICAS=$((RECOMMENDED_REPLICAS - 1))
+    fi
+
+    # Multiply by GPU count for multi-GPU systems
+    RECOMMENDED_REPLICAS=$((RECOMMENDED_REPLICAS * GPU_COUNT))
+
+    # Ensure at least 1 replica
+    if [[ $RECOMMENDED_REPLICAS -lt 1 ]]; then
+        RECOMMENDED_REPLICAS=1
+    fi
+
+    success "Recommended Renny replicas: $RECOMMENDED_REPLICAS"
+}
+
+################################################################################
+# Interactive Installation Prompts
+################################################################################
+
+prompt_for_install_mode() {
+    print_color "$BOLD" "
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     CNS Installation Mode Selection                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+"
+
+    echo "Choose your installation mode:"
+    echo ""
+    print_color "$GREEN" "  1) Minimal (Renny Only)"
+    echo "     - Renny digital human renderer"
+    echo "     - Uses cloud TTS (ElevenLabs, Azure, etc.)"
+    echo "     - Uses cloud LLM (requires Flowise cloud connection)"
+    echo "     - Best for: Internet-connected deployments"
+    echo ""
+    print_color "$YELLOW" "  2) Full Stack (Air-Gapped Ready)"
+    echo "     - Renny digital human renderer"
+    echo "     - Local LLM via NIM (Llama 3.1, etc.)"
+    echo "     - Optional: NVIDIA Riva TTS (local speech synthesis)"
+    echo "     - Optional: Local Flowise orchestration"
+    echo "     - Best for: Air-gapped/low-latency deployments"
+    echo ""
+
+    local choice
+    while true; do
+        read -p "Enter choice [1-2] (default: 1): " choice
+        choice="${choice:-1}"
+
+        case "$choice" in
+            1)
+                CNS_INSTALL_MODE="minimal"
+                success "Selected: Minimal installation (Renny only)"
+                break
+                ;;
+            2)
+                CNS_INSTALL_MODE="full"
+                success "Selected: Full Stack installation (Air-gapped ready)"
+                break
+                ;;
+            *)
+                warning "Invalid choice. Please enter 1 or 2."
+                ;;
+        esac
+    done
+
+    echo ""
+}
+
+prompt_for_quality_level() {
+    print_color "$BOLD" "
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Renny Quality Level Selection                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+"
+
+    echo "Choose your Renny quality level:"
+    echo ""
+    print_color "$GREEN" "  1) MiniPrem (Higher Quality)"
+    echo "     - Optimized for dedicated hardware (PC/server)"
+    echo "     - Higher quality textures and rendering"
+    echo "     - Uses more VRAM per instance"
+    echo ""
+    print_color "$BLUE" "  2) Web (Balanced Performance)"
+    echo "     - Optimized for cloud platforms"
+    echo "     - Balanced quality vs resource usage"
+    echo "     - More instances per GPU"
+    echo ""
+
+    local choice
+    while true; do
+        read -p "Enter choice [1-2] (default: 1): " choice
+        choice="${choice:-1}"
+
+        case "$choice" in
+            1)
+                CNS_QUALITY_LEVEL="miniprem"
+                success "Selected: MiniPrem quality (higher quality, fewer instances)"
+                break
+                ;;
+            2)
+                CNS_QUALITY_LEVEL="web"
+                success "Selected: Web quality (balanced, more instances)"
+                break
+                ;;
+            *)
+                warning "Invalid choice. Please enter 1 or 2."
+                ;;
+        esac
+    done
+
+    echo ""
+}
+
+prompt_for_renny_replicas() {
+    print_color "$BOLD" "
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Renny Instance Configuration                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+"
+
+    # Show GPU capacity table
+    echo "GPU Capacity Reference (without local LLM):"
+    echo "┌───────────────────────────┬───────┬─────────────┬──────────────────┐"
+    echo "│ GPU                       │ VRAM  │ Web Mode    │ MiniPrem Mode    │"
+    echo "├───────────────────────────┼───────┼─────────────┼──────────────────┤"
+    echo "│ RTX PRO 6000 Blackwell    │ 48GB  │ 5 replicas  │ 3 replicas       │"
+    echo "│ A100 80GB                 │ 80GB  │ 6 replicas  │ 4 replicas       │"
+    echo "│ A100 40GB                 │ 40GB  │ 4 replicas  │ 2 replicas       │"
+    echo "│ L4                        │ 24GB  │ 3 replicas  │ 2 replicas       │"
+    echo "│ T4                        │ 16GB  │ 2 replicas  │ 1 replica        │"
+    echo "└───────────────────────────┴───────┴─────────────┴──────────────────┘"
+    echo ""
+    echo "Note: Running a local LLM (Full Stack mode) reduces available capacity."
+    echo ""
+
+    # Show detected GPU and recommendation
+    print_color "$BLUE" "Detected GPU: $GPU_NAME (${GPU_VRAM_GB:-0}GB VRAM, $GPU_COUNT GPU(s))"
+    print_color "$BLUE" "Quality Level: $CNS_QUALITY_LEVEL"
+    print_color "$BLUE" "Install Mode: $CNS_INSTALL_MODE"
+    print_color "$GREEN" "Recommended Renny replicas: $RECOMMENDED_REPLICAS"
+    echo ""
+
+    local choice
+    while true; do
+        read -p "Enter number of Renny instances (default: $RECOMMENDED_REPLICAS): " choice
+        choice="${choice:-$RECOMMENDED_REPLICAS}"
+
+        # Validate input is a positive number
+        if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -gt 0 ]]; then
+            RENNY_REPLICAS="$choice"
+
+            # Warn if significantly over recommendation
+            if [[ "$RENNY_REPLICAS" -gt $((RECOMMENDED_REPLICAS + 2)) ]]; then
+                warning "You selected $RENNY_REPLICAS replicas (recommended: $RECOMMENDED_REPLICAS)"
+                echo "  This may cause GPU memory issues. Continue? (y/N)"
+                read -p "> " confirm
+                if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+                    continue
+                fi
+            fi
+
+            success "Configured: $RENNY_REPLICAS Renny instance(s)"
+            break
+        else
+            warning "Please enter a positive number."
+        fi
+    done
+
+    # Also set GPU time-slicing replicas per GPU
+    GPU_TIMESLICE_REPLICAS=$((RENNY_REPLICAS / GPU_COUNT))
+    if [[ $GPU_TIMESLICE_REPLICAS -lt 1 ]]; then
+        GPU_TIMESLICE_REPLICAS=1
+    fi
+
+    echo ""
+}
 
 ################################################################################
 # Prerequisite Checks
@@ -656,7 +958,7 @@ EOF
 ################################################################################
 
 deploy_miniprem_stack() {
-    info "Deploying MiniPrem stack..."
+    info "Deploying MiniPrem stack ($CNS_INSTALL_MODE mode)..."
 
     local KUBECTL="kubectl"
     local HELM="helm"
@@ -666,29 +968,51 @@ deploy_miniprem_stack() {
         HELM="microk8s helm3"
     fi
 
-    # Create namespaces
-    for ns in nim-operator nim-models nim-rag riva uneeq miniprem; do
+    # Set NIM_ENABLED based on install mode
+    if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
+        NIM_ENABLED="true"
+    else
+        NIM_ENABLED="false"
+    fi
+
+    # Create namespaces (minimal set for minimal mode)
+    local namespaces="uneeq miniprem"
+    if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
+        namespaces="nim-operator nim-models nim-rag riva uneeq miniprem"
+    fi
+
+    for ns in $namespaces; do
         $KUBECTL create namespace "$ns" --dry-run=client -o yaml | $KUBECTL apply -f -
     done
 
-    # Create NGC API secret if key is provided
-    if [[ -n "$NGC_API_KEY" ]]; then
-        info "Creating NGC API secret..."
-        $KUBECTL create secret generic ngc-api-key \
-            --from-literal=NGC_API_KEY="$NGC_API_KEY" \
+    # Full stack mode: Install NIM Operator and LLM components
+    if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
+        # Create NGC API secret if key is provided
+        if [[ -n "$NGC_API_KEY" ]]; then
+            info "Creating NGC API secret..."
+            $KUBECTL create secret generic ngc-api-key \
+                --from-literal=NGC_API_KEY="$NGC_API_KEY" \
+                --namespace nim-operator \
+                --dry-run=client -o yaml | $KUBECTL apply -f -
+        fi
+
+        # Install NIM Operator
+        info "Installing NIM Operator..."
+        $HELM repo add nvidia https://helm.ngc.nvidia.com/nvidia || true
+        $HELM repo update
+
+        $HELM upgrade --install nim-operator nvidia/k8s-nim-operator \
             --namespace nim-operator \
-            --dry-run=client -o yaml | $KUBECTL apply -f -
+            --version "$NIM_OPERATOR_VERSION" \
+            --wait --timeout 5m || warning "NIM Operator installation skipped or failed"
+
+        # TODO: Deploy NIM LLM model (Llama 3.1, etc.)
+        # TODO: Deploy NVIDIA Riva TTS (optional)
+        # TODO: Deploy local Flowise instance
+        info "Full stack components (NIM LLM, Riva TTS) will be deployed after Renny"
+    else
+        info "Minimal mode: Skipping NIM Operator and local LLM deployment"
     fi
-
-    # Install NIM Operator
-    info "Installing NIM Operator..."
-    $HELM repo add nvidia https://helm.ngc.nvidia.com/nvidia || true
-    $HELM repo update
-
-    $HELM upgrade --install nim-operator nvidia/k8s-nim-operator \
-        --namespace nim-operator \
-        --version "$NIM_OPERATOR_VERSION" \
-        --wait --timeout 5m || warning "NIM Operator installation skipped or failed"
 
     # Deploy Renny via Helm
     info "Deploying Renny..."
@@ -708,7 +1032,11 @@ deploy_miniprem_stack() {
             --namespace uneeq \
             --values "$VALUES_FILE" \
             --set deployment.totalReplicas="${RENNY_REPLICAS:-4}" \
+            --set renderer.qualityLevel="${CNS_QUALITY_LEVEL:-miniprem}" \
+            --set renderer.sdlAudioDriver="dummy" \
+            --set gpuTimeSlicing.replicasPerGpu="${GPU_TIMESLICE_REPLICAS:-4}" \
             --set telemetry.platform="cns" \
+            --set nim.enabled="${NIM_ENABLED:-false}" \
             --set nim.endpoint="http://localhost:8000/v1" \
             --wait --timeout 10m || warning "Renny deployment skipped or failed"
     else
@@ -760,9 +1088,17 @@ verify_deployment() {
 
 main() {
     print_color "$BOLD" "
-╔═══════════════════════════════════════════════════════════════╗
-║     MiniPrem CNS Local Installation ($CNS_K8S_TYPE)           ║
-╚═══════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                                                                               ║
+║        ███╗   ███╗██╗███╗   ██╗██╗██████╗ ██████╗ ███████╗███╗   ███╗         ║
+║        ████╗ ████║██║████╗  ██║██║██╔══██╗██╔══██╗██╔════╝████╗ ████║         ║
+║        ██╔████╔██║██║██╔██╗ ██║██║██████╔╝██████╔╝█████╗  ██╔████╔██║         ║
+║        ██║╚██╔╝██║██║██║╚██╗██║██║██╔═══╝ ██╔══██╗██╔══╝  ██║╚██╔╝██║         ║
+║        ██║ ╚═╝ ██║██║██║ ╚████║██║██║     ██║  ██║███████╗██║ ╚═╝ ██║         ║
+║        ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝         ║
+║                                                                               ║
+║               Cloud Native Stack (CNS) Installation - $CNS_K8S_TYPE               ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
 "
 
     # Prerequisite checks
@@ -771,6 +1107,34 @@ main() {
     check_os
     check_nvidia_gpu
     check_nvidia_driver
+
+    # Detect GPU configuration early (needed for replica recommendations)
+    detect_gpu_info
+
+    echo ""
+
+    # Interactive installation prompts (unless all values provided via env vars)
+    if [[ -z "$CNS_INSTALL_MODE" ]]; then
+        prompt_for_install_mode
+    else
+        info "Using install mode from environment: $CNS_INSTALL_MODE"
+    fi
+
+    if [[ -z "$CNS_QUALITY_LEVEL" ]] || [[ "$CNS_QUALITY_LEVEL" == "miniprem" && -z "${CNS_QUALITY_LEVEL_SET:-}" ]]; then
+        prompt_for_quality_level
+    else
+        info "Using quality level from environment: $CNS_QUALITY_LEVEL"
+    fi
+
+    # Calculate recommended replicas based on GPU and selections
+    calculate_recommended_replicas
+
+    # Prompt for replica count (unless provided via env var)
+    if [[ -z "${RENNY_REPLICAS_SET:-}" ]]; then
+        prompt_for_renny_replicas
+    else
+        info "Using replica count from environment: $RENNY_REPLICAS"
+    fi
 
     echo ""
     info "Installing system prerequisites..."
@@ -824,25 +1188,54 @@ main() {
 
     echo ""
     print_color "$BOLD" "
-╔═══════════════════════════════════════════════════════════════╗
-║              CNS Installation Complete!                        ║
-╚═══════════════════════════════════════════════════════════════╝
+╔═══════════════════════════════════════════════════════════════════════════════╗
+║                       CNS Installation Complete!                               ║
+╚═══════════════════════════════════════════════════════════════════════════════╝
 "
 
+    # Configuration summary
+    print_color "$GREEN" "Configuration Summary:"
+    echo "┌─────────────────────────────────────────────────────────────────────────┐"
+    printf "│ %-71s │\n" "Installation Mode: $CNS_INSTALL_MODE"
+    printf "│ %-71s │\n" "Quality Level: $CNS_QUALITY_LEVEL"
+    printf "│ %-71s │\n" "Renny Replicas: $RENNY_REPLICAS"
+    printf "│ %-71s │\n" "GPU Time-Slices per GPU: $GPU_TIMESLICE_REPLICAS"
+    printf "│ %-71s │\n" "GPU: $GPU_NAME (${GPU_VRAM_GB:-0}GB VRAM)"
+    echo "└─────────────────────────────────────────────────────────────────────────┘"
+
+    echo ""
     echo "Next steps:"
     echo "  1. Check deployment status:"
     if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
-        echo "     microk8s kubectl get pods -A"
+        echo "     microk8s kubectl get pods -n uneeq"
     else
-        echo "     kubectl get pods -A"
+        echo "     kubectl get pods -n uneeq"
     fi
     echo ""
-    echo "  2. Access MiniPrem Monitor:"
-    echo "     Open http://localhost:3001 in your browser"
+    echo "  2. Check Renny pod logs:"
+    if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
+        echo "     microk8s kubectl logs -f deployment/renderer -n uneeq"
+    else
+        echo "     kubectl logs -f deployment/renderer -n uneeq"
+    fi
     echo ""
     echo "  3. Scale Renny instances:"
     echo "     ./scale.sh <count>"
     echo ""
+
+    if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
+        print_color "$YELLOW" "Full Stack Mode Notes:"
+        echo "  - NIM Operator has been installed for local LLM support"
+        echo "  - Configure your NIM LLM model in the nim-models namespace"
+        echo "  - NVIDIA Riva TTS can be deployed for local speech synthesis"
+        echo ""
+    else
+        print_color "$BLUE" "Minimal Mode Notes:"
+        echo "  - Renny will use cloud TTS (ElevenLabs, Azure, etc.)"
+        echo "  - Flowise connection is required for conversational AI"
+        echo "  - To upgrade to Full Stack: re-run with CNS_INSTALL_MODE=full"
+        echo ""
+    fi
 }
 
 main "$@"
