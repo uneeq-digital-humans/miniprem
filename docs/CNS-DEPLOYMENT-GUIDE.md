@@ -82,6 +82,10 @@ The script does **NOT** install NVIDIA drivers. You must install the correct dri
 
 **Recommended Driver: 580.82.x** (required for Renny video encoding)
 
+> **See [NVIDIA-DRIVER-SETUP.md](./NVIDIA-DRIVER-SETUP.md) for detailed driver installation instructions, including Vulkan and Xvfb setup.**
+
+Quick summary:
+
 ```bash
 # Check current driver
 nvidia-smi
