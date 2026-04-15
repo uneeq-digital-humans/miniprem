@@ -59,6 +59,19 @@ NIM_OPERATOR_VERSION="1.0.0"
 # Prerequisite Checks
 ################################################################################
 
+# Detect package manager (needed by multiple functions)
+detect_package_manager() {
+    if command -v apt-get &> /dev/null; then
+        PKG_MANAGER="apt"
+    elif command -v dnf &> /dev/null; then
+        PKG_MANAGER="dnf"
+    elif command -v yum &> /dev/null; then
+        PKG_MANAGER="yum"
+    else
+        PKG_MANAGER=""
+    fi
+}
+
 check_root() {
     if [[ $EUID -ne 0 ]]; then
         error "This script must be run as root (use sudo)"
@@ -197,11 +210,190 @@ check_nvidia_driver() {
     info "Checking NVIDIA driver..."
 
     if command -v nvidia-smi &> /dev/null; then
-        success "NVIDIA driver installed"
+        local driver_version=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+        local gpu_name=$(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)
+
+        success "NVIDIA driver installed: $driver_version"
         nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+
+        # Validate driver version for Renny compatibility
+        validate_driver_for_renny "$driver_version" "$gpu_name"
     else
         warning "NVIDIA driver not installed. Will be installed via GPU Operator."
     fi
+}
+
+validate_driver_for_renny() {
+    local driver_version="$1"
+    local gpu_name="$2"
+
+    info "Validating driver version for Renny compatibility..."
+
+    # Extract major.minor version (e.g., 580.82 from 580.82.09)
+    local major_minor=$(echo "$driver_version" | cut -d. -f1,2)
+
+    # Known problematic versions
+    if [[ "$major_minor" == "580.126" ]]; then
+        error "Driver $driver_version is INCOMPATIBLE with Renny!"
+        echo ""
+        print_color "$RED" "  Driver 580.126.x breaks NVENC hardware encoding on ALL GPU types."
+        echo "  Renny requires driver 580.82.x for proper video encoding."
+        echo ""
+        echo "  To fix, install the correct driver:"
+        echo "    - For Blackwell/RTX PRO 6000: Download 580.82.09 from NVIDIA"
+        echo "    - For L4/A10G/T4: apt install nvidia-driver-580=580.82.07-0ubuntu1"
+        echo ""
+        read -p "Do you want to continue anyway? (y/N): " response
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            exit 1
+        fi
+        warning "Continuing with incompatible driver. Renny video encoding may fail."
+        return
+    fi
+
+    # Check for recommended 580.82.x version
+    if [[ "$major_minor" == "580.82" ]]; then
+        success "Driver $driver_version is compatible with Renny"
+        return
+    fi
+
+    # Check if driver is too old (< 550)
+    local major=$(echo "$driver_version" | cut -d. -f1)
+    if [[ "$major" -lt 550 ]]; then
+        warning "Driver $driver_version may be too old for optimal Renny performance"
+        echo "  Recommended: 580.82.x for production Renny deployments"
+    fi
+
+    # Check for Blackwell GPUs that need specific driver
+    if [[ "$gpu_name" =~ "Blackwell" ]] || [[ "$gpu_name" =~ "RTX PRO 6000" ]] || [[ "$gpu_name" =~ "RTX 6000" ]]; then
+        if [[ "$major_minor" != "580.82" ]]; then
+            warning "Blackwell/RTX PRO 6000 GPU detected with driver $driver_version"
+            echo ""
+            echo "  For best Renny compatibility, install driver 580.82.09:"
+            echo "    wget https://us.download.nvidia.com/XFree86/Linux-x86_64/580.82.09/NVIDIA-Linux-x86_64-580.82.09.run"
+            echo "    chmod +x NVIDIA-Linux-x86_64-580.82.09.run"
+            echo "    sudo ./NVIDIA-Linux-x86_64-580.82.09.run --silent --dkms"
+            echo ""
+        fi
+    fi
+}
+
+################################################################################
+# Vulkan Setup for Renny (UE5 requires Vulkan rendering)
+################################################################################
+
+setup_vulkan_for_renny() {
+    info "Setting up Vulkan for Renny..."
+
+    # Install vulkan-tools for verification
+    if ! command -v vulkaninfo &> /dev/null; then
+        info "Installing vulkan-tools..."
+        case "$PKG_MANAGER" in
+            apt)
+                apt-get update
+                apt-get install -y vulkan-tools libvulkan1
+                ;;
+            dnf|yum)
+                $PKG_MANAGER install -y vulkan-tools vulkan-loader
+                ;;
+        esac
+    fi
+
+    # Create NVIDIA Vulkan ICD file if missing
+    local NVIDIA_ICD="/usr/share/vulkan/icd.d/nvidia_icd.json"
+    if [[ ! -f "$NVIDIA_ICD" ]]; then
+        info "Creating NVIDIA Vulkan ICD file..."
+        mkdir -p /usr/share/vulkan/icd.d
+        cat > "$NVIDIA_ICD" << 'EOF'
+{
+    "file_format_version" : "1.0.0",
+    "ICD" : {
+        "library_path" : "libGLX_nvidia.so.0",
+        "api_version" : "1.3.275"
+    }
+}
+EOF
+        success "Created $NVIDIA_ICD"
+    else
+        success "NVIDIA Vulkan ICD already exists"
+    fi
+
+    # Verify Vulkan works (requires X display)
+    if [[ -n "${DISPLAY:-}" ]] || [[ -S /tmp/.X11-unix/X1 ]]; then
+        local test_display="${DISPLAY:-:1}"
+        info "Testing Vulkan with DISPLAY=$test_display..."
+        if DISPLAY="$test_display" vulkaninfo --summary 2>&1 | grep -q "NVIDIA"; then
+            success "Vulkan NVIDIA driver detected and working"
+        else
+            warning "Vulkan test could not confirm NVIDIA driver"
+        fi
+    else
+        warning "No X display available - skipping Vulkan verification"
+    fi
+}
+
+################################################################################
+# Xvfb Setup for Headless Rendering
+################################################################################
+
+setup_xvfb_for_renny() {
+    info "Setting up Xvfb for headless Renny rendering..."
+
+    # Install Xvfb if not present
+    if ! command -v Xvfb &> /dev/null; then
+        info "Installing Xvfb..."
+        case "$PKG_MANAGER" in
+            apt)
+                apt-get update
+                apt-get install -y xvfb x11-xserver-utils
+                ;;
+            dnf|yum)
+                $PKG_MANAGER install -y xorg-x11-server-Xvfb
+                ;;
+        esac
+    fi
+
+    # Create systemd service for Xvfb persistence
+    local XVFB_SERVICE="/etc/systemd/system/xvfb.service"
+    if [[ ! -f "$XVFB_SERVICE" ]]; then
+        info "Creating Xvfb systemd service..."
+        cat > "$XVFB_SERVICE" << 'EOF'
+[Unit]
+Description=X Virtual Framebuffer for Renny
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/Xvfb :1 -screen 0 1920x1080x24 +extension GLX
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+        systemctl daemon-reload
+        success "Created Xvfb systemd service"
+    fi
+
+    # Enable and start Xvfb
+    systemctl enable xvfb
+    systemctl start xvfb || {
+        warning "Failed to start Xvfb via systemd, starting manually..."
+        pkill -9 Xvfb 2>/dev/null || true
+        nohup Xvfb :1 -screen 0 1920x1080x24 +extension GLX &>/dev/null &
+        sleep 2
+    }
+
+    # Verify X11 socket exists
+    if [[ -S /tmp/.X11-unix/X1 ]]; then
+        success "Xvfb running on :1"
+    else
+        error "Failed to start Xvfb - /tmp/.X11-unix/X1 not found"
+        exit 1
+    fi
+
+    # Export DISPLAY for subsequent commands
+    export DISPLAY=:1
 }
 
 check_ngc_api_key() {
@@ -551,6 +743,7 @@ main() {
 
     # Prerequisite checks
     check_root
+    detect_package_manager  # Needed by setup functions
     check_os
     check_nvidia_gpu
     check_nvidia_driver
@@ -561,6 +754,16 @@ main() {
 
     # Install prerequisites (snap, Chrome, etc.)
     install_prerequisites
+
+    echo ""
+    info "Setting up Renny display requirements..."
+    echo ""
+
+    # Setup Xvfb for headless rendering (needed before Vulkan check)
+    setup_xvfb_for_renny
+
+    # Setup Vulkan (requires NVIDIA driver and X display)
+    setup_vulkan_for_renny
 
     echo ""
 

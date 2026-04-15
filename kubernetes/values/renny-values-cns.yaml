@@ -42,8 +42,8 @@ renderer:
 
   # DHOP connection (still connects to UneeQ cloud for session orchestration)
   dhop:
-    apiKey: "your-dhop-api-key-here"
-    tenantId: "your-dhop-tenant-id-here"
+    apiKey: "***DHOP_API_KEY_REMOVED***"
+    tenantId: "REMOVED-DHOP_TENANT_ID"
     url: wss://api.enterprise.uneeq.io:443/signalling-service
 
   launchDarkly:
@@ -70,7 +70,7 @@ renderer:
     azureSpeechKey: ""
 
     # ElevenLabs
-    elevenlabsApiKey: ""
+    elevenlabsApiKey: "***ELEVENLABS_API_KEY_REMOVED***"
     elevenlabsModelId: "eleven_turbo_v2"
     elevenlabsOptimizeLatencyLevel: "1"
 
