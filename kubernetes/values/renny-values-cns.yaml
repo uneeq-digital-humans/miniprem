@@ -95,6 +95,19 @@ renderer:
   health:
     url: "http://0.0.0.0:8081/health"
 
+  # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
+  sdlAudioDriver: "dummy"
+
+  # Quality Level: Controls UE5 rendering quality
+  # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
+  # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
+  qualityLevel: "miniprem"
+
+  # NVIDIA GPU settings
+  nvidia:
+    visibleDevices: "all"
+    driverCapabilities: "all"
+
 # Resource limits
 # Adjust based on your GPU (these are for A100)
 resources:
@@ -174,29 +187,6 @@ telemetry:
   heartbeatInterval: 900
   platform: "cns"  # Identifies this as on-premises deployment
   deploymentId: ""  # Auto-generated during install
-
-# Environment variables
-env:
-  - name: NVIDIA_VISIBLE_DEVICES
-    value: "all"
-  - name: NVIDIA_DRIVER_CAPABILITIES
-    value: "all"
-  - name: NEW_SPEECH_OVERRIDE
-    value: "1"
-  - name: A2F_ADDRESS
-    value: "http://localhost:52000"
-  - name: A2F_AUDIO_DELAY_TIME_MS
-    value: "240"
-  - name: A2F_AUDIO_SAMPLE_RATE
-    value: "16000"
-  # Quality Level: Controls UE5 rendering quality and resource optimization
-  # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
-  # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
-  - name: RENNY_QUALITY_LEVEL
-    value: "miniprem"
-  # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
-  - name: SDL_AUDIODRIVER
-    value: "dummy"
 
 # --- CNS-Specific: Local LLM via NIM ---
 # These are used when Flowise connects to local vLLM/NIM instead of OpenAI
