@@ -18,9 +18,19 @@ imagePullSecrets:
 gpuTimeSlicing:
   enabled: true
   replicasPerGpu: 4  # CNS default: 4 Rennys per GPU (adjust based on GPU memory)
-  # A100 80GB: can handle 4-6 replicas
-  # A100 40GB: can handle 2-4 replicas
-  # T4 16GB: can handle 1-2 replicas
+  #
+  # GPU Capacity Guide (without local LLM):
+  # ──────────────────────────────────────────────────────────────────────
+  # GPU                    | VRAM  | 4K Web Mode | 4K MiniPrem Mode
+  # ──────────────────────────────────────────────────────────────────────
+  # RTX PRO 6000 Blackwell | 48GB  | 5 replicas  | 3 replicas
+  # A100 80GB              | 80GB  | 6 replicas  | 4 replicas (estimated)
+  # A100 40GB              | 40GB  | 4 replicas  | 2 replicas (estimated)
+  # T4                     | 16GB  | 2 replicas  | 1 replica
+  # ──────────────────────────────────────────────────────────────────────
+  #
+  # Note: Running a local LLM (vLLM/NIM) will reduce available capacity.
+  # MiniPrem mode uses higher quality textures = more VRAM per instance.
 
   configMap:
     name: time-slicing-config
