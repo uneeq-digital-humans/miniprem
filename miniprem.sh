@@ -3,13 +3,121 @@
 # Change to the script's directory
 cd "$(dirname "$0")" || { echo "Failed to change directory to script location"; exit 1; }
 
-# Source the scripts
+# Add this line after changing to the script's directory
+PROJECT_ROOT=$(pwd)
+
+################################################################################
+# Detect Installation Type: Docker or CNS (Kubernetes)
+################################################################################
+
+# Check for CNS installation marker
+CNS_CONFIG_FILE="$PROJECT_ROOT/kubernetes/scripts/cns/.cns_config"
+CNS_INSTALLED=false
+
+if [ -f "$CNS_CONFIG_FILE" ]; then
+    CNS_INSTALLED=true
+fi
+
+# Also check if MicroK8s is running with Renny deployed
+if command -v microk8s &> /dev/null; then
+    if microk8s kubectl get deployment renderer -n uneeq &>/dev/null 2>&1; then
+        CNS_INSTALLED=true
+    fi
+fi
+
+# For CNS installations, route to CNS scripts
+if [ "$CNS_INSTALLED" = true ]; then
+    CNS_SCRIPTS_DIR="$PROJECT_ROOT/kubernetes/scripts/cns"
+
+    # Route commands to CNS scripts
+    case "${1:-}" in
+        start)
+            exec "$CNS_SCRIPTS_DIR/restart.sh" "${@:2}"
+            ;;
+        stop)
+            exec "$CNS_SCRIPTS_DIR/stop.sh" "${@:2}"
+            ;;
+        restart)
+            "$CNS_SCRIPTS_DIR/stop.sh"
+            exec "$CNS_SCRIPTS_DIR/restart.sh" "${@:2}"
+            ;;
+        status)
+            exec "$CNS_SCRIPTS_DIR/status.sh" "${@:2}"
+            ;;
+        scale)
+            # Use sizer.sh --apply for full configuration (GPU time-slicing + replicas + quality)
+            # This ensures GPU resources are properly allocated when scaling
+            exec "$CNS_SCRIPTS_DIR/sizer.sh" --apply
+            ;;
+        scale-quick)
+            # Quick scale without GPU reconfiguration (use if you know what you're doing)
+            exec "$CNS_SCRIPTS_DIR/scale.sh" "${@:2}"
+            ;;
+        sizer)
+            # GPU capacity calculator and configurator
+            exec "$CNS_SCRIPTS_DIR/sizer.sh" "${@:2}"
+            ;;
+        logs)
+            # For CNS, show Renny pod logs
+            if command -v microk8s &> /dev/null; then
+                exec microk8s kubectl logs -f deployment/renderer -n uneeq --all-containers=true
+            else
+                exec kubectl logs -f deployment/renderer -n uneeq --all-containers=true
+            fi
+            ;;
+        deploy)
+            exec "$CNS_SCRIPTS_DIR/deploy.sh" "${@:2}"
+            ;;
+        destroy)
+            exec "$CNS_SCRIPTS_DIR/destroy.sh" "${@:2}"
+            ;;
+        -h|--help|help)
+            echo ""
+            echo "MiniPrem CNS (Kubernetes) Management"
+            echo ""
+            echo "CNS installation detected. Available commands:"
+            echo ""
+            echo "  start       - Start the CNS deployment (scale up Renny pods)"
+            echo "  stop        - Stop the CNS deployment (scale down to 0)"
+            echo "  restart     - Restart the CNS deployment"
+            echo "  status      - Check CNS deployment status"
+            echo "  scale       - Interactive scaling with GPU config (recommended)"
+            echo "  scale-quick N - Quick scale to N replicas (no GPU reconfig)"
+            echo "  sizer       - GPU capacity calculator"
+            echo "  logs        - View Renny pod logs"
+            echo "  deploy      - Run CNS deployment script"
+            echo "  destroy     - Destroy CNS deployment"
+            echo ""
+            echo "Scaling Examples:"
+            echo "  ./miniprem.sh scale         # Interactive: GPU detection + time-slicing + quality"
+            echo "  ./miniprem.sh scale-quick 4 # Quick: just kubectl scale (may cause Pending pods)"
+            echo "  ./miniprem.sh sizer --detect # Show GPU capacity table"
+            echo ""
+            echo "CNS Configuration: $CNS_CONFIG_FILE"
+            echo ""
+            exit 0
+            ;;
+        *)
+            echo "MiniPrem CNS installation detected."
+            echo "Run './miniprem.sh --help' for available commands."
+            echo ""
+            echo "Quick commands:"
+            echo "  ./miniprem.sh status   - Check deployment status"
+            echo "  ./miniprem.sh scale    - Scale Renny (with GPU config)"
+            echo "  ./miniprem.sh logs     - View Renny logs"
+            exit 0
+            ;;
+    esac
+fi
+
+################################################################################
+# Docker Installation (Original behavior)
+################################################################################
+
+# Source the scripts for Docker mode
 source scripts/logging.sh
 source scripts/docker.sh
 source scripts/environment.sh
-
-# Add this line after changing to the script's directory
-PROJECT_ROOT=$(pwd)
 
 # Load the install type from the file
 if [ -f .miniprem_install_type ]; then

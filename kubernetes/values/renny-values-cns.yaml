@@ -2,10 +2,14 @@
 # On-premises deployment on NVIDIA GPU hardware
 #
 # Key differences from cloud (EKS/AKS):
-#   - Uses local NIM for LLM inference (no external API)
+#   - Uses local NIM for LLM inference (optional, for air-gapped deployments)
 #   - Uses local Riva for TTS (optional, can still use cloud TTS)
 #   - No autoscaling (fixed hardware)
 #   - Simpler node selection (typically single server)
+#
+# IMPORTANT: Conversation platform (Flowise, etc.) is configured in the
+# UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
+# from DHOP based on persona configuration.
 
 image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
 
@@ -41,26 +45,19 @@ deployment:
   totalReplicas: 4  # Match gpuTimeSlicing.replicasPerGpu × number of GPUs
 
 renderer:
-  # Audio2Face for lip-sync (local service)
-  a2f:
-    url: "http://localhost:52000"
-
-  # Conversation Platform (Flowise - local)
-  cp:
-    flowiseUrl: "http://localhost:3000"  # Local Flowise instance
-    flowiseApiKey: ""  # Set if Flowise auth is enabled
-
-  # DHOP connection (still connects to UneeQ cloud for session orchestration)
+  # DHOP connection (connects to UneeQ cloud for session orchestration)
+  # Conversation platform settings (Flowise URL, API keys) are configured
+  # in the UneeQ Admin Portal and retrieved automatically via DHOP.
   dhop:
-    apiKey: ""  # SET DURING DEPLOYMENT - Get from UneeQ
-    tenantId: ""  # SET DURING DEPLOYMENT - Get from UneeQ
+    apiKey: ""  # SET DURING DEPLOYMENT - Get from UneeQ Admin Portal
+    tenantId: ""  # SET DURING DEPLOYMENT - Get from UneeQ Admin Portal
     url: wss://api.enterprise.uneeq.io:443/signalling-service
 
   launchDarkly:
-    key: ""  # Optional
+    key: ""  # Optional - feature flags
 
   # TTS Configuration
-  # For CNS, you have two options:
+  # ⚠️  CRITICAL: AT LEAST ONE TTS provider must be configured or Renny will not start properly.
   #
   # OPTION A: Local NVIDIA Riva TTS (recommended for air-gapped/low-latency)
   # Requires Riva deployment via NIM Operator
@@ -76,11 +73,11 @@ renderer:
 
     # --- OPTION B: Cloud TTS (pick one) ---
     # Azure Speech Services
-    azureRegion: ""
-    azureSpeechKey: ""
+    azureRegion: ""  # SET DURING DEPLOYMENT if using Azure TTS
+    azureSpeechKey: ""  # SET DURING DEPLOYMENT if using Azure TTS
 
     # ElevenLabs
-    elevenlabsApiKey: ""  # SET DURING DEPLOYMENT - Get from ElevenLabs
+    elevenlabsApiKey: ""  # SET DURING DEPLOYMENT if using ElevenLabs
     elevenlabsModelId: "eleven_turbo_v2"
     elevenlabsOptimizeLatencyLevel: "1"
 
@@ -90,7 +87,7 @@ renderer:
     # Veritone
     veritoneApiKey: ""
 
-    # Custom proxy
+    # Custom TTS proxy
     proxyUrl: ""
 
   unrealEngine:
@@ -111,7 +108,7 @@ renderer:
   # Quality Level: Controls UE5 rendering quality
   # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
   # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
-  qualityLevel: "web"
+  qualityLevel: "miniprem"
 
   # NVIDIA GPU settings
   nvidia:
@@ -199,18 +196,22 @@ telemetry:
   platform: "cns"  # Identifies this as on-premises deployment
   deploymentId: ""  # Auto-generated during install
 
-# --- CNS-Specific: Local LLM via NIM ---
-# These are used when Flowise connects to local vLLM/NIM instead of OpenAI
+# --- CNS-Specific: Local LLM via NIM (Full Stack Mode Only) ---
+# These settings are for air-gapped deployments using local LLM inference.
+# The conversation platform URL is configured in the UneeQ Admin Portal.
+# When using local NIM, set the conversation endpoint in the portal to
+# point to your local NIM service (e.g., http://<server-ip>:8000/v1)
 nim:
-  enabled: true
-  # NIM endpoint (local vLLM or NIM container)
+  enabled: false  # Set to true only for full stack (air-gapped) deployments
+  # NIM endpoint (local vLLM or NIM container) - configure in Admin Portal
   endpoint: "http://localhost:8000/v1"
   # Model served by NIM
   model: "meta/llama-3.1-8b-instruct"
 
-# --- CNS-Specific: Local Riva TTS/ASR ---
+# --- CNS-Specific: Local Riva TTS/ASR (Full Stack Mode Only) ---
+# For air-gapped deployments requiring local speech services
 riva:
-  enabled: false  # Set to true if using NVIDIA Riva
+  enabled: false  # Set to true if using NVIDIA Riva instead of cloud TTS
   endpoint: "localhost:50051"
   useSsl: false
   # Riva models (deployed via NIM Operator)

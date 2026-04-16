@@ -55,16 +55,11 @@ resources:
 
 # Renny renderer configuration
 # These values are typically overridden by my-renny-values.yml in production
+#
+# IMPORTANT: Conversation platform (Flowise, etc.) is configured in the
+# UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
+# from DHOP based on persona configuration.
 renderer:
-  a2f:
-    url: "http://localhost:52000"  # A2F service URL for internal speech processing
-    audioDelayMs: 240              # A2F_AUDIO_DELAY_TIME_MS
-    audioSampleRate: 16000         # A2F_AUDIO_SAMPLE_RATE
-
-  # Required for secret template
-  cp:
-    flowiseApiKey: ""              # Optional - Flowise integration
-
   launchDarkly:
     key: ""                        # Optional - feature flags
 
@@ -218,16 +213,8 @@ env:
     value: "all"
   - name: NEW_SPEECH_OVERRIDE
     value: "1"
-  - name: A2F_ADDRESS
-    value: "http://localhost:52000"
-  - name: A2F_AUDIO_DELAY_TIME_MS
-    value: "240"
-  - name: A2F_AUDIO_SAMPLE_RATE
-    value: "16000"
   - name: CLOUD_PROVIDER
     value: "azure"
-  - name: AZURE_REGION
-    value: "eastus"
 
 # Update service configuration with Azure annotations
 service:
