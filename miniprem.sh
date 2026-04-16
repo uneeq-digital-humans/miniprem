@@ -76,11 +76,66 @@ if [ "$CNS_INSTALLED" = true ]; then
             exec "$CNS_SCRIPTS_DIR/sizer.sh" "${@:2}"
             ;;
         logs)
-            # For CNS, show Renny pod logs
+            # For CNS, show Renny pod logs with pod selection
             if command -v microk8s &> /dev/null; then
-                exec microk8s kubectl logs -f deployment/renny -n uneeq --all-containers=true
+                KUBECTL="microk8s kubectl"
             else
-                exec kubectl logs -f deployment/renny -n uneeq --all-containers=true
+                KUBECTL="kubectl"
+            fi
+
+            # Get list of Renny pods
+            PODS=($($KUBECTL get pods -n uneeq -l app=renny -o jsonpath='{.items[*].metadata.name}' 2>/dev/null))
+
+            if [[ ${#PODS[@]} -eq 0 ]]; then
+                echo "No Renny pods found in uneeq namespace"
+                exit 1
+            fi
+
+            POD_ARG="${2:-}"
+
+            # If "all" specified, follow all pods
+            if [[ "$POD_ARG" == "all" ]]; then
+                echo "Following logs from ALL ${#PODS[@]} Renny pods (Ctrl+C to stop)..."
+                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=${#PODS[@]}
+            fi
+
+            # If specific pod name/number provided
+            if [[ -n "$POD_ARG" ]]; then
+                if [[ "$POD_ARG" =~ ^[0-9]+$ ]]; then
+                    # It's a number - use as index (1-based)
+                    IDX=$((POD_ARG - 1))
+                    if [[ $IDX -ge 0 && $IDX -lt ${#PODS[@]} ]]; then
+                        exec $KUBECTL logs -f "${PODS[$IDX]}" -n uneeq --all-containers=true
+                    else
+                        echo "Invalid pod number: $POD_ARG (have ${#PODS[@]} pods)"
+                        exit 1
+                    fi
+                else
+                    # It's a pod name
+                    exec $KUBECTL logs -f "$POD_ARG" -n uneeq --all-containers=true
+                fi
+            fi
+
+            # No argument - show menu
+            echo ""
+            echo "Select a Renny pod to view logs:"
+            echo ""
+            for i in "${!PODS[@]}"; do
+                STATUS=$($KUBECTL get pod "${PODS[$i]}" -n uneeq -o jsonpath='{.status.phase}' 2>/dev/null)
+                printf "  %d) %s (%s)\n" $((i+1)) "${PODS[$i]}" "$STATUS"
+            done
+            echo ""
+            echo "  all) Follow ALL pods"
+            echo ""
+            read -p "Enter selection [1-${#PODS[@]} or 'all']: " selection
+
+            if [[ "$selection" == "all" ]]; then
+                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=${#PODS[@]}
+            elif [[ "$selection" =~ ^[0-9]+$ && $selection -ge 1 && $selection -le ${#PODS[@]} ]]; then
+                exec $KUBECTL logs -f "${PODS[$((selection-1))]}" -n uneeq --all-containers=true
+            else
+                echo "Invalid selection"
+                exit 1
             fi
             ;;
         deploy)
@@ -102,7 +157,7 @@ if [ "$CNS_INSTALLED" = true ]; then
             echo "  stop        - Stop the CNS deployment (scale down to 0)"
             echo "  restart     - Restart the CNS deployment"
             echo "  status      - Check CNS deployment status"
-            echo "  logs        - View Renny pod logs"
+            echo "  logs [N|all]- View Renny pod logs (select pod or 'all')"
             echo ""
             echo "Configuration & Scaling:"
             echo "  upgrade           - Apply config changes (helm upgrade)"
