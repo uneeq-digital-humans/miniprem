@@ -267,11 +267,25 @@ interactive_mode() {
 
             echo ""
             print_color "$CYAN" "Quality Mode:"
-            echo "  web      - Standard quality, works with all character maps"
-            echo "  miniprem - Higher quality, ONLY for MiniPrem-specific character maps"
             echo ""
-            read -p "Enter quality mode (web/miniprem) [web]: " quality
+            echo "  web      - For standard/stock digital humans (UneeQ stock character maps)"
+            echo "  miniprem - For MiniPrem character maps ONLY"
+            print_color "$YELLOW" "             ⚠️  Only use if you have MiniPrem-specific character maps"
+            echo ""
+            read -p "Quality mode (web/miniprem) [web]: " quality
             quality=${quality:-web}
+
+            if [[ "$quality" == "miniprem" ]]; then
+                print_color "$YELLOW" ""
+                print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+                print_color "$YELLOW" "   Standard/stock digital humans should use 'web' quality."
+                echo ""
+                read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
+                if [[ "${confirm_miniprem,,}" != "y" ]]; then
+                    quality="web"
+                    print_color "$GREEN" "Changed to web quality (for standard digital humans)"
+                fi
+            fi
 
             local result=$(calculate_renny_capacity "$det_vram" "1080p" "$quality" "7b" "false")
             local max_rennys=$(echo "$result" | cut -d'|' -f1)
@@ -328,11 +342,25 @@ interactive_mode() {
 
     echo ""
     print_color "$CYAN" "Quality Mode:"
-    echo "  web      - Standard quality, works with all character maps"
-    echo "  miniprem - Higher quality, ONLY for MiniPrem-specific character maps"
     echo ""
-    read -p "Enter quality mode (web/miniprem) [web]: " quality
+    echo "  web      - For standard/stock digital humans (UneeQ stock character maps)"
+    echo "  miniprem - For MiniPrem character maps ONLY"
+    print_color "$YELLOW" "             ⚠️  Only use if you have MiniPrem-specific character maps"
+    echo ""
+    read -p "Quality mode (web/miniprem) [web]: " quality
     quality=${quality:-web}
+
+    if [[ "$quality" == "miniprem" ]]; then
+        print_color "$YELLOW" ""
+        print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+        print_color "$YELLOW" "   Standard/stock digital humans should use 'web' quality."
+        echo ""
+        read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
+        if [[ "${confirm_miniprem,,}" != "y" ]]; then
+            quality="web"
+            print_color "$GREEN" "Changed to web quality (for standard digital humans)"
+        fi
+    fi
 
     local result=$(calculate_renny_capacity "$vram_gb" "1080p" "$quality" "7b" "false")
     local max_rennys=$(echo "$result" | cut -d'|' -f1)
@@ -529,11 +557,25 @@ apply_interactive() {
     # Get user preferences
     echo ""
     print_color "$CYAN" "Quality Mode:"
-    echo "  web      - Standard quality, works with all character maps"
-    echo "  miniprem - Higher quality, ONLY for MiniPrem-specific character maps"
+    echo ""
+    echo "  web      - For standard/stock digital humans (UneeQ stock character maps)"
+    echo "  miniprem - For MiniPrem character maps ONLY"
+    print_color "$YELLOW" "             ⚠️  Only use if you have MiniPrem-specific character maps"
     echo ""
     read -p "Quality mode (web/miniprem) [web]: " quality
     quality=${quality:-web}
+
+    if [[ "$quality" == "miniprem" ]]; then
+        print_color "$YELLOW" ""
+        print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+        print_color "$YELLOW" "   Standard/stock digital humans should use 'web' quality."
+        echo ""
+        read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
+        if [[ "${confirm_miniprem,,}" != "y" ]]; then
+            quality="web"
+            print_color "$GREEN" "Changed to web quality (for standard digital humans)"
+        fi
+    fi
 
     read -p "Include local LLM? (y/n) [n]: " include_llm
     include_llm=${include_llm:-n}
