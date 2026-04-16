@@ -117,8 +117,8 @@ main() {
     if [[ "$final_pods" -eq 0 ]]; then
         success "CNS deployment stopped successfully"
         echo ""
-        echo "To restart, run: ./restart.sh"
-        echo "To check status, run: ./status.sh"
+        echo "To restart, run: ./miniprem.sh start"
+        echo "To check status, run: ./miniprem.sh status"
     else
         warning "Some pods may still be terminating"
         run_kubectl get pods -n uneeq

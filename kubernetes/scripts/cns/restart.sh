@@ -147,7 +147,7 @@ main() {
         warning "Not all pods are ready yet ($final_ready/$REPLICAS)"
         echo ""
         echo "Pods may still be starting. Check status with:"
-        echo "  ./status.sh"
+        echo "  ./miniprem.sh status"
         echo ""
         run_kubectl get pods -n uneeq
     fi
