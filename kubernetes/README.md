@@ -1335,7 +1335,6 @@ kubectl logs -n uneeq-renderer <pod-name> -c <container-name>
 
 # 6. Check node resources and scheduling issues
 kubectl describe nodes -l uneeq.io/node-type=renny | grep -A10 "Allocated resources"
-kubectl describe nodes -l uneeq.io/node-type=a2f | grep -A10 "Allocated resources"
 ```
 
 **Common Issues & Solutions:**

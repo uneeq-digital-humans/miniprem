@@ -2,4 +2,7 @@ apiVersion: v2
 description: Uneeq Digital Human Engine
 name: renny
 type: application
-version: 0.632-47d09
+# Version is dynamically set during deployment using --set or generated from date
+# Format: YYYY.MM.DD (e.g., 2025.04.16)
+# The deploy scripts will override this with: --set version=$(date +%Y.%m.%d)
+version: "0.0.0"
