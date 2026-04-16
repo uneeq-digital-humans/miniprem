@@ -1928,7 +1928,7 @@ deploy_renny_application() {
     echo ""
     echo "🔍 Validating renderer secret..."
 
-    local required_keys=("dhop-api-key" "cp-flowise-api-key" "launch-darkly-key" "tts-azure-speech-key" "tts-elevenlabs-api-key" "tts-veritone-api-key" "tts-gcp-creds")
+    local required_keys=("dhop-api-key" "launch-darkly-key" "tts-azure-speech-key" "tts-elevenlabs-api-key" "tts-veritone-api-key" "tts-gcp-creds")
     local missing_keys=()
 
     for key in "${required_keys[@]}"; do

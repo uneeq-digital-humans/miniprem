@@ -42,12 +42,6 @@ spec:
         command: ["/opt/renny/entrypoint.sh"]
         args: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "{{ .Values.renderer.extraCmdArgs }}"]
         env:
-        - name: A2F_ADDRESS
-          value: {{ .Values.renderer.a2f.url }}
-        - name: A2F_AUDIO_DELAY_TIME_MS
-          value: "240"
-        - name: A2F_AUDIO_SAMPLE_RATE
-          value: "16000"
         - name: AZURE_REGION
           value: {{ .Values.renderer.tts.azureRegion }}
         - name: AZURE_SPEECH_KEY
@@ -77,13 +71,6 @@ spec:
           value: {{ .Values.renderer.tts.elevenlabsModelId }}
         - name: ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL
           value: "{{ .Values.renderer.tts.elevenlabsOptimizeLatencyLevel }}"
-        - name: FLOWISE_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: renderer
-              key: cp-flowise-api-key
-        - name: FLOWISE_URL
-          value: {{ .Values.renderer.cp.flowiseUrl }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: GoogleAuth.json
         - name: INACTIVITY_TIMEOUT_SECS

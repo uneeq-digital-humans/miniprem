@@ -1,6 +1,11 @@
 # Renny Helm values
 # Image is pulled from UneeQ's Harbor registry (cr.uneeq.io)
 # Contact help@uneeq.com for Harbor robot account credentials
+#
+# IMPORTANT: Conversation platform (Flowise, etc.) is configured in the
+# UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
+# from DHOP based on persona configuration.
+
 image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
 
 # Image pull secret for Harbor registry authentication
@@ -25,15 +30,8 @@ deployment:
   # Example: 4 total pods ÷ 2 pods per GPU = 2 physical GPUs needed
 
 renderer:
-  # Required for secret template
-  a2f:
-    url: "http://localhost:52000"  # A2F service URL for internal speech processing
-
-  cp:
-    flowiseApiKey: ""        # Optional
-
   launchDarkly:
-    key: ""                  # Optional
+    key: ""                  # Optional - feature flags
 
   dhop:
     apiKey: "your-dhop-api-key-here"
@@ -211,11 +209,5 @@ env:
     value: "all"
   - name: NEW_SPEECH_OVERRIDE
     value: "1"
-  - name: A2F_ADDRESS
-    value: "http://localhost:52000"
-  - name: A2F_AUDIO_DELAY_TIME_MS
-    value: "240"
-  - name: A2F_AUDIO_SAMPLE_RATE
-    value: "16000"
   - name: RENNY_QUALITY_LEVEL
     value: "web"  # Cloud deployments use 'web' for optimized cloud performance
