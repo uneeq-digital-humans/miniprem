@@ -4,7 +4,7 @@ metadata:
   name: renny-telemetry
   namespace: {{ .Release.Namespace }}
   labels:
-    app: renderer
+    app: renny
 data:
   telemetry-client.sh: |
 {{ .Files.Get "scripts/renny-telemetry-client.sh" | indent 4 }}
