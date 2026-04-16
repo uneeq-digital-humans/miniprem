@@ -254,6 +254,33 @@ renderer:
 | `renderer.qualityLevel` | Rendering quality | `miniprem` (higher quality), `web` (optimized) |
 | `renderer.sdlAudioDriver` | Audio driver | `dummy` (headless), `pulse` (with audio) |
 
+#### Quality Level and Character Maps (CRITICAL)
+
+> **IMPORTANT:** Quality level MUST match the character map type. Mismatching causes rendering issues.
+
+| Quality Level | Character Map Type | Description |
+|--------------|-------------------|-------------|
+| `miniprem` | MiniPrem Character Map | High-quality textures for dedicated hardware |
+| `web` | Web-Optimized (Stock) | Optimized textures for cloud/web delivery |
+
+**Rules:**
+- **NEVER** use `qualityLevel: web` with a MiniPrem character map
+- **NEVER** use `qualityLevel: miniprem` with a stock/web-optimized digital human
+- The quality level is a rendering setting in Renny - it does NOT change resolution
+
+#### Video Resolution Configuration
+
+> **IMPORTANT:** Video resolution is configured via the **UneeQ Admin Portal**, NOT in this values file.
+
+The `ResX` and `ResY` parameters in the Unreal Engine args (`1920x1080`) are for the **rendering surface**, not the final video output resolution.
+
+**To change output resolution:**
+1. Log into the UneeQ Admin Portal
+2. Navigate to your Digital Human configuration
+3. Adjust the video resolution settings there
+
+The CNS deployment respects whatever resolution is configured in the Admin Portal.
+
 #### TTS (Text-to-Speech) Settings
 
 ```yaml
