@@ -6,7 +6,7 @@ metadata:
   labels:
     app: renderer
 spec:
-  replicas: {{ .Values.deployment.replicas }}
+  replicas: {{ .Values.deployment.totalReplicas | default .Values.deployment.replicas }}
   revisionHistoryLimit: 5
   selector:
     matchLabels:

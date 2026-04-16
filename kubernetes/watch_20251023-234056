@@ -1,0 +1,23 @@
+Every 2.0s: kubectl get pods -n uneeq-renderer                                                                 s-MacBook-Pro.local: 23:40:54
+                                                                                                                               in 0.436s (0)
+NAME                        READY   STATUS    RESTARTS   AGE                                                                                
+renderer-7bff7c6d9f-rcx5r   2/2     Running   0          6m30s                                                                              
+renderer-7bff7c6d9f-vsmfl   2/2     Running   0          6m30s                                                                              
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
+                                                                                                                                            
