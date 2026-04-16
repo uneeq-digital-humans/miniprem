@@ -112,6 +112,10 @@ save_cns_config() {
 # This file contains credentials for CNS deployment
 # DO NOT commit this file to version control
 
+# CNS Installation Marker (used by miniprem.sh for detection)
+CNS_INSTALLED=true
+CNS_K8S_TYPE="$CNS_K8S_TYPE"
+
 # Harbor Registry Credentials
 HARBOR_USERNAME="$HARBOR_USERNAME"
 HARBOR_PASSWORD="$HARBOR_PASSWORD"
@@ -131,6 +135,8 @@ RIME_API_KEY="$RIME_API_KEY"
 # Installation Settings
 CNS_INSTALL_MODE="$CNS_INSTALL_MODE"
 CNS_QUALITY_LEVEL="$CNS_QUALITY_LEVEL"
+RENNY_REPLICAS="$RENNY_REPLICAS"
+GPU_TIMESLICE_REPLICAS="$GPU_TIMESLICE_REPLICAS"
 EOF
     chmod 600 "$CNS_CONFIG_FILE"
     success "Configuration saved"
