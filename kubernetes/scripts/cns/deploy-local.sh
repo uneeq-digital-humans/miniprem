@@ -50,11 +50,151 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
+# Orange gradient colors for UneeQ logo
+ORANGE_1='\033[38;5;208m'
+ORANGE_2='\033[38;5;209m'
+ORANGE_3='\033[38;5;210m'
+ORANGE_4='\033[38;5;211m'
+ORANGE_5='\033[38;5;212m'
+ORANGE_6='\033[38;5;213m'
+WHITE='\033[38;5;255m'
+
 print_color() { echo -e "${1}${2}${NC}"; }
 info() { print_color "$BLUE" "ℹ️  $*"; }
 success() { print_color "$GREEN" "✅ $*"; }
 warning() { print_color "$YELLOW" "⚠️  $*"; }
 error() { print_color "$RED" "❌ $*"; }
+
+################################################################################
+# UneeQ Logo
+################################################################################
+
+print_logo() {
+    echo ""
+    echo -e "${ORANGE_1}  #     #  #    #  #######  #######  #######        ${NC}"
+    echo -e "${ORANGE_2}  #     #  ##   #  #        #        #     #        ${NC}"
+    echo -e "${ORANGE_3}  #     #  # #  #  #######  #######  #     #        ${NC}"
+    echo -e "${ORANGE_4}  #     #  #  # #  #        #        #     #        ${NC}"
+    echo -e "${ORANGE_5}  #     #  #   ##  #        #        #   # #        ${NC}"
+    echo -e "${ORANGE_6}   #####   #    #  #######  #######  #######        ${NC}"
+    echo -e "${ORANGE_1}  ################################################  ${NC}"
+    echo -e "${WHITE}               DIGITALHUMANS.COM                    ${NC}"
+    echo ""
+}
+
+################################################################################
+# Progress Spinner
+################################################################################
+
+SPINNER_PID=""
+
+start_spinner() {
+    local msg="${1:-Working...}"
+    local chars="⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    (
+        while true; do
+            for (( i=0; i<${#chars}; i++ )); do
+                echo -ne "\r${BLUE}${chars:$i:1}${NC} $msg"
+                sleep 0.1
+            done
+        done
+    ) &
+    SPINNER_PID=$!
+}
+
+stop_spinner() {
+    local status="${1:-0}"
+    local msg="${2:-}"
+
+    if [[ -n "$SPINNER_PID" ]]; then
+        kill $SPINNER_PID 2>/dev/null
+        wait $SPINNER_PID 2>/dev/null || true
+        SPINNER_PID=""
+    fi
+
+    # Clear the line
+    echo -ne "\r\033[K"
+
+    # Print result message
+    if [[ -n "$msg" ]]; then
+        if [[ "$status" -eq 0 ]]; then
+            success "$msg"
+        else
+            error "$msg"
+        fi
+    fi
+}
+
+################################################################################
+# Cleanup Handler
+################################################################################
+
+CLEANUP_STAGE=""
+CLEANUP_ENABLED=true
+
+cleanup_on_failure() {
+    local exit_code=$?
+
+    # Don't cleanup if disabled or if exit was successful
+    if [[ "$CLEANUP_ENABLED" != "true" ]] || [[ $exit_code -eq 0 ]]; then
+        return
+    fi
+
+    # Stop any running spinner
+    stop_spinner 1
+
+    echo ""
+    error "Installation failed at stage: ${CLEANUP_STAGE:-unknown}"
+    echo ""
+
+    # Offer cleanup options
+    echo "What would you like to do?"
+    echo "  1) Leave partial installation (for debugging)"
+    echo "  2) Clean up and exit"
+    echo ""
+    read -p "Enter choice [1-2] (default: 1): " cleanup_choice
+    cleanup_choice="${cleanup_choice:-1}"
+
+    if [[ "$cleanup_choice" == "2" ]]; then
+        warning "Cleaning up partial installation..."
+
+        local KUBECTL="kubectl"
+        if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
+            KUBECTL="microk8s kubectl"
+        fi
+
+        # Clean up Helm releases
+        if command -v helm &>/dev/null || command -v microk8s &>/dev/null; then
+            local HELM="helm"
+            [[ "$CNS_K8S_TYPE" == "microk8s" ]] && HELM="microk8s helm3"
+            $HELM uninstall renny -n uneeq 2>/dev/null || true
+            $HELM uninstall gpu-operator -n gpu-operator 2>/dev/null || true
+        fi
+
+        # Clean up namespaces
+        $KUBECTL delete namespace uneeq --ignore-not-found 2>/dev/null || true
+
+        success "Cleanup complete. You can re-run the installer."
+    else
+        info "Partial installation left in place for debugging."
+        echo ""
+        echo "To manually inspect:"
+        if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
+            echo "  microk8s kubectl get pods -A"
+            echo "  microk8s kubectl describe pod <pod-name> -n <namespace>"
+        else
+            echo "  kubectl get pods -A"
+            echo "  kubectl describe pod <pod-name> -n <namespace>"
+        fi
+    fi
+
+    echo ""
+    exit $exit_code
+}
+
+# Install trap handler
+trap cleanup_on_failure EXIT
 
 ################################################################################
 # Configuration
@@ -1530,6 +1670,50 @@ deploy_miniprem_stack() {
 }
 
 ################################################################################
+# Telemetry Consent
+################################################################################
+
+prompt_for_telemetry_consent() {
+    print_color "$BOLD" "
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          MiniPrem Telemetry Notice                           │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ This installation sends anonymous usage data to UneeQ:                       │
+│                                                                             │
+│ ✓ Installation notification (one-time)                                      │
+│ ✓ Heartbeat every 15 minutes to monitor uptime                              │
+│                                                                             │
+│ Data collected (NO personally identifiable information):                    │
+│   • Anonymous installation ID (generated locally)                           │
+│   • GPU hardware identifier (one-way SHA-256 hash)                          │
+│   • MiniPrem version and deployment type                                    │
+│   • System uptime and health status                                         │
+│                                                                             │
+│ We DO NOT collect:                                                          │
+│   ✗ IP addresses, hostnames, or network identifiers                         │
+│   ✗ UneeQ credentials, API keys, or tokens                                  │
+│   ✗ Conversation data or chat history                                       │
+│   ✗ Any content processed by Renny                                          │
+│   ✗ Customer information                                                    │
+│                                                                             │
+│ Privacy: See docs/TELEMETRY.md for full details                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+"
+    echo ""
+    read -p "Do you consent to anonymous telemetry? [Y/n] " telemetry_consent
+    telemetry_consent="${telemetry_consent:-Y}"
+
+    if [[ "$telemetry_consent" =~ ^[Yy]$ ]]; then
+        TELEMETRY_ENABLED=true
+        success "Telemetry enabled - thank you for helping improve MiniPrem!"
+    else
+        TELEMETRY_ENABLED=false
+        warning "Telemetry disabled - continuing with installation"
+    fi
+    echo ""
+}
+
+################################################################################
 # Verification
 ################################################################################
 
@@ -1570,6 +1754,9 @@ verify_deployment() {
 ################################################################################
 
 main() {
+    # Show UneeQ logo first
+    print_logo
+
     print_color "$BOLD" "
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               ║
@@ -1580,11 +1767,12 @@ main() {
 ║        ██║ ╚═╝ ██║██║██║ ╚████║██║██║     ██║  ██║███████╗██║ ╚═╝ ██║         ║
 ║        ╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝╚═╝╚═╝     ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝         ║
 ║                                                                               ║
-║               Cloud Native Stack (CNS) Installation                              ║
+║               Cloud Native Stack (CNS) Installation                           ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 "
 
     # Prerequisite checks
+    CLEANUP_STAGE="system checks"
     check_root
     detect_package_manager  # Needed by setup functions
     check_os
@@ -1662,22 +1850,39 @@ main() {
     # Save configuration for future runs
     save_cns_config
 
+    # =========================================================================
+    # TELEMETRY CONSENT (last step before installation begins)
+    # =========================================================================
+
+    prompt_for_telemetry_consent
+
+    # =========================================================================
+    # INSTALLATION BEGINS
+    # =========================================================================
+
     echo ""
-    info "Installing system prerequisites..."
+    print_color "$BOLD" "Starting installation..."
     echo ""
 
     # Install prerequisites (snap, Chrome, etc.)
-    install_prerequisites
+    CLEANUP_STAGE="prerequisites"
+    start_spinner "Installing system prerequisites..."
+    install_prerequisites 2>&1 | tail -20
+    stop_spinner 0 "Prerequisites installed"
 
-    echo ""
-    info "Setting up Renny display requirements..."
     echo ""
 
     # Setup Xvfb for headless rendering (needed before Vulkan check)
-    setup_xvfb_for_renny
+    CLEANUP_STAGE="Xvfb setup"
+    start_spinner "Setting up Xvfb for headless rendering..."
+    setup_xvfb_for_renny 2>&1 | tail -10
+    stop_spinner 0 "Xvfb configured"
 
     # Setup Vulkan (requires NVIDIA driver and X display)
-    setup_vulkan_for_renny
+    CLEANUP_STAGE="Vulkan setup"
+    start_spinner "Setting up Vulkan for Renny..."
+    setup_vulkan_for_renny 2>&1 | tail -10
+    stop_spinner 0 "Vulkan configured"
 
     echo ""
 
@@ -1685,16 +1890,21 @@ main() {
     check_ngc_api_key
 
     echo ""
-    info "Starting Kubernetes installation..."
+    print_color "$BOLD" "Installing Kubernetes..."
     echo ""
 
     # Install Kubernetes distribution
+    CLEANUP_STAGE="Kubernetes installation"
     case "$CNS_K8S_TYPE" in
         microk8s)
-            install_microk8s
+            start_spinner "Installing MicroK8s (this may take several minutes)..."
+            install_microk8s 2>&1 | tail -20
+            stop_spinner 0 "MicroK8s installed"
             ;;
         kubeadm)
-            install_kubeadm
+            start_spinner "Installing kubeadm cluster..."
+            install_kubeadm 2>&1 | tail -20
+            stop_spinner 0 "kubeadm cluster initialized"
             install_gpu_operator
             ;;
         *)
@@ -1704,10 +1914,19 @@ main() {
     esac
 
     # Configure GPU time-slicing (for multiple Rennys)
-    configure_gpu_timeslicing
+    CLEANUP_STAGE="GPU time-slicing"
+    start_spinner "Configuring GPU time-slicing..."
+    configure_gpu_timeslicing 2>&1 | tail -10
+    stop_spinner 0 "GPU time-slicing configured"
 
     # Deploy MiniPrem stack
-    deploy_miniprem_stack
+    CLEANUP_STAGE="Renny deployment"
+    start_spinner "Deploying Renny via Helm..."
+    deploy_miniprem_stack 2>&1 | tail -20
+    stop_spinner 0 "Renny deployed"
+
+    # Disable cleanup trap for successful completion
+    CLEANUP_ENABLED=false
 
     # Verify deployment
     verify_deployment
@@ -1715,7 +1934,9 @@ main() {
     echo ""
     print_color "$BOLD" "
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                       CNS Installation Complete!                               ║
+║                                                                               ║
+║                      CNS Installation Complete!                               ║
+║                                                                               ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 "
 
@@ -1727,18 +1948,36 @@ main() {
     printf "│ %-71s │\n" "Renny Replicas: $RENNY_REPLICAS"
     printf "│ %-71s │\n" "GPU Time-Slices per GPU: $GPU_TIMESLICE_REPLICAS"
     printf "│ %-71s │\n" "GPU: $GPU_NAME (${GPU_VRAM_GB:-0}GB VRAM)"
+    printf "│ %-71s │\n" "TTS Provider: $TTS_PROVIDER"
+    printf "│ %-71s │\n" "Region: $UNEEQ_REGION"
     echo "└─────────────────────────────────────────────────────────────────────────┘"
 
     echo ""
-    echo "Next steps:"
+    print_color "$BOLD" "Access URLs:"
+    echo "┌─────────────────────────────────────────────────────────────────────────┐"
+    if [[ "$UNEEQ_REGION" == "eu" ]]; then
+        printf "│ %-71s │\n" "DHOP Dashboard: https://dashboard-eu.enterprise.uneeq.io"
+        printf "│ %-71s │\n" "Admin Portal:   https://admin-eu.enterprise.uneeq.io"
+    else
+        printf "│ %-71s │\n" "DHOP Dashboard: https://dashboard.enterprise.uneeq.io"
+        printf "│ %-71s │\n" "Admin Portal:   https://admin.enterprise.uneeq.io"
+    fi
+    echo "└─────────────────────────────────────────────────────────────────────────┘"
+
+    echo ""
+    print_color "$BOLD" "Next Steps:"
+    echo ""
     echo "  1. Check deployment status:"
-    echo "     ./miniprem.sh status"
+    print_color "$GREEN" "     ./miniprem.sh status"
     echo ""
     echo "  2. View Renny pod logs:"
-    echo "     ./miniprem.sh logs"
+    print_color "$GREEN" "     ./miniprem.sh logs"
     echo ""
     echo "  3. Scale Renny instances:"
-    echo "     ./miniprem.sh scale"
+    print_color "$GREEN" "     ./miniprem.sh scale"
+    echo ""
+    echo "  4. Upgrade MiniPrem (pull latest):"
+    print_color "$GREEN" "     ./miniprem.sh upgrade"
     echo ""
 
     if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
@@ -1754,6 +1993,9 @@ main() {
         echo "  - To upgrade to Full Stack: re-run with CNS_INSTALL_MODE=full"
         echo ""
     fi
+
+    success "Installation complete! Your digital humans are ready."
+    echo ""
 }
 
 main "$@"
