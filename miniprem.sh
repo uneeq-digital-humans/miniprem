@@ -95,8 +95,10 @@ if [ "$CNS_INSTALLED" = true ]; then
 
             # If "all" specified, follow all pods
             if [[ "$POD_ARG" == "all" ]]; then
+                # Each pod has 2 containers, so multiply by 3 to be safe
+                MAX_REQUESTS=$((${#PODS[@]} * 3))
                 echo "Following logs from ALL ${#PODS[@]} Renny pods (Ctrl+C to stop)..."
-                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=${#PODS[@]}
+                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=$MAX_REQUESTS
             fi
 
             # If specific pod name/number provided
@@ -130,7 +132,8 @@ if [ "$CNS_INSTALLED" = true ]; then
             read -p "Enter selection [1-${#PODS[@]} or 'all']: " selection
 
             if [[ "$selection" == "all" ]]; then
-                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=${#PODS[@]}
+                MAX_REQUESTS=$((${#PODS[@]} * 3))
+                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=$MAX_REQUESTS
             elif [[ "$selection" =~ ^[0-9]+$ && $selection -ge 1 && $selection -le ${#PODS[@]} ]]; then
                 exec $KUBECTL logs -f "${PODS[$((selection-1))]}" -n uneeq --all-containers=true
             else
