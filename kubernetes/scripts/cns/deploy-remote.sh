@@ -77,6 +77,11 @@ ssh_cmd() {
     ssh $SSH_OPTS -i "$CNS_SSH_KEY" "$CNS_REMOTE_USER@$CNS_REMOTE_HOST" "$@"
 }
 
+# SSH with TTY allocation for interactive commands
+ssh_interactive() {
+    ssh -t $SSH_OPTS -i "$CNS_SSH_KEY" "$CNS_REMOTE_USER@$CNS_REMOTE_HOST" "$@"
+}
+
 scp_to_remote() {
     local src="$1"
     local dst="$2"
@@ -187,8 +192,16 @@ deploy_with_ssh() {
     # Execute deployment on remote
     info "Executing deployment on remote server..."
     echo ""
+    print_color "$YELLOW" "The deployment script will now prompt you for:"
+    echo "  • DHOP API Key and Tenant ID (UneeQ credentials)"
+    echo "  • Quality Mode (web for stock digital humans, miniprem for MiniPrem character maps)"
+    echo "  • Number of Renny instances to deploy"
+    echo ""
+    read -p "Press Enter to continue with remote deployment..."
+    echo ""
 
-    ssh_cmd "cd ~/miniprem-cns && \
+    # Use ssh_interactive for TTY allocation (required for prompts)
+    ssh_interactive "cd ~/miniprem-cns && \
         sudo CNS_K8S_TYPE='$CNS_K8S_TYPE' \
         NGC_API_KEY='${NGC_API_KEY:-}' \
         KUBERNETES_DIR=~/miniprem-cns \

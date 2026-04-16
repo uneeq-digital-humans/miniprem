@@ -64,13 +64,19 @@ NVIDIA Cloud Native Stack (CNS) is a reference architecture for deploying GPU-ac
 
 ### GPU Capacity Reference
 
-| GPU | VRAM | Web Mode | MiniPrem Mode |
-|-----|------|----------|---------------|
+| GPU | VRAM | Web Mode* | MiniPrem Mode* |
+|-----|------|-----------|----------------|
 | RTX PRO 6000 Blackwell | 48GB | 5 replicas | 3 replicas |
 | A100 80GB | 80GB | 6 replicas | 4 replicas |
 | A100 40GB | 40GB | 4 replicas | 2 replicas |
 | L4 | 24GB | 3 replicas | 2 replicas |
 | T4 | 16GB | 2 replicas | 1 replica |
+
+> **\* Quality Mode Selection:**
+> - **Web Mode**: For standard/stock digital humans (UneeQ stock character maps)
+> - **MiniPrem Mode**: For MiniPrem-specific character maps only
+>
+> Choose the quality mode that matches your character map type. See [Quality Level and Character Maps](#quality-level-and-character-maps-critical) for details.
 
 > **Note:** Running a local LLM (Full Stack mode) reduces available Renny capacity by ~1 replica.
 
@@ -166,8 +172,11 @@ sudo ./deploy-local.sh
 The script will prompt you for:
 
 1. **Installation Mode**: Minimal or Full Stack
-2. **Quality Level**: MiniPrem (higher quality) or Web (more replicas)
-3. **Replica Count**: Auto-recommended based on your GPU
+2. **DHOP Credentials**: API Key and Tenant ID (from UneeQ)
+3. **Quality Level**:
+   - **Web**: For standard/stock digital humans (UneeQ stock character maps)
+   - **MiniPrem**: For MiniPrem-specific character maps only
+4. **Replica Count**: Auto-recommended based on your GPU and quality level
 
 #### Non-Interactive Mode (Automation)
 
@@ -186,10 +195,10 @@ sudo CNS_INSTALL_MODE=minimal \
 sudo microk8s kubectl get pods -n uneeq
 
 # Expected output:
-# NAME                        READY   STATUS    RESTARTS   AGE
-# renderer-xxxxxxxxx-xxxxx    1/1     Running   0          5m
-# renderer-xxxxxxxxx-xxxxx    1/1     Running   0          5m
-# renderer-xxxxxxxxx-xxxxx    1/1     Running   0          5m
+# NAME                     READY   STATUS    RESTARTS   AGE
+# renny-xxxxxxxxx-xxxxx    1/1     Running   0          5m
+# renny-xxxxxxxxx-xxxxx    1/1     Running   0          5m
+# renny-xxxxxxxxx-xxxxx    1/1     Running   0          5m
 
 # Check GPU allocation
 sudo microk8s kubectl describe nodes | grep -A5 "Allocated resources"
@@ -250,22 +259,27 @@ renderer:
 
 | Setting | Description | Values |
 |---------|-------------|--------|
-| `renderer.qualityLevel` | Rendering quality | `miniprem` (higher quality), `web` (optimized) |
+| `renderer.qualityLevel` | Rendering quality | `miniprem` or `web` (see below) |
 | `renderer.sdlAudioDriver` | Audio driver | `dummy` (headless), `pulse` (with audio) |
 
 #### Quality Level and Character Maps (CRITICAL)
 
-> **IMPORTANT:** Quality level MUST match the character map type. Mismatching causes rendering issues.
+> **⚠️ IMPORTANT:** Quality level MUST match your character map type. Using the wrong quality level causes rendering issues.
 
-| Quality Level | Character Map Type | Description |
-|--------------|-------------------|-------------|
-| `miniprem` | MiniPrem Character Map | High-quality textures for dedicated hardware |
-| `web` | Web-Optimized (Stock) | Optimized textures for cloud/web delivery |
+| Quality Level | Use With | Description |
+|--------------|----------|-------------|
+| `web` | **Standard/Stock Digital Humans** | For UneeQ stock character maps |
+| `miniprem` | **MiniPrem Character Maps ONLY** | For MiniPrem-specific character maps |
+
+**How to Choose:**
+- **Do you have MiniPrem-specific character maps?** → Use `miniprem` quality
+- **Are you using UneeQ stock digital humans?** → Use `web` quality
+- **Not sure?** → Use `web` quality (safer default)
 
 **Rules:**
 - **NEVER** use `qualityLevel: web` with a MiniPrem character map
-- **NEVER** use `qualityLevel: miniprem` with a stock/web-optimized digital human
-- The quality level is a rendering setting in Renny - it does NOT change resolution
+- **NEVER** use `qualityLevel: miniprem` with a standard/stock digital human
+- The quality level is a rendering setting in Renny - it does NOT change video resolution
 
 #### Video Resolution Configuration
 
@@ -380,7 +394,7 @@ sudo microk8s helm3 upgrade renny ../../renny \
   --values ../../values/renny-values-cns.yaml \
   --wait
 
-sudo microk8s kubectl rollout restart deployment/renderer -n uneeq
+sudo microk8s kubectl rollout restart deployment/renny -n uneeq
 ```
 
 ---
@@ -390,12 +404,16 @@ sudo microk8s kubectl rollout restart deployment/renderer -n uneeq
 ### Change Replica Count
 
 ```bash
-# Using the update script
-sudo ./cns-update.sh --replicas 5
+# Recommended: Use miniprem.sh from project root
+cd ~/miniprem-2025
+sudo ./miniprem.sh upgrade --replicas 5
+
+# Interactive scaling (with GPU detection)
+sudo ./miniprem.sh scale
 
 # Or edit values file and apply
 # Edit: deployment.totalReplicas: 5
-sudo ./cns-update.sh
+sudo ./miniprem.sh upgrade
 ```
 
 ### GPU Time-Slicing Adjustment
@@ -427,8 +445,13 @@ sudo microk8s kubectl describe pod <pod-name> -n uneeq
 ### View Logs
 
 ```bash
+# Recommended: Use miniprem.sh
+cd ~/miniprem-2025
+sudo ./miniprem.sh logs
+
+# Or direct kubectl:
 # Follow Renny logs
-sudo microk8s kubectl logs -f deployment/renderer -n uneeq
+sudo microk8s kubectl logs -f deployment/renny -n uneeq
 
 # Logs from specific pod
 sudo microk8s kubectl logs <pod-name> -n uneeq
@@ -479,8 +502,9 @@ sudo microk8s kubectl describe pod <pod-name> -n uneeq | grep -A5 "Events"
 **Fix:**
 ```bash
 # Recreate secrets
-sudo microk8s kubectl delete secret renderer -n uneeq
-sudo ./cns-update.sh
+sudo microk8s kubectl delete secret renny -n uneeq
+cd ~/miniprem-2025
+sudo ./miniprem.sh upgrade
 ```
 
 #### Renny Crash with SIGSEGV
@@ -503,22 +527,69 @@ nvidia-smi | grep "Driver Version"
 
 ## Common Operations
 
-### Restart All Renny Pods
+All operations use the `./miniprem.sh` CLI which auto-detects CNS installations.
+
+### Using miniprem.sh (Recommended)
 
 ```bash
-sudo microk8s kubectl rollout restart deployment/renderer -n uneeq
+cd ~/miniprem-2025
+
+# Check status
+sudo ./miniprem.sh status
+
+# View logs
+sudo ./miniprem.sh logs
+
+# Restart all pods
+sudo ./miniprem.sh restart
+
+# Stop all pods
+sudo ./miniprem.sh stop
+
+# Start pods again
+sudo ./miniprem.sh start
+
+# Apply config changes (helm upgrade)
+sudo ./miniprem.sh upgrade
+
+# Clear TTS secrets (use Admin Portal config)
+sudo ./miniprem.sh upgrade --clear-secrets
+
+# Just restart pods (no helm upgrade)
+sudo ./miniprem.sh upgrade --restart
+
+# Change replica count
+sudo ./miniprem.sh upgrade --replicas 5
+
+# Interactive scaling with GPU detection
+sudo ./miniprem.sh scale
+
+# Quick scale (direct kubectl)
+sudo ./miniprem.sh scale-quick 4
+
+# GPU capacity calculator
+sudo ./miniprem.sh sizer
+
+# Full re-deploy (interactive)
+sudo ./miniprem.sh deploy
 ```
 
-### Stop All Renny Pods
+### Direct kubectl Commands (Advanced)
+
+If you need direct cluster access:
 
 ```bash
-sudo microk8s kubectl scale deployment/renderer -n uneeq --replicas=0
-```
+# Check pod status
+sudo microk8s kubectl get pods -n uneeq
 
-### Start Renny Pods
+# View logs
+sudo microk8s kubectl logs -f deployment/renny -n uneeq
 
-```bash
-sudo microk8s kubectl scale deployment/renderer -n uneeq --replicas=4
+# Restart pods
+sudo microk8s kubectl rollout restart deployment/renny -n uneeq
+
+# Scale to specific count
+sudo microk8s kubectl scale deployment/renny -n uneeq --replicas=4
 ```
 
 ### Complete Uninstall
@@ -534,16 +605,22 @@ sudo microk8s kubectl delete namespace uneeq
 sudo snap remove microk8s
 ```
 
-### Update from Git
+### Upgrade from Git
 
 ```bash
 cd ~/miniprem-2025
-git pull origin feature/cns-phoenix-support
 
-# Apply any new changes
-cd kubernetes/scripts/cns
-sudo ./cns-update.sh
+# Easy way - preserves all config files
+sudo ./miniprem.sh upgrade
+
+# Manual way
+git stash                    # Stash local changes
+git pull                     # Pull latest code
+git stash pop                # Restore local changes
+sudo ./miniprem.sh upgrade   # Apply config changes
 ```
+
+> **Note:** The `upgrade` command automatically backs up and restores your config files (`.cns_config`, `terraform.tfvars`, `renny-values-cns.yaml`, etc.) so credentials are preserved.
 
 ---
 
@@ -553,10 +630,12 @@ sudo ./cns-update.sh
 |----------|-------------|---------|
 | `CNS_K8S_TYPE` | Kubernetes distribution | `microk8s` |
 | `CNS_INSTALL_MODE` | Installation mode | (interactive) |
-| `CNS_QUALITY_LEVEL` | Rendering quality | `miniprem` |
+| `CNS_QUALITY_LEVEL` | Rendering quality: `web` (stock characters) or `miniprem` (MiniPrem maps) | `web` |
 | `RENNY_REPLICAS` | Number of Renny pods | (auto-detected) |
 | `NGC_API_KEY` | NVIDIA NGC API key | (prompted) |
 | `GPU_TIMESLICE_REPLICAS` | Time-slices per GPU | 8 |
+| `DHOP_APIKEY` | UneeQ DHOP API Key | (prompted) |
+| `DHOP_TENANTID` | UneeQ DHOP Tenant ID | (prompted) |
 
 ---
 
@@ -572,21 +651,37 @@ For issues with:
 ## Quick Reference Card
 
 ```bash
+# ═══════════════════════════════════════════════════════════════
+# MiniPrem CNS Quick Reference (use from ~/miniprem-2025)
+# ═══════════════════════════════════════════════════════════════
+
 # Check status
-sudo microk8s kubectl get pods -n uneeq
+sudo ./miniprem.sh status
 
 # View logs
-sudo microk8s kubectl logs -f deployment/renderer -n uneeq
-
-# Apply config changes
-sudo ./cns-update.sh
-
-# Scale replicas
-sudo ./cns-update.sh --replicas 5
+sudo ./miniprem.sh logs
 
 # Restart pods
-sudo ./cns-update.sh --restart
+sudo ./miniprem.sh restart
+
+# Stop/Start
+sudo ./miniprem.sh stop
+sudo ./miniprem.sh start
+
+# Apply config changes
+sudo ./miniprem.sh upgrade
+
+# Scale replicas
+sudo ./miniprem.sh upgrade --replicas 5
+# OR interactive scaling:
+sudo ./miniprem.sh scale
+
+# Clear TTS secrets (use Admin Portal)
+sudo ./miniprem.sh upgrade --clear-secrets
 
 # GPU status
 nvidia-smi
+
+# Full help
+sudo ./miniprem.sh --help
 ```
