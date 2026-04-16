@@ -71,7 +71,7 @@ CNS_REMOTE_HOST=192.168.1.100 ./cns/deploy-remote.sh
 
 ### Software Requirements
 
-- Ubuntu 22.04 LTS or RHEL 8.7+
+- Ubuntu 24.04 LTS
 - Internet connectivity
 - Sudo access
 

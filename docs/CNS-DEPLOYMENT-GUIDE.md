@@ -40,7 +40,7 @@ NVIDIA Cloud Native Stack (CNS) is a reference architecture for deploying GPU-ac
 ├─────────────────────────────────────────────────────────────────┤
 │  NVIDIA GPU (RTX PRO 6000 / A100 / L4 / T4)                     │
 ├─────────────────────────────────────────────────────────────────┤
-│  Ubuntu 22.04 + NVIDIA Driver 580.82.x                          │
+│  Ubuntu 24.04 + NVIDIA Driver 580.82.x                          │
 ├─────────────────────────────────────────────────────────────────┤
 │  MicroK8s (Kubernetes)                                          │
 │  ├── GPU Operator (time-slicing)                                │
@@ -104,8 +104,7 @@ sudo reboot
 
 #### 2. Operating System
 
-- Ubuntu 22.04 LTS (recommended)
-- RHEL 8.7+ / Rocky Linux 8.7+
+- Ubuntu 24.04 LTS
 
 ```bash
 # Verify Ubuntu version

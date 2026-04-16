@@ -16,7 +16,7 @@
 #   - Full Stack: Renny + local NIM LLM + optional Riva TTS (air-gapped ready)
 #
 # Prerequisites:
-#   - Ubuntu 22.04+ or RHEL 8.7+
+#   - Ubuntu 24.04 LTS
 #   - NVIDIA GPU(s) with driver installed
 #   - Sudo access
 #   - Internet connectivity (for pulling images)
@@ -474,18 +474,11 @@ check_os() {
         source /etc/os-release
         case "$ID" in
             ubuntu)
-                if [[ "${VERSION_ID}" < "22.04" ]]; then
-                    error "Ubuntu 22.04 or later required (found $VERSION_ID)"
+                if [[ "${VERSION_ID}" < "24.04" ]]; then
+                    error "Ubuntu 24.04 LTS required (found $VERSION_ID)"
                     exit 1
                 fi
                 success "Ubuntu $VERSION_ID detected"
-                ;;
-            rhel|centos|rocky|almalinux)
-                if [[ "${VERSION_ID%%.*}" -lt 8 ]]; then
-                    error "RHEL 8.7+ required (found $VERSION_ID)"
-                    exit 1
-                fi
-                success "$NAME $VERSION_ID detected"
                 ;;
             *)
                 warning "Unsupported OS: $ID. Proceeding anyway..."
