@@ -111,7 +111,7 @@ renderer:
   # Quality Level: Controls UE5 rendering quality
   # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
   # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
-  qualityLevel: "miniprem"
+  qualityLevel: "web"
 
   # NVIDIA GPU settings
   nvidia:
