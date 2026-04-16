@@ -3,14 +3,13 @@
 ################################################################################
 # MiniPrem CNS Upgrade Script
 #
-# Applies configuration changes to the running CNS deployment.
-# Loads saved credentials from .cns_config to preserve authentication.
+# Full upgrade for CNS deployments - pulls latest code and Renny images.
 #
 # Usage:
-#   ./upgrade.sh                    # Apply values file changes (interactive)
+#   ./upgrade.sh                    # Full upgrade (git pull + helm + new image)
+#   ./upgrade.sh --config-only      # Just apply values file changes (no git pull)
 #   ./upgrade.sh --restart          # Just restart pods (no helm upgrade)
 #   ./upgrade.sh --replicas 5       # Change replica count
-#   ./upgrade.sh --clear-secrets    # Clear TTS/LLM secrets (use Admin Portal config)
 #
 ################################################################################
 
@@ -19,6 +18,7 @@ set -euo pipefail
 # Script directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KUBERNETES_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+PROJECT_ROOT="$(dirname "$KUBERNETES_DIR")"
 VALUES_FILE="$KUBERNETES_DIR/values/renny-values-cns.yaml"
 CHART_DIR="$KUBERNETES_DIR/renny"
 CNS_CONFIG_FILE="$SCRIPT_DIR/.cns_config"
@@ -66,11 +66,39 @@ load_config() {
 }
 
 ################################################################################
+# Config file backup/restore (for git pull)
+################################################################################
+
+backup_config() {
+    local backup_dir="/tmp/miniprem-cns-backup-$$"
+    mkdir -p "$backup_dir"
+
+    # Backup .cns_config
+    if [[ -f "$CNS_CONFIG_FILE" ]]; then
+        cp "$CNS_CONFIG_FILE" "$backup_dir/"
+    fi
+
+    echo "$backup_dir"
+}
+
+restore_config() {
+    local backup_dir="$1"
+
+    if [[ -f "$backup_dir/.cns_config" ]]; then
+        cp "$backup_dir/.cns_config" "$CNS_CONFIG_FILE"
+        success "Configuration restored"
+    fi
+
+    rm -rf "$backup_dir"
+}
+
+################################################################################
 # Parse arguments
 ################################################################################
 
 REPLICAS=""
 RESTART_ONLY=false
+CONFIG_ONLY=false
 CLEAR_SECRETS=false
 FORCE=false
 
@@ -82,6 +110,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --restart)
             RESTART_ONLY=true
+            shift
+            ;;
+        --config-only|--helm-only)
+            CONFIG_ONLY=true
             shift
             ;;
         --clear-secrets|--clear-tts)
@@ -98,20 +130,22 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Usage: $0 [options]"
             echo ""
+            echo "Upgrade Modes:"
+            echo "  (default)              Full upgrade: git pull + helm upgrade + new Renny image"
+            echo "  --config-only          Only apply values file changes (no git pull)"
+            echo "  --restart              Only restart pods (no helm upgrade)"
+            echo ""
             echo "Options:"
             echo "  --replicas, -r <N>     Set number of Renny replicas"
-            echo "  --restart              Only restart pods (no helm upgrade)"
             echo "  --clear-secrets        Clear TTS/LLM API keys (use Admin Portal config)"
             echo "  --force, -f            Skip confirmation prompts"
             echo "  --help, -h             Show this help message"
             echo ""
             echo "Examples:"
-            echo "  $0                     # Apply values file changes"
+            echo "  $0                     # Full upgrade (recommended)"
+            echo "  $0 --config-only       # Just apply config changes"
             echo "  $0 --replicas 5        # Scale to 5 replicas"
-            echo "  $0 --restart           # Restart pods without config change"
-            echo "  $0 --clear-secrets     # Remove TTS keys (use Admin Portal config)"
-            echo ""
-            echo "This script loads credentials from: $CNS_CONFIG_FILE"
+            echo "  $0 --restart           # Restart pods only"
             echo ""
             exit 0
             ;;
@@ -155,14 +189,6 @@ fi
 # Load saved configuration
 load_config || true
 
-# Get current state
-info "Current deployment status:"
-$KUBECTL get deployment renny -n uneeq -o wide 2>/dev/null
-echo ""
-
-CURRENT_REPLICAS=$($KUBECTL get deployment renny -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
-info "Current replicas: $CURRENT_REPLICAS"
-
 # Handle restart-only mode
 if [[ "$RESTART_ONLY" == "true" ]]; then
     info "Restarting Renny pods..."
@@ -176,6 +202,85 @@ if [[ "$RESTART_ONLY" == "true" ]]; then
     $KUBECTL get pods -n uneeq
     exit 0
 fi
+
+################################################################################
+# Full Upgrade: Git Pull + Helm + New Image
+################################################################################
+
+if [[ "$CONFIG_ONLY" != "true" ]]; then
+    echo ""
+    info "Full upgrade mode - will pull latest code and Renny image"
+    echo ""
+
+    # Check if we're in a git repository
+    cd "$PROJECT_ROOT"
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        error "Not a git repository. Use --config-only for helm-only upgrade."
+        exit 1
+    fi
+
+    # Show what will happen
+    echo "This will:"
+    echo "  1. Backup your credentials (.cns_config)"
+    echo "  2. Pull latest code from git"
+    echo "  3. Restore your credentials"
+    echo "  4. Apply helm upgrade with new chart/values"
+    echo "  5. Restart pods to pull latest Renny image"
+    echo ""
+
+    if [[ "$FORCE" != "true" ]]; then
+        read -p "Continue with full upgrade? [Y/n]: " confirm
+        if [[ "$confirm" =~ ^[Nn]$ ]]; then
+            echo "Cancelled. Use --config-only to just apply config changes."
+            exit 0
+        fi
+    fi
+
+    # Step 1: Backup config
+    info "Step 1/5: Backing up configuration..."
+    BACKUP_DIR=$(backup_config)
+    success "Backup saved to $BACKUP_DIR"
+
+    # Step 2: Git pull
+    info "Step 2/5: Pulling latest code from git..."
+
+    # Stash any uncommitted changes
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        warning "Stashing uncommitted changes..."
+        git stash push -m "miniprem-cns-upgrade-$(date +%Y%m%d_%H%M%S)" || true
+    fi
+
+    if git pull; then
+        success "Git pull successful"
+    else
+        warning "Git pull failed. Restoring config..."
+        restore_config "$BACKUP_DIR"
+        error "Failed to pull updates from git."
+        exit 1
+    fi
+
+    # Step 3: Restore config
+    info "Step 3/5: Restoring configuration..."
+    restore_config "$BACKUP_DIR"
+
+    # Reload config after restore
+    load_config || true
+
+    echo ""
+    info "Step 4/5: Applying helm upgrade..."
+fi
+
+################################################################################
+# Helm Upgrade
+################################################################################
+
+# Get current state
+info "Current deployment status:"
+$KUBECTL get deployment renny -n uneeq -o wide 2>/dev/null
+echo ""
+
+CURRENT_REPLICAS=$($KUBECTL get deployment renny -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+info "Current replicas: $CURRENT_REPLICAS"
 
 # Build helm upgrade command
 HELM_ARGS=(
@@ -255,19 +360,23 @@ else
             ;;
         *)
             # No TTS provider saved - TTS configured in Admin Portal
-            info "No TTS provider in config - using Admin Portal configuration"
             ;;
     esac
 fi
 
-# Add quality level and other settings from config
+# Add quality level from config
 if [[ -n "${CNS_QUALITY_LEVEL:-}" ]]; then
     HELM_ARGS+=(--set "renderer.qualityLevel=$CNS_QUALITY_LEVEL")
 fi
 
-# Show what will be changed
-echo ""
-print_color "$BOLD" "Upgrade Summary:"
+# Show upgrade summary
+if [[ "$CONFIG_ONLY" == "true" ]]; then
+    echo ""
+    print_color "$BOLD" "Config-only Upgrade Summary:"
+else
+    echo ""
+    print_color "$BOLD" "Step 4/5: Helm Upgrade Summary:"
+fi
 echo "  Values file: $VALUES_FILE"
 echo "  Replicas: ${REPLICAS:-from values file}"
 echo "  DHOP: ${DHOP_TENANTID:+configured}${DHOP_TENANTID:-NOT CONFIGURED}"
@@ -277,8 +386,8 @@ if [[ "$CLEAR_SECRETS" == "true" ]]; then
 fi
 echo ""
 
-# Confirm unless --force
-if [[ "$FORCE" != "true" ]]; then
+# Confirm unless --force (only for config-only mode, full upgrade already confirmed)
+if [[ "$CONFIG_ONLY" == "true" && "$FORCE" != "true" ]]; then
     read -p "Apply these changes? [Y/n]: " confirm
     if [[ "$confirm" =~ ^[Nn]$ ]]; then
         echo "Cancelled."
@@ -287,7 +396,6 @@ if [[ "$FORCE" != "true" ]]; then
 fi
 
 # Delete existing secret to ensure clean update
-# (Helm doesn't always update existing secrets correctly)
 info "Preparing for upgrade..."
 $KUBECTL delete secret renny -n uneeq --ignore-not-found 2>/dev/null || true
 
@@ -300,8 +408,15 @@ else
     exit 1
 fi
 
-# Restart pods to pick up changes
-info "Restarting Renny pods to apply changes..."
+################################################################################
+# Restart Pods (Step 5 for full upgrade)
+################################################################################
+
+if [[ "$CONFIG_ONLY" != "true" ]]; then
+    echo ""
+    info "Step 5/5: Restarting pods to pull latest Renny image..."
+fi
+
 $KUBECTL rollout restart deployment/renny -n uneeq
 
 info "Waiting for pods to be ready..."
