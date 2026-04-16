@@ -141,7 +141,7 @@ if [ "$CNS_INSTALLED" = true ]; then
         deploy)
             exec "$CNS_SCRIPTS_DIR/deploy-local.sh" "${@:2}"
             ;;
-        upgrade)
+        upgrade|update)
             exec "$CNS_SCRIPTS_DIR/upgrade.sh" "${@:2}"
             ;;
         destroy)
@@ -160,9 +160,10 @@ if [ "$CNS_INSTALLED" = true ]; then
             echo "  logs [N|all]- View Renny pod logs (select pod or 'all')"
             echo ""
             echo "Configuration & Scaling:"
-            echo "  upgrade             - Full upgrade (git pull + helm + new Renny image)"
-            echo "  upgrade --config-only - Just apply values file changes (no git pull)"
-            echo "  upgrade --restart   - Just restart pods (no helm upgrade)"
+            echo "  upgrade             - Interactive upgrade menu"
+            echo "  upgrade --full      - Full upgrade (git + helm + new Renny)"
+            echo "  upgrade --config-only - Just apply values file changes"
+            echo "  upgrade --restart   - Just restart pods"
             echo "  scale             - Interactive scaling with GPU config"
             echo "  scale-quick N     - Quick scale to N replicas"
             echo "  sizer             - GPU capacity calculator"
