@@ -1723,18 +1723,10 @@ main() {
     echo ""
     echo "Next steps:"
     echo "  1. Check deployment status:"
-    if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
-        echo "     microk8s kubectl get pods -n uneeq"
-    else
-        echo "     kubectl get pods -n uneeq"
-    fi
+    echo "     ./miniprem.sh status"
     echo ""
-    echo "  2. Check Renny pod logs:"
-    if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
-        echo "     microk8s kubectl logs -f deployment/renny -n uneeq"
-    else
-        echo "     kubectl logs -f deployment/renny -n uneeq"
-    fi
+    echo "  2. View Renny pod logs:"
+    echo "     ./miniprem.sh logs"
     echo ""
     echo "  3. Scale Renny instances:"
     echo "     ./miniprem.sh scale"
