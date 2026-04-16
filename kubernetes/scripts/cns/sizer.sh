@@ -5,8 +5,10 @@
 #
 # Calculates optimal Renny configuration based on:
 #   - GPU model and VRAM
-#   - Resolution (1080p, 4K)
 #   - Quality mode (web, miniprem)
+#
+# Note: Resolution is configured per-persona in the UneeQ Admin Portal,
+#       not in the deployment. This sizer uses 1080p for calculations.
 #
 # Usage:
 #   ./sizer.sh                    # Interactive mode
@@ -172,35 +174,36 @@ print_config_table() {
     echo "  Total VRAM: $((vram_gb * gpu_count))GB"
     echo ""
 
-    print_color "$BOLD" "┌─────────────┬──────────┬──────────────────┬──────────────────┐"
-    print_color "$BOLD" "│ Resolution  │ Quality  │ Rennys (no LLM)  │ Rennys (+ 7B)    │"
-    print_color "$BOLD" "├─────────────┼──────────┼──────────────────┼──────────────────┤"
+    print_color "$BOLD" "┌──────────────┬──────────────────┬──────────────────┐"
+    print_color "$BOLD" "│ Quality Mode │ Rennys (no LLM)  │ Rennys (+ 7B)    │"
+    print_color "$BOLD" "├──────────────┼──────────────────┼──────────────────┤"
 
-    for res in "1080p" "4k"; do
-        for qual in "web" "miniprem"; do
-            local result_no_llm=$(calculate_renny_capacity "$vram_gb" "$res" "$qual" "none" "false")
-            local result_with_llm=$(calculate_renny_capacity "$vram_gb" "$res" "$qual" "7b" "false")
+    for qual in "web" "miniprem"; do
+        # Use 1080p for calculations (resolution is set in Admin Portal)
+        local result_no_llm=$(calculate_renny_capacity "$vram_gb" "1080p" "$qual" "none" "false")
+        local result_with_llm=$(calculate_renny_capacity "$vram_gb" "1080p" "$qual" "7b" "false")
 
-            local rennys_no_llm=$(echo "$result_no_llm" | cut -d'|' -f1)
-            local rennys_with_llm=$(echo "$result_with_llm" | cut -d'|' -f1)
+        local rennys_no_llm=$(echo "$result_no_llm" | cut -d'|' -f1)
+        local rennys_with_llm=$(echo "$result_with_llm" | cut -d'|' -f1)
 
-            # Multiply by GPU count
-            rennys_no_llm=$((rennys_no_llm * gpu_count))
-            rennys_with_llm=$((rennys_with_llm * gpu_count))
+        # Multiply by GPU count
+        rennys_no_llm=$((rennys_no_llm * gpu_count))
+        rennys_with_llm=$((rennys_with_llm * gpu_count))
 
-            printf "│ %-11s │ %-8s │ %-16s │ %-16s │\n" \
-                "$res" "$qual" "$rennys_no_llm instances" "$rennys_with_llm instances"
-        done
+        printf "│ %-12s │ %-16s │ %-16s │\n" \
+            "$qual" "$rennys_no_llm instances" "$rennys_with_llm instances"
     done
 
-    print_color "$BOLD" "└─────────────┴──────────┴──────────────────┴──────────────────┘"
+    print_color "$BOLD" "└──────────────┴──────────────────┴──────────────────┘"
+    echo ""
+    print_color "$YELLOW" "Note: Resolution is configured per-persona in the Admin Portal."
     echo ""
 }
 
 generate_config() {
     local gpu_name=$1
     local vram_gb=$2
-    local resolution=$3
+    local resolution=$3  # Kept for compatibility but not used (Admin Portal setting)
     local quality=$4
     local renny_count=$5
     local gpu_count=$6
@@ -215,17 +218,11 @@ generate_config() {
     echo "RENNY_QUALITY_LEVEL=$quality"
     echo "GPU_TIMESLICE_REPLICAS=$rennys_per_gpu"
     echo ""
-    echo "# Renny command args for $resolution:"
-    case "$resolution" in
-        "720p")  echo 'RENNY_ARGS="/Game/Live_Levels/BlankScene -RenderOffScreen -ResX=1280 -ResY=720 -NoTextureStreaming"' ;;
-        "1080p") echo 'RENNY_ARGS="/Game/Live_Levels/BlankScene -RenderOffScreen -ResX=1920 -ResY=1080 -NoTextureStreaming"' ;;
-        "1440p") echo 'RENNY_ARGS="/Game/Live_Levels/BlankScene -RenderOffScreen -ResX=2560 -ResY=1440 -NoTextureStreaming"' ;;
-        "4k")    echo 'RENNY_ARGS="/Game/Live_Levels/BlankScene -RenderOffScreen -ResX=3840 -ResY=2160 -NoTextureStreaming"' ;;
-    esac
+    print_color "$CYAN" "Note: Resolution is configured per-persona in the UneeQ Admin Portal."
     echo ""
 
     print_color "$YELLOW" "To deploy with these settings:"
-    echo "  RENNY_REPLICAS=$renny_count ./deploy.sh"
+    echo "  RENNY_REPLICAS=$renny_count ./miniprem.sh deploy"
     echo ""
 }
 
@@ -269,20 +266,21 @@ interactive_mode() {
             print_config_table "$det_name" "$det_vram" "$det_count"
 
             echo ""
-            read -p "Enter desired resolution (1080p/4k) [1080p]: " resolution
-            resolution=${resolution:-1080p}
+            print_color "$CYAN" "Quality Mode:"
+            echo "  web      - Standard quality, works with all character maps"
+            echo "  miniprem - Higher quality, ONLY for MiniPrem-specific character maps"
+            echo ""
+            read -p "Enter quality mode (web/miniprem) [web]: " quality
+            quality=${quality:-web}
 
-            read -p "Enter quality mode (web/miniprem) [miniprem]: " quality
-            quality=${quality:-miniprem}
-
-            local result=$(calculate_renny_capacity "$det_vram" "$resolution" "$quality" "7b" "false")
+            local result=$(calculate_renny_capacity "$det_vram" "1080p" "$quality" "7b" "false")
             local max_rennys=$(echo "$result" | cut -d'|' -f1)
             max_rennys=$((max_rennys * det_count))
 
             read -p "Enter number of Renny instances [max: $max_rennys]: " renny_count
             renny_count=${renny_count:-$max_rennys}
 
-            generate_config "$det_name" "$det_vram" "$resolution" "$quality" "$renny_count" "$det_count"
+            generate_config "$det_name" "$det_vram" "1080p" "$quality" "$renny_count" "$det_count"
             return
         fi
     fi
@@ -329,20 +327,21 @@ interactive_mode() {
     print_config_table "$gpu_name" "$vram_gb" "$gpu_count"
 
     echo ""
-    read -p "Enter desired resolution (1080p/4k) [1080p]: " resolution
-    resolution=${resolution:-1080p}
+    print_color "$CYAN" "Quality Mode:"
+    echo "  web      - Standard quality, works with all character maps"
+    echo "  miniprem - Higher quality, ONLY for MiniPrem-specific character maps"
+    echo ""
+    read -p "Enter quality mode (web/miniprem) [web]: " quality
+    quality=${quality:-web}
 
-    read -p "Enter quality mode (web/miniprem) [miniprem]: " quality
-    quality=${quality:-miniprem}
-
-    local result=$(calculate_renny_capacity "$vram_gb" "$resolution" "$quality" "7b" "false")
+    local result=$(calculate_renny_capacity "$vram_gb" "1080p" "$quality" "7b" "false")
     local max_rennys=$(echo "$result" | cut -d'|' -f1)
     max_rennys=$((max_rennys * gpu_count))
 
     read -p "Enter number of Renny instances [max: $max_rennys]: " renny_count
     renny_count=${renny_count:-$max_rennys}
 
-    generate_config "$gpu_name" "$vram_gb" "$resolution" "$quality" "$renny_count" "$gpu_count"
+    generate_config "$gpu_name" "$vram_gb" "1080p" "$quality" "$renny_count" "$gpu_count"
 }
 
 quick_estimate() {
@@ -387,7 +386,6 @@ apply_configuration() {
     local renny_count=$1
     local rennys_per_gpu=$2
     local quality=$3
-    local resolution=$4
 
     local KUBECTL=$(detect_kubectl)
     local HELM=$(detect_helm)
@@ -397,6 +395,12 @@ apply_configuration() {
         exit 1
     fi
 
+    # Detect GPU operator namespace (MicroK8s uses gpu-operator-resources)
+    local GPU_NS="gpu-operator"
+    if $KUBECTL get namespace gpu-operator-resources &>/dev/null 2>&1; then
+        GPU_NS="gpu-operator-resources"
+    fi
+
     print_color "$BOLD" ""
     print_color "$BOLD" "Applying Configuration..."
     print_color "$BOLD" "========================="
@@ -404,7 +408,6 @@ apply_configuration() {
     echo "  Renny Replicas: $renny_count"
     echo "  GPU Time-Slice: $rennys_per_gpu per GPU"
     echo "  Quality Mode:   $quality"
-    echo "  Resolution:     $resolution"
     echo ""
 
     # Confirm before applying
@@ -417,13 +420,13 @@ apply_configuration() {
     echo ""
 
     # Step 1: Update GPU time-slicing ConfigMap
-    print_color "$BLUE" "Step 1/4: Updating GPU time-slicing ConfigMap..."
+    print_color "$BLUE" "Step 1/3: Updating GPU time-slicing ConfigMap..."
     cat <<EOF | $KUBECTL apply -f -
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: time-slicing-config
-  namespace: gpu-operator
+  namespace: $GPU_NS
 data:
   any: |-
     version: v1
@@ -438,25 +441,28 @@ data:
             replicas: $rennys_per_gpu
 EOF
     if [[ $? -eq 0 ]]; then
-        print_color "$GREEN" "  ✓ Time-slicing ConfigMap updated"
+        print_color "$GREEN" "  ✓ Time-slicing ConfigMap updated in $GPU_NS"
     else
-        print_color "$YELLOW" "  ⚠ ConfigMap update failed (may not exist yet)"
+        print_color "$YELLOW" "  ⚠ ConfigMap update failed (GPU operator may not be installed)"
     fi
 
-    # Step 2: Patch cluster policy (if exists)
-    print_color "$BLUE" "Step 2/4: Patching GPU Operator cluster policy..."
-    $KUBECTL patch clusterpolicies.nvidia.com/cluster-policy \
-        -n gpu-operator \
-        --type merge \
-        -p '{"spec": {"devicePlugin": {"config": {"name": "time-slicing-config", "default": "any"}}}}' 2>/dev/null
-    if [[ $? -eq 0 ]]; then
-        print_color "$GREEN" "  ✓ Cluster policy patched"
+    # Step 2: Patch cluster policy (if exists - not used in MicroK8s nvidia addon)
+    print_color "$BLUE" "Step 2/3: Checking GPU Operator cluster policy..."
+    if $KUBECTL get clusterpolicies.nvidia.com/cluster-policy &>/dev/null 2>&1; then
+        $KUBECTL patch clusterpolicies.nvidia.com/cluster-policy \
+            --type merge \
+            -p '{"spec": {"devicePlugin": {"config": {"name": "time-slicing-config", "default": "any"}}}}' 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+            print_color "$GREEN" "  ✓ Cluster policy patched"
+        else
+            print_color "$YELLOW" "  ⚠ Cluster policy patch failed"
+        fi
     else
-        print_color "$YELLOW" "  ⚠ Cluster policy patch skipped (may not exist)"
+        print_color "$CYAN" "  ℹ No cluster policy found (MicroK8s uses nvidia addon instead)"
     fi
 
     # Step 3: Scale Renny deployment
-    print_color "$BLUE" "Step 3/4: Scaling Renny deployment to $renny_count replicas..."
+    print_color "$BLUE" "Step 3/3: Scaling Renny deployment to $renny_count replicas..."
 
     # Try to find Renny deployment
     local RENNY_DEPLOY=$($KUBECTL get deployment -n uneeq -o name 2>/dev/null | grep -E "renny|renderer" | head -1)
@@ -467,18 +473,6 @@ EOF
     else
         print_color "$YELLOW" "  ⚠ No Renny deployment found in 'uneeq' namespace"
         print_color "$YELLOW" "    Run deploy script first, or set RENNY_REPLICAS=$renny_count"
-    fi
-
-    # Step 4: Update environment variable (quality mode)
-    print_color "$BLUE" "Step 4/4: Updating quality mode to '$quality'..."
-
-    if [[ -n "$RENNY_DEPLOY" ]]; then
-        $KUBECTL set env "$RENNY_DEPLOY" -n uneeq RENNY_QUALITY_LEVEL="$quality" 2>/dev/null
-        if [[ $? -eq 0 ]]; then
-            print_color "$GREEN" "  ✓ Quality mode set to '$quality'"
-        else
-            print_color "$YELLOW" "  ⚠ Could not set quality mode"
-        fi
     fi
 
     echo ""
@@ -534,22 +528,23 @@ apply_interactive() {
 
     # Get user preferences
     echo ""
-    read -p "Resolution (1080p/4k) [1080p]: " resolution
-    resolution=${resolution:-1080p}
+    print_color "$CYAN" "Quality Mode:"
+    echo "  web      - Standard quality, works with all character maps"
+    echo "  miniprem - Higher quality, ONLY for MiniPrem-specific character maps"
+    echo ""
+    read -p "Quality mode (web/miniprem) [web]: " quality
+    quality=${quality:-web}
 
-    read -p "Quality mode (web/miniprem) [miniprem]: " quality
-    quality=${quality:-miniprem}
+    read -p "Include local LLM? (y/n) [n]: " include_llm
+    include_llm=${include_llm:-n}
 
-    read -p "Include local LLM? (y/n) [y]: " include_llm
-    include_llm=${include_llm:-y}
-
-    local llm_type="7b"
-    if [[ "${include_llm,,}" != "y" ]]; then
-        llm_type="none"
+    local llm_type="none"
+    if [[ "${include_llm,,}" == "y" ]]; then
+        llm_type="7b"
     fi
 
-    # Calculate
-    local result=$(calculate_renny_capacity "$vram_gb" "$resolution" "$quality" "$llm_type" "false")
+    # Calculate (resolution is set in Admin Portal, use 1080p for sizing)
+    local result=$(calculate_renny_capacity "$vram_gb" "1080p" "$quality" "$llm_type" "false")
     local max_per_gpu=$(echo "$result" | cut -d'|' -f1)
     local max_total=$((max_per_gpu * gpu_count))
 
@@ -570,8 +565,8 @@ apply_interactive() {
     # Calculate per-GPU slicing
     local rennys_per_gpu=$(( (renny_count + gpu_count - 1) / gpu_count ))
 
-    # Apply
-    apply_configuration "$renny_count" "$rennys_per_gpu" "$quality" "$resolution"
+    # Apply (resolution is set in Admin Portal)
+    apply_configuration "$renny_count" "$rennys_per_gpu" "$quality"
 }
 
 usage() {
@@ -632,16 +627,16 @@ main() {
             print_color "$GREEN" "Detected: $gpu_name (${vram_gb}GB) × $gpu_count"
             print_config_table "$gpu_name" "$vram_gb" "$gpu_count"
 
-            # Use defaults: 1080p, miniprem, with 7B LLM
-            local result=$(calculate_renny_capacity "$vram_gb" "1080p" "miniprem" "7b" "false")
+            # Use defaults: web quality, no local LLM
+            local result=$(calculate_renny_capacity "$vram_gb" "1080p" "web" "none" "false")
             local max_per_gpu=$(echo "$result" | cut -d'|' -f1)
             local max_total=$((max_per_gpu * gpu_count))
             local rennys_per_gpu=$max_per_gpu
 
-            print_color "$CYAN" "Recommended config: $max_total Rennys @ 1080p miniprem (with 7B LLM)"
+            print_color "$CYAN" "Recommended config: $max_total Rennys @ web quality (no local LLM)"
             echo ""
 
-            apply_configuration "$max_total" "$rennys_per_gpu" "miniprem" "1080p"
+            apply_configuration "$max_total" "$rennys_per_gpu" "web"
             ;;
         --list)
             echo "Known GPU models:"
