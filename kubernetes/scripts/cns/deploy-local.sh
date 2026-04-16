@@ -1401,9 +1401,10 @@ deploy_miniprem_stack() {
             warning "CNS values file not found, using default values"
         fi
 
-        # Delete existing renderer secret to ensure clean update
+        # Delete existing secrets to ensure clean update (renderer was renamed to renny)
         # Helm doesn't always update existing secrets during upgrade
         $KUBECTL delete secret renderer -n uneeq --ignore-not-found 2>/dev/null || true
+        $KUBECTL delete secret renny -n uneeq --ignore-not-found 2>/dev/null || true
 
         # Build Helm command with all credentials
         local HELM_ARGS=(
@@ -1684,9 +1685,9 @@ main() {
     echo ""
     echo "  2. Check Renny pod logs:"
     if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
-        echo "     microk8s kubectl logs -f deployment/renderer -n uneeq"
+        echo "     microk8s kubectl logs -f deployment/renny -n uneeq"
     else
-        echo "     kubectl logs -f deployment/renderer -n uneeq"
+        echo "     kubectl logs -f deployment/renny -n uneeq"
     fi
     echo ""
     echo "  3. Scale Renny instances:"
