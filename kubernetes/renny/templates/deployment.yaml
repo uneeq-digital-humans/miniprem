@@ -2,19 +2,19 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: renderer
+  name: renny
   labels:
-    app: renderer
+    app: renny
 spec:
   replicas: {{ .Values.deployment.totalReplicas | default .Values.deployment.replicas }}
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      app: renderer
+      app: renny
   template:
     metadata:
       labels:
-        app: renderer
+        app: renny
       annotations:
         prometheus.io/path: /metrics
         prometheus.io/port: "8080"
@@ -26,7 +26,7 @@ spec:
       imagePullSecrets:
       - name: docker-config
       containers:
-      - name: renderer
+      - name: renny
         image: {{ .Values.image }}
         ports:
         - containerPort: 8888
@@ -47,14 +47,14 @@ spec:
         - name: AZURE_SPEECH_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: tts-azure-speech-key
         - name: DHOP_ADDRESS
           value: "{{ .Values.renderer.dhop.url }}/v2/ws/renderer"
         - name: DHOP_APIKEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: dhop-api-key
         - name: DHOP_FIRST_READY_WAIT_TIME_SECS
           value: "60"
@@ -65,7 +65,7 @@ spec:
         - name: ELEVEN_LABS_API_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: tts-elevenlabs-api-key
         - name: ELEVEN_LABS_MODEL_ID
           value: {{ .Values.renderer.tts.elevenlabsModelId }}
@@ -78,14 +78,14 @@ spec:
         - name: LAUNCH_DARKLY_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: launch-darkly-key
         - name: TTS_ADDRESS
           value: {{ .Values.renderer.tts.proxyUrl }}
         - name: VERITONE_API_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: tts-veritone-api-key
         - name: LOG_JSON_FORMAT
           value: "true"
@@ -170,7 +170,7 @@ spec:
       volumes:
         - name: gcp-creds
           secret:
-            secretName: renderer
+            secretName: renny
             items:
             - path: GoogleAuth.json
               key: tts-gcp-creds

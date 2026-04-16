@@ -89,18 +89,18 @@ fi
 
 # Get current state
 info "Current deployment status:"
-$KUBECTL get deployment renderer -n uneeq -o wide 2>/dev/null || {
+$KUBECTL get deployment renny -n uneeq -o wide 2>/dev/null || {
     error "No Renny deployment found in uneeq namespace"
     exit 1
 }
 
-CURRENT_REPLICAS=$($KUBECTL get deployment renderer -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+CURRENT_REPLICAS=$($KUBECTL get deployment renny -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
 info "Current replicas: $CURRENT_REPLICAS"
 
 if [[ "$RESTART_ONLY" == "true" ]]; then
     info "Restarting Renny pods..."
-    $KUBECTL rollout restart deployment/renderer -n uneeq
-    $KUBECTL rollout status deployment/renderer -n uneeq --timeout=300s
+    $KUBECTL rollout restart deployment/renny -n uneeq
+    $KUBECTL rollout status deployment/renny -n uneeq --timeout=300s
     success "Pods restarted successfully"
     exit 0
 fi
@@ -121,7 +121,9 @@ fi
 
 # Delete existing secret to ensure clean update
 info "Cleaning up existing secrets..."
+# Delete old secret names (renderer was renamed to renny)
 $KUBECTL delete secret renderer -n uneeq --ignore-not-found 2>/dev/null || true
+$KUBECTL delete secret renny -n uneeq --ignore-not-found 2>/dev/null || true
 
 # Run helm upgrade
 info "Applying configuration changes..."
@@ -129,8 +131,8 @@ $HELM "${HELM_ARGS[@]}" --wait --timeout 10m
 
 # Restart pods to pick up changes
 info "Restarting Renny pods..."
-$KUBECTL rollout restart deployment/renderer -n uneeq
-$KUBECTL rollout status deployment/renderer -n uneeq --timeout=300s
+$KUBECTL rollout restart deployment/renny -n uneeq
+$KUBECTL rollout status deployment/renny -n uneeq --timeout=300s
 
 # Show final status
 echo ""
@@ -141,4 +143,4 @@ $KUBECTL get pods -n uneeq -o wide
 
 echo ""
 info "To watch pod logs:"
-echo "  $KUBECTL logs -f deployment/renderer -n uneeq"
+echo "  $KUBECTL logs -f deployment/renny -n uneeq"
