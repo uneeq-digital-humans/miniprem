@@ -25,8 +25,26 @@ if command -v microk8s &> /dev/null; then
     fi
 fi
 
-# For CNS installations, route to CNS scripts
+# For CNS installations, check permissions and route to CNS scripts
 if [ "$CNS_INSTALLED" = true ]; then
+    # Check if user has microk8s permissions
+    if command -v microk8s &> /dev/null; then
+        if ! microk8s status &>/dev/null 2>&1; then
+            echo ""
+            echo "⚠️  MicroK8s permission denied."
+            echo ""
+            echo "You need to run this command with sudo OR be in the microk8s group:"
+            echo ""
+            echo "  Option 1: Run with sudo"
+            echo "    sudo ./miniprem.sh ${1:-}"
+            echo ""
+            echo "  Option 2: Add yourself to microk8s group (recommended)"
+            echo "    sudo usermod -a -G microk8s \$USER"
+            echo "    newgrp microk8s  # Or logout and login again"
+            echo ""
+            exit 1
+        fi
+    fi
     CNS_SCRIPTS_DIR="$PROJECT_ROOT/kubernetes/scripts/cns"
 
     # Route commands to CNS scripts
