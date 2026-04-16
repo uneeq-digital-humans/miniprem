@@ -119,16 +119,17 @@ renderer:
     driverCapabilities: "all"
 
 # Resource limits
-# Adjust based on your GPU (these are for A100)
+# CPU reduced to allow more replicas on limited-core systems
+# 24-core system: 2000m allows ~10 pods, 2500m allows ~8 pods
 resources:
   limits:
     nvidia.com/gpu: 1
     memory: "8Gi"
-    cpu: "4000m"
+    cpu: "2500m"
   requests:
     nvidia.com/gpu: 1
-    memory: "8Gi"
-    cpu: "4000m"
+    memory: "6Gi"
+    cpu: "2000m"
 
 # Node selector - typically empty for single-server CNS
 # For multi-node CNS clusters, you might use:
