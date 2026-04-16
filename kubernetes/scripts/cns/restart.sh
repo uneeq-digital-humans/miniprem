@@ -99,7 +99,7 @@ main() {
     echo ""
 
     # Check if Renny deployment exists
-    if ! run_kubectl get deployment renderer -n uneeq &>/dev/null; then
+    if ! run_kubectl get deployment renny -n uneeq &>/dev/null; then
         error "Renny deployment not found in uneeq namespace"
         echo "  Use deploy-local.sh to deploy first."
         exit 1
@@ -107,12 +107,12 @@ main() {
 
     # Get current replica count
     local current_replicas
-    current_replicas=$(run_kubectl get deployment renderer -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+    current_replicas=$(run_kubectl get deployment renny -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
     info "Current replica count: $current_replicas"
 
     # Scale up
     info "Scaling Renny deployment to $REPLICAS replicas..."
-    run_kubectl scale deployment renderer -n uneeq --replicas="$REPLICAS"
+    run_kubectl scale deployment renny -n uneeq --replicas="$REPLICAS"
 
     # Wait for pods to be ready
     info "Waiting for pods to be ready..."
@@ -120,7 +120,7 @@ main() {
     local elapsed=0
     while [[ $elapsed -lt $timeout ]]; do
         local ready_pods
-        ready_pods=$(run_kubectl get deployment renderer -n uneeq -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+        ready_pods=$(run_kubectl get deployment renny -n uneeq -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
         ready_pods="${ready_pods:-0}"
 
         if [[ "$ready_pods" -ge "$REPLICAS" ]]; then
@@ -134,7 +134,7 @@ main() {
 
     # Verify restart
     local final_ready
-    final_ready=$(run_kubectl get deployment renderer -n uneeq -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
+    final_ready=$(run_kubectl get deployment renny -n uneeq -o jsonpath='{.status.readyReplicas}' 2>/dev/null || echo "0")
     final_ready="${final_ready:-0}"
 
     echo ""

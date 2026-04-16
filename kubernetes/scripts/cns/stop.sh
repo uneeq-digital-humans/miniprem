@@ -76,7 +76,7 @@ main() {
     echo ""
 
     # Check if Renny deployment exists
-    if ! run_kubectl get deployment renderer -n uneeq &>/dev/null; then
+    if ! run_kubectl get deployment renny -n uneeq &>/dev/null; then
         warning "Renny deployment not found in uneeq namespace"
         echo "  Use deploy-local.sh to deploy first."
         exit 1
@@ -84,7 +84,7 @@ main() {
 
     # Get current replica count for later restart
     local current_replicas
-    current_replicas=$(run_kubectl get deployment renderer -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
+    current_replicas=$(run_kubectl get deployment renny -n uneeq -o jsonpath='{.spec.replicas}' 2>/dev/null || echo "0")
 
     # Save current replica count for restart
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -93,7 +93,7 @@ main() {
 
     # Scale down to 0
     info "Scaling Renny deployment to 0 replicas..."
-    run_kubectl scale deployment renderer -n uneeq --replicas=0
+    run_kubectl scale deployment renny -n uneeq --replicas=0
 
     # Wait for pods to terminate
     info "Waiting for pods to terminate..."

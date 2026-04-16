@@ -20,7 +20,7 @@ fi
 
 # Also check if MicroK8s is running with Renny deployed
 if command -v microk8s &> /dev/null; then
-    if microk8s kubectl get deployment renderer -n uneeq &>/dev/null 2>&1; then
+    if microk8s kubectl get deployment renny -n uneeq &>/dev/null 2>&1; then
         CNS_INSTALLED=true
     fi
 fi
@@ -60,9 +60,9 @@ if [ "$CNS_INSTALLED" = true ]; then
         logs)
             # For CNS, show Renny pod logs
             if command -v microk8s &> /dev/null; then
-                exec microk8s kubectl logs -f deployment/renderer -n uneeq --all-containers=true
+                exec microk8s kubectl logs -f deployment/renny -n uneeq --all-containers=true
             else
-                exec kubectl logs -f deployment/renderer -n uneeq --all-containers=true
+                exec kubectl logs -f deployment/renny -n uneeq --all-containers=true
             fi
             ;;
         deploy)

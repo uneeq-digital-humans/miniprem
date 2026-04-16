@@ -490,7 +490,7 @@ EOF
     echo ""
 
     if [[ -n "$RENNY_DEPLOY" ]]; then
-        $KUBECTL get pods -n uneeq -l app=renderer 2>/dev/null || \
+        $KUBECTL get pods -n uneeq -l app=renny 2>/dev/null || \
         $KUBECTL get pods -n uneeq 2>/dev/null | head -10
     fi
 
