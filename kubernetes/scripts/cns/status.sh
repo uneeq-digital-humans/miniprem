@@ -186,7 +186,7 @@ show_summary() {
 main() {
     print_color "$BOLD" "
 ╔═══════════════════════════════════════════════════════════════╗
-║              CNS Deployment Status ($CNS_K8S_TYPE)             ║
+║                   CNS Deployment Status                       ║
 ╚═══════════════════════════════════════════════════════════════╝
 "
 

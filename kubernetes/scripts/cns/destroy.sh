@@ -55,7 +55,7 @@ ssh_cmd() {
 destroy_local() {
     print_color "$BOLD" "
 ╔═══════════════════════════════════════════════════════════════╗
-║          CNS Local Destruction ($CNS_K8S_TYPE)                 ║
+║                    CNS Local Destruction                      ║
 ╚═══════════════════════════════════════════════════════════════╝
 "
 
@@ -120,7 +120,7 @@ destroy_local() {
 destroy_remote() {
     print_color "$BOLD" "
 ╔═══════════════════════════════════════════════════════════════╗
-║          CNS Remote Destruction ($CNS_K8S_TYPE)                ║
+║                   CNS Remote Destruction                      ║
 ╚═══════════════════════════════════════════════════════════════╝
 "
 

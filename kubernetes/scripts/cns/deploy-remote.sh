@@ -230,7 +230,7 @@ verify_remote_deployment() {
 main() {
     print_color "$BOLD" "
 ╔═══════════════════════════════════════════════════════════════╗
-║       MiniPrem CNS Remote Deployment ($CNS_K8S_TYPE)          ║
+║               MiniPrem CNS Remote Deployment                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "
 
@@ -269,7 +269,7 @@ main() {
     echo ""
     print_color "$BOLD" "
 ╔═══════════════════════════════════════════════════════════════╗
-║           Remote CNS Deployment Complete!                      ║
+║              Remote CNS Deployment Complete!                  ║
 ╚═══════════════════════════════════════════════════════════════╝
 "
 
