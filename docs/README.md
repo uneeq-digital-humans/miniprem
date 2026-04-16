@@ -12,6 +12,7 @@
 ## Table of Contents
 
 - [Getting Started](#getting-started)
+- [CLI Reference](#cli-reference)
 - [Guides](#guides)
 - [API Documentation](#api-documentation)
 - [Troubleshooting](#troubleshooting)
@@ -32,7 +33,89 @@ MiniPrem supports two deployment architectures to match your needs:
 **Start Here:**
 - **[Getting Started Guide](guides/getting-started.md)** - Docker installation and initial setup
 - **[Kubernetes/EKS Deployment](guides/kubernetes.md)** - Production-ready infrastructure with auto-scaling
+- **[CNS Deployment Guide](CNS-DEPLOYMENT-GUIDE.md)** - On-premises NVIDIA GPU deployment
 - **[Services Overview](guides/services.md)** - Understanding MiniPrem architecture
+
+## CLI Reference
+
+The `./miniprem.sh` script is the primary management tool for MiniPrem. It automatically detects whether you have a Docker or CNS (Kubernetes) installation and provides appropriate commands.
+
+### Common Commands (All Deployments)
+
+| Command | Description |
+|---------|-------------|
+| `./miniprem.sh start` | Start MiniPrem services |
+| `./miniprem.sh stop` | Stop MiniPrem services |
+| `./miniprem.sh restart` | Restart MiniPrem services |
+| `./miniprem.sh status` | Check service status |
+| `./miniprem.sh logs` | View service logs |
+| `./miniprem.sh upgrade` | Full upgrade (git pull + image pull + rebuild) |
+| `./miniprem.sh --help` | Show all available commands |
+
+### Docker-Specific Commands
+
+For Docker (local) installations:
+
+```bash
+# Full upgrade - pulls latest code and images
+./miniprem.sh upgrade
+
+# Git pull only (no docker pull)
+./miniprem.sh pull
+
+# Setup Flowise chatflow
+./miniprem.sh setup
+
+# Custom services management
+./miniprem.sh custom list
+./miniprem.sh custom add postgres
+```
+
+### CNS (Kubernetes) Commands
+
+For CNS on-premises installations:
+
+```bash
+# Apply configuration changes from values file
+sudo ./miniprem.sh upgrade
+
+# Just restart pods (no config change)
+sudo ./miniprem.sh upgrade --restart
+
+# Clear TTS secrets (use Admin Portal config instead)
+sudo ./miniprem.sh upgrade --clear-secrets
+
+# Change replica count
+sudo ./miniprem.sh upgrade --replicas 5
+
+# Interactive GPU-aware scaling
+sudo ./miniprem.sh scale
+
+# Quick scale (just kubectl scale)
+sudo ./miniprem.sh scale-quick 4
+
+# GPU capacity calculator
+sudo ./miniprem.sh sizer
+```
+
+> **Note:** CNS commands require `sudo` or membership in the `microk8s` group.
+
+### Upgrade Details
+
+The `upgrade` command works differently based on your deployment type:
+
+**Docker Upgrade:**
+1. Backs up config files (credentials, terraform vars, etc.)
+2. Pulls latest code from git
+3. Restores config files (preserves your credentials)
+4. Pulls latest Renny image from Harbor
+5. Rebuilds MiniPrem Monitor locally
+6. Tells you to restart manually
+
+**CNS Upgrade:**
+1. Loads saved credentials from `.cns_config`
+2. Runs `helm upgrade` with your values file
+3. Restarts pods to apply changes
 
 ## Guides
 

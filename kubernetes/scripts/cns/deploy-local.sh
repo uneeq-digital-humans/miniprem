@@ -639,30 +639,70 @@ prompt_for_quality_level() {
     echo "Choose your Renny quality level:"
     echo ""
     print_color "$GREEN" "  1) MiniPrem (Higher Quality)"
-    echo "     - Optimized for dedicated hardware (PC/server)"
+    echo "     - For MiniPrem-specific character maps ONLY"
     echo "     - Higher quality textures and rendering"
-    echo "     - Uses more VRAM per instance"
+    echo "     - Fewer concurrent Rennys per GPU"
     echo ""
-    print_color "$BLUE" "  2) Web (Balanced Performance)"
-    echo "     - Optimized for cloud platforms"
-    echo "     - Balanced quality vs resource usage"
-    echo "     - More instances per GPU"
+    print_color "$YELLOW" "     ⚠️  IMPORTANT: Only use MiniPrem quality with MiniPrem-specific"
+    print_color "$YELLOW" "        character maps. Standard digital humans should use Web quality."
     echo ""
+    print_color "$BLUE" "  2) Web (Standard Quality)"
+    echo "     - For standard/stock digital humans (UneeQ stock character maps)"
+    echo "     - More concurrent Rennys per GPU"
+    echo ""
+
+    # Show GPU-specific recommendations
+    if [[ -n "${GPU_NAME:-}" && -n "${GPU_VRAM_GB:-}" ]]; then
+        echo "Recommendations for your GPU ($GPU_NAME - ${GPU_VRAM_GB}GB):"
+        case "$GPU_NAME" in
+            *"RTX PRO 6000"*|*"Blackwell"*)
+                echo "  • MiniPrem quality: 3 Rennys"
+                echo "  • Web quality: 5 Rennys"
+                ;;
+            *"A100"*"80G"*)
+                echo "  • MiniPrem quality: 4 Rennys"
+                echo "  • Web quality: 6 Rennys"
+                ;;
+            *"A100"*|*"40G"*)
+                echo "  • MiniPrem quality: 2 Rennys"
+                echo "  • Web quality: 4 Rennys"
+                ;;
+            *"L4"*)
+                echo "  • MiniPrem quality: 2 Rennys"
+                echo "  • Web quality: 3 Rennys"
+                ;;
+            *"T4"*)
+                echo "  • MiniPrem quality: 1 Renny"
+                echo "  • Web quality: 2 Rennys"
+                ;;
+        esac
+        echo ""
+    fi
 
     local choice
     while true; do
-        read -p "Enter choice [1-2] (default: 1): " choice
-        choice="${choice:-1}"
+        read -p "Enter choice [1-2] (default: 2 - Web): " choice
+        choice="${choice:-2}"
 
         case "$choice" in
             1)
                 CNS_QUALITY_LEVEL="miniprem"
-                success "Selected: MiniPrem quality (higher quality, fewer instances)"
+                echo ""
+                print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+                print_color "$YELLOW" "   Standard/stock digital humans should use Web quality instead."
+                echo ""
+                read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
+                if [[ "${confirm_miniprem,,}" != "y" ]]; then
+                    CNS_QUALITY_LEVEL="web"
+                    success "Changed to Web quality (for standard digital humans)"
+                else
+                    success "Selected: MiniPrem quality (for MiniPrem character maps)"
+                fi
                 break
                 ;;
             2)
                 CNS_QUALITY_LEVEL="web"
-                success "Selected: Web quality (balanced, more instances)"
+                success "Selected: Web quality (for standard digital humans)"
                 break
                 ;;
             *)
