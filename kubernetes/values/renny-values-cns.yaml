@@ -57,29 +57,28 @@ renderer:
     key: ""  # Optional - feature flags
 
   # TTS Configuration
-  # ⚠️  CRITICAL: AT LEAST ONE TTS provider must be configured or Renny will not start properly.
+  # ────────────────────────────────────────────────────────────────────────────
+  # TTS is typically configured PER-PERSONA in the UneeQ Admin Portal.
+  # These values are ONLY needed if you want to set a GLOBAL default
+  # for all personas, or for local Riva TTS in air-gapped deployments.
   #
-  # OPTION A: Local NVIDIA Riva TTS (recommended for air-gapped/low-latency)
-  # Requires Riva deployment via NIM Operator
-  #
-  # OPTION B: Cloud TTS (Azure, ElevenLabs, etc.)
-  # Same as cloud deployments, just needs internet access
+  # If your TTS is configured in the Admin Portal (recommended), leave these EMPTY.
+  # ────────────────────────────────────────────────────────────────────────────
 
   tts:
-    # --- OPTION A: NVIDIA Riva (local) ---
-    # Uncomment these for local Riva TTS
+    # --- Local NVIDIA Riva (for air-gapped deployments only) ---
     # rivaUrl: "localhost:50051"
     # rivaUseSsl: false
 
-    # --- OPTION B: Cloud TTS (pick one) ---
+    # --- Cloud TTS (leave empty if configured in Admin Portal) ---
     # Azure Speech Services
-    azureRegion: ""  # SET DURING DEPLOYMENT if using Azure TTS
-    azureSpeechKey: ""  # SET DURING DEPLOYMENT if using Azure TTS
+    azureRegion: ""
+    azureSpeechKey: ""
 
     # ElevenLabs
-    elevenlabsApiKey: ""  # SET DURING DEPLOYMENT if using ElevenLabs
-    elevenlabsModelId: "eleven_turbo_v2"
-    elevenlabsOptimizeLatencyLevel: "1"
+    elevenlabsApiKey: ""
+    elevenlabsModelId: ""
+    elevenlabsOptimizeLatencyLevel: ""
 
     # Google Cloud TTS
     gcpCredentials: ""
