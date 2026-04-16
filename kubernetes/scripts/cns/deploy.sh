@@ -23,10 +23,7 @@ set -euo pipefail
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source common functions
-source "$SCRIPT_DIR/../common/deployment-functions.sh" 2>/dev/null || true
-
-# Color codes
+# Color codes (define BEFORE sourcing common functions to avoid readonly conflicts)
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -39,6 +36,9 @@ info() { print_color "$BLUE" "ℹ️  $*"; }
 success() { print_color "$GREEN" "✅ $*"; }
 warning() { print_color "$YELLOW" "⚠️  $*"; }
 error() { print_color "$RED" "❌ $*"; }
+
+# Source common functions (optional - colors already defined above)
+source "$SCRIPT_DIR/../common/deployment-functions.sh" 2>/dev/null || true
 
 ################################################################################
 # Configuration
