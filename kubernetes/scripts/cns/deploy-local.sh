@@ -1697,7 +1697,7 @@ main() {
     fi
     echo ""
     echo "  3. Scale Renny instances:"
-    echo "     ./scale.sh <count>"
+    echo "     ./miniprem.sh scale"
     echo ""
 
     if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
