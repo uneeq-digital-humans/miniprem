@@ -86,3 +86,4 @@ terraform.tfvars.bak
 kubernetes/values/my-renny-values.yml
 
 get_eleven_labs_voices.py
+CNS_Deployment_Installation_Guide.pdf
