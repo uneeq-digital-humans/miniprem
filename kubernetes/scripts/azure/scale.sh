@@ -232,7 +232,7 @@ if ! az aks show --name "$CLUSTER_NAME" --resource-group "$RESOURCE_GROUP" &>/de
     echo ""
     echo "Please ensure the infrastructure has been deployed with:"
     echo "  cd kubernetes/"
-    echo "  ./scripts/deploy-azure.sh"
+    echo "  ./scripts/azure/deploy.sh"
     exit 1
 fi
 

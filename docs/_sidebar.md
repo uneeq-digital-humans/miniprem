@@ -38,6 +38,7 @@
 * [Container Logs](api/container-logs.md)
 * [Advanced Topics](#)
   * [Telemetry System](TELEMETRY.md)
+  * [Phoenix LLM Observability](PHOENIX_SETUP.md)
   * [Design System](DESIGN_SYSTEM.md)
   * [Metrics Dashboard Setup](METRICS_DASHBOARD_SETUP.md)
   * [Identifiers Cheatsheet](IDENTIFIERS_CHEATSHEET.md)
