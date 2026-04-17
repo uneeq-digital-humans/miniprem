@@ -43,27 +43,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KUBERNETES_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
 # Orange gradient colors for UneeQ logo
-ORANGE_1='\033[38;5;208m'
-ORANGE_2='\033[38;5;209m'
-ORANGE_3='\033[38;5;210m'
-ORANGE_4='\033[38;5;211m'
-ORANGE_5='\033[38;5;212m'
-ORANGE_6='\033[38;5;213m'
-WHITE='\033[38;5;255m'
 
-print_color() { echo -e "${1}${2}${NC}"; }
-info() { print_color "$BLUE" "ℹ️  $*"; }
-success() { print_color "$GREEN" "✅ $*"; }
-warning() { print_color "$YELLOW" "⚠️  $*"; }
-error() { print_color "$RED" "❌ $*"; }
+info() { echo "ℹ️  $*"; }
+success() { echo "✅ $*"; }
+warning() { echo "⚠️  $*"; }
+error() { echo "❌ $*"; }
 
 ################################################################################
 # UneeQ Logo
@@ -71,14 +59,14 @@ error() { print_color "$RED" "❌ $*"; }
 
 print_logo() {
     echo ""
-    echo -e "${ORANGE_1}  #     #  #    #  #######  #######  #######        ${NC}"
-    echo -e "${ORANGE_2}  #     #  ##   #  #        #        #     #        ${NC}"
-    echo -e "${ORANGE_3}  #     #  # #  #  #######  #######  #     #        ${NC}"
-    echo -e "${ORANGE_4}  #     #  #  # #  #        #        #     #        ${NC}"
-    echo -e "${ORANGE_5}  #     #  #   ##  #        #        #   # #        ${NC}"
-    echo -e "${ORANGE_6}   #####   #    #  #######  #######  #######        ${NC}"
-    echo -e "${ORANGE_1}  ################################################  ${NC}"
-    echo -e "${WHITE}               DIGITALHUMANS.COM                    ${NC}"
+    echo "  #     #  #    #  #######  #######  #######"
+    echo "  #     #  ##   #  #        #        #     #"
+    echo "  #     #  # #  #  #######  #######  #     #"
+    echo "  #     #  #  # #  #        #        #     #"
+    echo "  #     #  #   ##  #        #        #   # #"
+    echo "   #####   #    #  #######  #######  #######"
+    echo "  ################################################"
+    echo "               DIGITALHUMANS.COM"
     echo ""
 }
 
@@ -95,7 +83,7 @@ start_spinner() {
     (
         while true; do
             for (( i=0; i<${#chars}; i++ )); do
-                echo -ne "\r${BLUE}${chars:$i:1}${NC} $msg"
+                echo -ne "\r${chars:$i:1}${NC} $msg"
                 sleep 0.1
             done
         done
@@ -296,7 +284,7 @@ EOF
 ################################################################################
 
 prompt_harbor_credentials() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     Harbor Registry Credentials                              │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -368,7 +356,7 @@ ensure_harbor_credentials() {
 ################################################################################
 
 prompt_for_region() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     UneeQ Region Selection                                   │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -410,7 +398,7 @@ prompt_for_region() {
 ################################################################################
 
 prompt_dhop_credentials() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     UneeQ Platform Credentials                               │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -457,25 +445,25 @@ prompt_dhop_credentials() {
 ################################################################################
 
 prompt_tts_provider() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     Text-to-Speech Provider Selection                        │
 └─────────────────────────────────────────────────────────────────────────────┘
 "
     echo "Select your text-to-speech provider:"
     echo ""
-    print_color "$GREEN" "  1) Azure Speech Services"
+    echo "  1) Azure Speech Services"
     echo "     Microsoft Azure TTS - High quality, many voices"
     echo ""
-    print_color "$BLUE" "  2) ElevenLabs"
+    echo "  2) ElevenLabs"
     echo "     AI-powered voices with natural speech"
     echo ""
-    print_color "$YELLOW" "  3) RIME"
+    echo "  3) RIME"
     echo "     UneeQ partner TTS service"
     echo ""
 
     if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
-        print_color "$GREEN" "  4) NVIDIA Riva (Local)"
+        echo "  4) NVIDIA Riva (Local)"
         echo "     Local TTS for air-gapped deployments"
         echo ""
     fi
@@ -674,6 +662,15 @@ calculate_recommended_replicas() {
     # Apply known GPU-specific overrides from tested capacity table
     case "$GPU_NAME" in
         *"RTX PRO 6000"*|*"Blackwell"*)
+            # RTX PRO 6000 Blackwell = 96GB VRAM
+            if [[ "$quality" == "miniprem" ]]; then
+                RECOMMENDED_REPLICAS=6
+            else
+                RECOMMENDED_REPLICAS=10
+            fi
+            ;;
+        *"RTX 6000"*|*"Ada"*|*"A6000"*)
+            # RTX 6000 Ada / RTX A6000 = 48GB VRAM
             if [[ "$quality" == "miniprem" ]]; then
                 RECOMMENDED_REPLICAS=3
             else
@@ -682,9 +679,9 @@ calculate_recommended_replicas() {
             ;;
         *"A100"*"80G"*)
             if [[ "$quality" == "miniprem" ]]; then
-                RECOMMENDED_REPLICAS=4
+                RECOMMENDED_REPLICAS=5
             else
-                RECOMMENDED_REPLICAS=6
+                RECOMMENDED_REPLICAS=8
             fi
             ;;
         *"A100"*"40G"*|*"A100"*)
@@ -731,7 +728,7 @@ calculate_recommended_replicas() {
 ################################################################################
 
 prompt_for_install_mode() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     CNS Installation Mode Selection                          │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -739,13 +736,13 @@ prompt_for_install_mode() {
 
     echo "Choose your installation mode:"
     echo ""
-    print_color "$GREEN" "  1) Minimal (Renny Only)"
+    echo "  1) Minimal (Renny Only)"
     echo "     - Renny digital human renderer"
     echo "     - Uses cloud TTS (ElevenLabs, Azure, etc.)"
     echo "     - Uses cloud LLM (requires Flowise cloud connection)"
     echo "     - Best for: Internet-connected deployments"
     echo ""
-    print_color "$YELLOW" "  2) Full Stack (Air-Gapped Ready)"
+    echo "  2) Full Stack (Air-Gapped Ready)"
     echo "     - Renny digital human renderer"
     echo "     - Local LLM via NIM (Llama 3.1, etc.)"
     echo "     - Optional: NVIDIA Riva TTS (local speech synthesis)"
@@ -779,7 +776,7 @@ prompt_for_install_mode() {
 }
 
 prompt_for_quality_level() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     Renny Quality Level Selection                            │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -787,15 +784,15 @@ prompt_for_quality_level() {
 
     echo "Choose your Renny quality level:"
     echo ""
-    print_color "$GREEN" "  1) MiniPrem (Higher Quality)"
+    echo "  1) MiniPrem (Higher Quality)"
     echo "     - For MiniPrem-specific character maps ONLY"
     echo "     - Higher quality textures and rendering"
     echo "     - Fewer concurrent Rennys per GPU"
     echo ""
-    print_color "$YELLOW" "     ⚠️  IMPORTANT: Only use MiniPrem quality with MiniPrem-specific"
-    print_color "$YELLOW" "        character maps. Standard digital humans should use Web quality."
+    echo "     ⚠️  IMPORTANT: Only use MiniPrem quality with MiniPrem-specific"
+    echo "        character maps. Standard digital humans should use Web quality."
     echo ""
-    print_color "$BLUE" "  2) Web (Standard Quality)"
+    echo "  2) Web (Standard Quality)"
     echo "     - For standard/stock digital humans (UneeQ stock character maps)"
     echo "     - More concurrent Rennys per GPU"
     echo ""
@@ -805,18 +802,24 @@ prompt_for_quality_level() {
         echo "Recommendations for your GPU ($GPU_NAME - ${GPU_VRAM_GB}GB):"
         case "$GPU_NAME" in
             *"RTX PRO 6000"*|*"Blackwell"*)
+                # RTX PRO 6000 Blackwell = 96GB
+                echo "  • MiniPrem quality: 6 Rennys"
+                echo "  • Web quality: 10 Rennys"
+                ;;
+            *"RTX 6000"*|*"Ada"*|*"A6000"*)
+                # RTX 6000 Ada / RTX A6000 = 48GB
                 echo "  • MiniPrem quality: 3 Rennys"
                 echo "  • Web quality: 5 Rennys"
                 ;;
             *"A100"*"80G"*)
-                echo "  • MiniPrem quality: 4 Rennys"
-                echo "  • Web quality: 6 Rennys"
+                echo "  • MiniPrem quality: 5 Rennys"
+                echo "  • Web quality: 8 Rennys"
                 ;;
             *"A100"*|*"40G"*)
                 echo "  • MiniPrem quality: 2 Rennys"
                 echo "  • Web quality: 4 Rennys"
                 ;;
-            *"L4"*)
+            *"L4"*|*"RTX 4090"*)
                 echo "  • MiniPrem quality: 2 Rennys"
                 echo "  • Web quality: 3 Rennys"
                 ;;
@@ -837,8 +840,8 @@ prompt_for_quality_level() {
             1)
                 CNS_QUALITY_LEVEL="miniprem"
                 echo ""
-                print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
-                print_color "$YELLOW" "   Standard/stock digital humans should use Web quality instead."
+                echo "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+                echo "   Standard/stock digital humans should use Web quality instead."
                 echo ""
                 read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
                 if [[ "${confirm_miniprem,,}" != "y" ]]; then
@@ -864,7 +867,7 @@ prompt_for_quality_level() {
 }
 
 prompt_for_renny_replicas() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                     Renny Instance Configuration                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -875,10 +878,11 @@ prompt_for_renny_replicas() {
     echo "┌───────────────────────────┬───────┬─────────────┬──────────────────┐"
     echo "│ GPU                       │ VRAM  │ Web Mode    │ MiniPrem Mode    │"
     echo "├───────────────────────────┼───────┼─────────────┼──────────────────┤"
-    echo "│ RTX PRO 6000 Blackwell    │ 48GB  │ 5 replicas  │ 3 replicas       │"
-    echo "│ A100 80GB                 │ 80GB  │ 6 replicas  │ 4 replicas       │"
+    echo "│ RTX PRO 6000 Blackwell    │ 96GB  │ 10 replicas │ 6 replicas       │"
+    echo "│ A100 80GB                 │ 80GB  │ 8 replicas  │ 5 replicas       │"
+    echo "│ RTX 6000 Ada              │ 48GB  │ 5 replicas  │ 3 replicas       │"
     echo "│ A100 40GB                 │ 40GB  │ 4 replicas  │ 2 replicas       │"
-    echo "│ L4                        │ 24GB  │ 3 replicas  │ 2 replicas       │"
+    echo "│ L4 / RTX 4090             │ 24GB  │ 3 replicas  │ 2 replicas       │"
     echo "│ T4                        │ 16GB  │ 2 replicas  │ 1 replica        │"
     echo "└───────────────────────────┴───────┴─────────────┴──────────────────┘"
     echo ""
@@ -886,10 +890,10 @@ prompt_for_renny_replicas() {
     echo ""
 
     # Show detected GPU and recommendation
-    print_color "$BLUE" "Detected GPU: $GPU_NAME (${GPU_VRAM_GB:-0}GB VRAM, $GPU_COUNT GPU(s))"
-    print_color "$BLUE" "Quality Level: $CNS_QUALITY_LEVEL"
-    print_color "$BLUE" "Install Mode: $CNS_INSTALL_MODE"
-    print_color "$GREEN" "Recommended Renny replicas: $RECOMMENDED_REPLICAS"
+    echo "Detected GPU: $GPU_NAME (${GPU_VRAM_GB:-0}GB VRAM, $GPU_COUNT GPU(s))"
+    echo "Quality Level: $CNS_QUALITY_LEVEL"
+    echo "Install Mode: $CNS_INSTALL_MODE"
+    echo "Recommended Renny replicas: $RECOMMENDED_REPLICAS"
     echo ""
 
     local choice
@@ -1101,7 +1105,7 @@ validate_driver_for_renny() {
     if [[ "$major_minor" == "580.126" ]]; then
         error "Driver $driver_version is INCOMPATIBLE with Renny!"
         echo ""
-        print_color "$RED" "  Driver 580.126.x breaks NVENC hardware encoding on ALL GPU types."
+        echo "  Driver 580.126.x breaks NVENC hardware encoding on ALL GPU types."
         echo "  Renny requires driver 580.82.x for proper video encoding."
         echo ""
         echo "  To fix, install the correct driver:"
@@ -1674,7 +1678,7 @@ deploy_miniprem_stack() {
 ################################################################################
 
 prompt_for_telemetry_consent() {
-    print_color "$BOLD" "
+    echo "
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                          MiniPrem Telemetry Notice                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
@@ -1726,23 +1730,23 @@ verify_deployment() {
     fi
 
     echo ""
-    print_color "$BOLD" "=== Cluster Status ==="
+    echo "=== Cluster Status ==="
     $KUBECTL get nodes
 
     echo ""
-    print_color "$BOLD" "=== GPU Resources ==="
+    echo "=== GPU Resources ==="
     $KUBECTL get nodes -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.allocatable.nvidia\.com/gpu}{"\n"}{end}'
 
     echo ""
-    print_color "$BOLD" "=== Namespaces ==="
+    echo "=== Namespaces ==="
     $KUBECTL get namespaces
 
     echo ""
-    print_color "$BOLD" "=== GPU Operator Pods ==="
+    echo "=== GPU Operator Pods ==="
     $KUBECTL get pods -n gpu-operator
 
     echo ""
-    print_color "$BOLD" "=== MiniPrem Pods ==="
+    echo "=== MiniPrem Pods ==="
     $KUBECTL get pods -n uneeq 2>/dev/null || echo "No pods in uneeq namespace yet"
 
     echo ""
@@ -1757,7 +1761,7 @@ main() {
     # Show UneeQ logo first
     print_logo
 
-    print_color "$BOLD" "
+    echo "
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               ║
 ║        ███╗   ███╗██╗███╗   ██╗██╗██████╗ ██████╗ ███████╗███╗   ███╗         ║
@@ -1861,7 +1865,7 @@ main() {
     # =========================================================================
 
     echo ""
-    print_color "$BOLD" "Starting installation..."
+    echo "Starting installation..."
     echo ""
 
     # Install prerequisites (snap, Chrome, etc.)
@@ -1890,7 +1894,7 @@ main() {
     check_ngc_api_key
 
     echo ""
-    print_color "$BOLD" "Installing Kubernetes..."
+    echo "Installing Kubernetes..."
     echo ""
 
     # Install Kubernetes distribution
@@ -1932,7 +1936,7 @@ main() {
     verify_deployment
 
     echo ""
-    print_color "$BOLD" "
+    echo "
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                               ║
 ║                      CNS Installation Complete!                               ║
@@ -1941,7 +1945,7 @@ main() {
 "
 
     # Configuration summary
-    print_color "$GREEN" "Configuration Summary:"
+    echo "Configuration Summary:"
     echo "┌─────────────────────────────────────────────────────────────────────────┐"
     printf "│ %-71s │\n" "Installation Mode: $CNS_INSTALL_MODE"
     printf "│ %-71s │\n" "Quality Level: $CNS_QUALITY_LEVEL"
@@ -1953,7 +1957,7 @@ main() {
     echo "└─────────────────────────────────────────────────────────────────────────┘"
 
     echo ""
-    print_color "$BOLD" "Access URLs:"
+    echo "Access URLs:"
     echo "┌─────────────────────────────────────────────────────────────────────────┐"
     if [[ "$UNEEQ_REGION" == "eu" ]]; then
         printf "│ %-71s │\n" "DHOP Dashboard: https://dashboard-eu.enterprise.uneeq.io"
@@ -1965,29 +1969,29 @@ main() {
     echo "└─────────────────────────────────────────────────────────────────────────┘"
 
     echo ""
-    print_color "$BOLD" "Next Steps:"
+    echo "Next Steps:"
     echo ""
     echo "  1. Check deployment status:"
-    print_color "$GREEN" "     ./miniprem.sh status"
+    echo "     ./miniprem.sh status"
     echo ""
     echo "  2. View Renny pod logs:"
-    print_color "$GREEN" "     ./miniprem.sh logs"
+    echo "     ./miniprem.sh logs"
     echo ""
     echo "  3. Scale Renny instances:"
-    print_color "$GREEN" "     ./miniprem.sh scale"
+    echo "     ./miniprem.sh scale"
     echo ""
     echo "  4. Upgrade MiniPrem (pull latest):"
-    print_color "$GREEN" "     ./miniprem.sh upgrade"
+    echo "     ./miniprem.sh upgrade"
     echo ""
 
     if [[ "$CNS_INSTALL_MODE" == "full" ]]; then
-        print_color "$YELLOW" "Full Stack Mode Notes:"
+        echo "Full Stack Mode Notes:"
         echo "  - NIM Operator has been installed for local LLM support"
         echo "  - Configure your NIM LLM model in the nim-models namespace"
         echo "  - NVIDIA Riva TTS can be deployed for local speech synthesis"
         echo ""
     else
-        print_color "$BLUE" "Minimal Mode Notes:"
+        echo "Minimal Mode Notes:"
         echo "  - Renny will use cloud TTS (ElevenLabs, Azure, etc.)"
         echo "  - Flowise connection is required for conversational AI"
         echo "  - To upgrade to Full Stack: re-run with CNS_INSTALL_MODE=full"
