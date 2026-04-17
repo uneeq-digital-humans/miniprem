@@ -21,16 +21,12 @@ VALUES_FILE="$KUBERNETES_DIR/values/renny-values-cns.yaml"
 CHART_DIR="$KUBERNETES_DIR/renny"
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m'
 
-info() { echo -e "${BLUE}ℹ️  $*${NC}"; }
-success() { echo -e "${GREEN}✅ $*${NC}"; }
-warning() { echo -e "${YELLOW}⚠️  $*${NC}"; }
-error() { echo -e "${RED}❌ $*${NC}"; }
+info() { echo -e "ℹ️  $*${NC}"; }
+success() { echo -e "✅ $*${NC}"; }
+warning() { echo -e "⚠️  $*${NC}"; }
+error() { echo -e "❌ $*${NC}"; }
 
 # Detect kubectl command
 if command -v microk8s &> /dev/null; then
