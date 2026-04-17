@@ -56,6 +56,7 @@ get_gpu_vram() {
     local gpu="$1"
     case "$gpu" in
         "H100 80GB"|"H100 SXM"|"A100 80GB"|"A100X") echo 78 ;;
+        "RTX PRO 6000 Blackwell") echo 92 ;;
         "A100 40GB") echo 38 ;;
         "L40"|"L40S"|"RTX 6000 Ada"|"RTX A6000") echo 46 ;;
         "RTX 5000 Ada") echo 30 ;;
@@ -238,13 +239,14 @@ show_gpu_menu() {
     echo "    6) NVIDIA T4 (16GB)"
     echo ""
     print_color "$BLUE" "  Workstation GPUs:"
-    echo "    7) NVIDIA RTX 6000 Ada / A6000 (48GB)"
-    echo "    8) NVIDIA RTX 5000 Ada (32GB)"
-    echo "    9) NVIDIA RTX A5000 (24GB)"
+    echo "    7) NVIDIA RTX PRO 6000 Blackwell (96GB)"
+    echo "    8) NVIDIA RTX 6000 Ada / A6000 (48GB)"
+    echo "    9) NVIDIA RTX 5000 Ada (32GB)"
+    echo "    10) NVIDIA RTX A5000 (24GB)"
     echo ""
     print_color "$BLUE" "  Other:"
-    echo "    10) Custom (enter VRAM manually)"
-    echo "    11) Auto-detect from system"
+    echo "    11) Custom (enter VRAM manually)"
+    echo "    12) Auto-detect from system"
     echo ""
 }
 
@@ -301,7 +303,7 @@ interactive_mode() {
 
     # Manual selection
     show_gpu_menu
-    read -p "Select GPU [1-11]: " gpu_choice
+    read -p "Select GPU [1-12]: " gpu_choice
 
     local gpu_name=""
     local vram_gb=0
@@ -313,14 +315,15 @@ interactive_mode() {
         4) gpu_name="L40/L40S"; vram_gb=46 ;;
         5) gpu_name="A10/A10G"; vram_gb=22 ;;
         6) gpu_name="T4"; vram_gb=14 ;;
-        7) gpu_name="RTX 6000 Ada"; vram_gb=46 ;;
-        8) gpu_name="RTX 5000 Ada"; vram_gb=30 ;;
-        9) gpu_name="RTX A5000"; vram_gb=22 ;;
-        10)
+        7) gpu_name="RTX PRO 6000 Blackwell"; vram_gb=92 ;;
+        8) gpu_name="RTX 6000 Ada"; vram_gb=46 ;;
+        9) gpu_name="RTX 5000 Ada"; vram_gb=30 ;;
+        10) gpu_name="RTX A5000"; vram_gb=22 ;;
+        11)
             read -p "Enter GPU name: " gpu_name
             read -p "Enter usable VRAM (GB): " vram_gb
             ;;
-        11)
+        12)
             detected=$(detect_gpu)
             if [[ -z "$detected" ]]; then
                 print_color "$RED" "No NVIDIA GPU detected"
@@ -683,7 +686,7 @@ main() {
         --list)
             echo "Known GPU models:"
             echo "  Datacenter: H100 80GB, A100 80GB, A100 40GB, L40, L40S, A10, A10G, T4"
-            echo "  Workstation: RTX 6000 Ada, RTX A6000, RTX A5000, RTX 5000 Ada"
+            echo "  Workstation: RTX PRO 6000 Blackwell (96GB), RTX 6000 Ada (48GB), RTX A6000, RTX A5000, RTX 5000 Ada"
             echo "  Consumer: RTX 4090, RTX 4080, RTX 3090"
             ;;
         --help|-h)

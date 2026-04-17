@@ -39,10 +39,10 @@ This guide provides Dell ISG partners with complete instructions for deploying U
 
 | System | GPU Options | Recommended Use |
 |--------|-------------|-----------------|
-| Dell Pro Tower T2 | RTX PRO 6000 Blackwell (48GB) | Premium deployments, 3-5 concurrent users |
-| Dell Precision 7920 | A100 40GB/80GB | High-capacity, 4-6 concurrent users |
+| Dell Pro Tower T2 | RTX PRO 6000 Blackwell (96GB) | Premium deployments, 6-10 concurrent users |
+| Dell Precision 7920 | A100 40GB/80GB | High-capacity, 4-8 concurrent users |
 | Dell PowerEdge R760xa | L40S, H100 | Data center deployments |
-| Dell Precision 5820 | RTX A6000 (48GB) | Development and testing |
+| Dell Precision 5820 | RTX 6000 Ada / RTX A6000 (48GB) | Development and testing, 3-5 concurrent users |
 
 ### Minimum Specifications
 
@@ -278,12 +278,13 @@ renderer:
 
 | GPU | VRAM | Web Mode Replicas | MiniPrem Replicas |
 |-----|------|-------------------|-------------------|
-| **RTX PRO 6000 Blackwell** | 48 GB | 5 | 3 |
-| A100 80GB | 80 GB | 6 | 4 |
-| A100 40GB | 40 GB | 4 | 2 |
+| **RTX PRO 6000 Blackwell** | 96 GB | 10 | 6 |
+| A100 80GB | 80 GB | 8 | 5 |
+| RTX 6000 Ada | 48 GB | 5 | 3 |
 | RTX A6000 | 48 GB | 5 | 3 |
 | L40S | 48 GB | 5 | 3 |
-| L4 | 24 GB | 3 | 2 |
+| A100 40GB | 40 GB | 4 | 2 |
+| L4 / RTX 4090 | 24 GB | 3 | 2 |
 | T4 | 16 GB | 2 | 1 |
 
 ### Capacity Calculation
@@ -292,13 +293,13 @@ renderer:
 ```
 Max Replicas = GPU VRAM / VRAM per Pod
 
-Web Mode:    VRAM per Pod ≈ 1.3 GB
-MiniPrem:    VRAM per Pod ≈ 8-10 GB
+Web Mode:    VRAM per Pod ≈ 8-10 GB
+MiniPrem:    VRAM per Pod ≈ 14-16 GB
 ```
 
-**Example (RTX PRO 6000 Blackwell - 48 GB):**
-- Web Mode: 48 GB / 1.3 GB = ~37 theoretical, **5 recommended** (accounting for overhead)
-- MiniPrem: 48 GB / 10 GB = ~4, **3 recommended** (accounting for overhead)
+**Example (RTX PRO 6000 Blackwell - 96 GB):**
+- Web Mode: 96 GB / 10 GB = ~10 **recommended**
+- MiniPrem: 96 GB / 16 GB = ~6 **recommended**
 
 ### Concurrent User Mapping
 

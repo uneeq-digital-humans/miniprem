@@ -226,7 +226,7 @@ fi
 usage() {
     echo -e $WHITE
     cat <<EOF
-`basename $0` [start|stop|status|restart|logs|upgrade|setup|pull|validate|config|custom]
+`basename $0` [start|stop|status|restart|logs|upgrade|deploy|setup|pull|validate|config|custom]
 Control the MiniPrem services
 
 Commands:
@@ -235,8 +235,9 @@ Commands:
     status:             Check the status of the MiniPrem services
     restart:            Restart the MiniPrem services
     logs:               View the logs of the MiniPrem services
-    upgrade:            Full upgrade (git pull + docker pull + rebuild)
-    setup:              Run the Flowise chatflow setup
+    upgrade:            Full upgrade (git pull + renny-latest pull + rebuild)
+    deploy:             Install MiniPrem (choose Docker or NVIDIA CNS)
+    setup:              Run the Flowise chatflow setup (Docker only)
     pull [--regenerate]: Pull latest code from git only (no docker pull)
     validate:           Validate custom services configuration
     config [--custom]:  Show final merged Docker Compose config
@@ -897,6 +898,43 @@ case "$1" in
                 echo ""
                 echo "  list       - List all custom services"
                 echo "  add [name] - Add a new custom service"
+                exit 1
+                ;;
+        esac
+        ;;
+    deploy)
+        # No CNS detected - offer installation options
+        echo ""
+        print_color "$BOLD" "MiniPrem Deployment"
+        echo ""
+        echo "No existing installation detected. Choose your deployment type:"
+        echo ""
+        print_color "$BLUE" "  1) Docker (Local Development)"
+        echo "     - Quick setup for local development and testing"
+        echo "     - Requires: Docker, NVIDIA GPU with drivers"
+        echo ""
+        print_color "$BLUE" "  2) NVIDIA CNS (Bare Metal Production)"
+        echo "     - Kubernetes-based deployment with GPU time-slicing"
+        echo "     - Multiple Renny instances on a single GPU"
+        echo "     - Requires: Ubuntu 24.04, NVIDIA GPU with drivers"
+        echo ""
+        read -p "Select deployment type [1-2]: " deploy_choice
+
+        case "$deploy_choice" in
+            1)
+                echo ""
+                info "Starting Docker installation..."
+                exec "$PROJECT_ROOT/docker/scripts/install_miniprem.sh"
+                ;;
+            2)
+                echo ""
+                info "Starting NVIDIA CNS installation..."
+                echo ""
+                warning "CNS installation requires sudo. Re-running with sudo..."
+                exec sudo "$PROJECT_ROOT/kubernetes/scripts/cns/deploy-local.sh"
+                ;;
+            *)
+                error "Invalid selection"
                 exit 1
                 ;;
         esac
