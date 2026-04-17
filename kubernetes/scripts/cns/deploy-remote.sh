@@ -24,18 +24,13 @@ KUBERNETES_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 ANSIBLE_DIR="$KUBERNETES_DIR/ansible"
 
 # Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-print_color() { echo -e "${1}${2}${NC}"; }
-info() { print_color "$BLUE" "ℹ️  $*"; }
-success() { print_color "$GREEN" "✅ $*"; }
-warning() { print_color "$YELLOW" "⚠️  $*"; }
-error() { print_color "$RED" "❌ $*"; }
+info() { echo "ℹ️  $*"; }
+success() { echo "✅ $*"; }
+warning() { echo "⚠️  $*"; }
+error() { echo "❌ $*"; }
 
 ################################################################################
 # Configuration
@@ -192,7 +187,7 @@ deploy_with_ssh() {
     # Execute deployment on remote
     info "Executing deployment on remote server..."
     echo ""
-    print_color "$YELLOW" "The deployment script will now prompt you for:"
+    echo "The deployment script will now prompt you for:"
     echo "  • DHOP API Key and Tenant ID (UneeQ credentials)"
     echo "  • Quality Mode (web for stock digital humans, miniprem for MiniPrem character maps)"
     echo "  • Number of Renny instances to deploy"
@@ -218,7 +213,7 @@ verify_remote_deployment() {
     info "Verifying remote deployment..."
 
     echo ""
-    print_color "$BOLD" "=== Remote Cluster Status ==="
+    echo "=== Remote Cluster Status ==="
 
     local kubectl_cmd="kubectl"
     if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
@@ -241,7 +236,7 @@ verify_remote_deployment() {
 ################################################################################
 
 main() {
-    print_color "$BOLD" "
+    echo "
 ╔═══════════════════════════════════════════════════════════════╗
 ║               MiniPrem CNS Remote Deployment                  ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -280,7 +275,7 @@ main() {
     verify_remote_deployment
 
     echo ""
-    print_color "$BOLD" "
+    echo "
 ╔═══════════════════════════════════════════════════════════════╗
 ║              Remote CNS Deployment Complete!                  ║
 ╚═══════════════════════════════════════════════════════════════╝
