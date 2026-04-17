@@ -905,15 +905,15 @@ case "$1" in
     deploy)
         # No CNS detected - offer installation options
         echo ""
-        echo -e "${BOLD}MiniPrem Deployment${NC}"
+        echo "MiniPrem Deployment"
         echo ""
         echo "No existing installation detected. Choose your deployment type:"
         echo ""
-        echo -e "${BLUE}  1) Docker (Local Development)${NC}"
+        echo "  1) Docker (Local Development)"
         echo "     - Quick setup for local development and testing"
         echo "     - Requires: Docker, NVIDIA GPU with drivers"
         echo ""
-        echo -e "${BLUE}  2) NVIDIA CNS (Bare Metal Production)${NC}"
+        echo "  2) NVIDIA CNS (Bare Metal Production)"
         echo "     - Kubernetes-based deployment with GPU time-slicing"
         echo "     - Multiple Renny instances on a single GPU"
         echo "     - Requires: Ubuntu 24.04, NVIDIA GPU with drivers"
@@ -923,18 +923,16 @@ case "$1" in
         case "$deploy_choice" in
             1)
                 echo ""
-                info "Starting Docker installation..."
+                echo "Starting Docker installation..."
                 exec "$PROJECT_ROOT/docker/scripts/install_miniprem.sh"
                 ;;
             2)
                 echo ""
-                info "Starting NVIDIA CNS installation..."
-                echo ""
-                warning "CNS installation requires sudo. Re-running with sudo..."
+                echo "Starting NVIDIA CNS installation..."
                 exec sudo "$PROJECT_ROOT/kubernetes/scripts/cns/deploy-local.sh"
                 ;;
             *)
-                error "Invalid selection"
+                echo "Invalid selection"
                 exit 1
                 ;;
         esac
