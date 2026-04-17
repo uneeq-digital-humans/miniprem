@@ -2,19 +2,19 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: {{ .Release.Namespace }}
-  name: renderer
+  name: renny
   labels:
-    app: renderer
+    app: renny
 spec:
-  replicas: {{ .Values.deployment.replicas }}
+  replicas: {{ .Values.deployment.totalReplicas | default .Values.deployment.replicas }}
   revisionHistoryLimit: 5
   selector:
     matchLabels:
-      app: renderer
+      app: renny
   template:
     metadata:
       labels:
-        app: renderer
+        app: renny
       annotations:
         prometheus.io/path: /metrics
         prometheus.io/port: "8080"
@@ -26,7 +26,7 @@ spec:
       imagePullSecrets:
       - name: docker-config
       containers:
-      - name: renderer
+      - name: renny
         image: {{ .Values.image }}
         ports:
         - containerPort: 8888
@@ -42,25 +42,20 @@ spec:
         command: ["/opt/renny/entrypoint.sh"]
         args: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "{{ .Values.renderer.extraCmdArgs }}"]
         env:
-        - name: A2F_ADDRESS
-          value: {{ .Values.renderer.a2f.url }}
-        - name: A2F_AUDIO_DELAY_TIME_MS
-          value: "240"
-        - name: A2F_AUDIO_SAMPLE_RATE
-          value: "16000"
         - name: AZURE_REGION
           value: {{ .Values.renderer.tts.azureRegion }}
         - name: AZURE_SPEECH_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: tts-azure-speech-key
+              optional: true
         - name: DHOP_ADDRESS
           value: "{{ .Values.renderer.dhop.url }}/v2/ws/renderer"
         - name: DHOP_APIKEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: dhop-api-key
         - name: DHOP_FIRST_READY_WAIT_TIME_SECS
           value: "60"
@@ -71,19 +66,12 @@ spec:
         - name: ELEVEN_LABS_API_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: tts-elevenlabs-api-key
         - name: ELEVEN_LABS_MODEL_ID
           value: {{ .Values.renderer.tts.elevenlabsModelId }}
         - name: ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL
           value: "{{ .Values.renderer.tts.elevenlabsOptimizeLatencyLevel }}"
-        - name: FLOWISE_API_KEY
-          valueFrom:
-            secretKeyRef:
-              name: renderer
-              key: cp-flowise-api-key
-        - name: FLOWISE_URL
-          value: {{ .Values.renderer.cp.flowiseUrl }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: GoogleAuth.json
         - name: INACTIVITY_TIMEOUT_SECS
@@ -91,15 +79,17 @@ spec:
         - name: LAUNCH_DARKLY_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: launch-darkly-key
+              optional: true
         - name: TTS_ADDRESS
           value: {{ .Values.renderer.tts.proxyUrl }}
         - name: VERITONE_API_KEY
           valueFrom:
             secretKeyRef:
-              name: renderer
+              name: renny
               key: tts-veritone-api-key
+              optional: true
         - name: LOG_JSON_FORMAT
           value: "true"
         - name: LOG_LEVEL # Log level for embedded go modules
@@ -108,11 +98,32 @@ spec:
           value: "http://0.0.0.0:8082/health"
         - name: NEW_SPEECH_OVERRIDE
           value: "1"
+        # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
+        - name: SDL_AUDIODRIVER
+          value: {{ .Values.renderer.sdlAudioDriver | default "pulse" | quote }}
+        # Quality Level: Controls UE5 rendering quality
+        # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
+        # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
+        - name: RENNY_QUALITY_LEVEL
+          value: {{ .Values.renderer.qualityLevel | default "web" | quote }}
+        # NVIDIA GPU visibility
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: {{ .Values.renderer.nvidia.visibleDevices | default "all" | quote }}
+        - name: NVIDIA_DRIVER_CAPABILITIES
+          value: {{ .Values.renderer.nvidia.driverCapabilities | default "all" | quote }}
+        {{- if .Values.env }}
+        {{- range .Values.env }}
+        - name: {{ .name }}
+          value: {{ .value | quote }}
+        {{- end }}
+        {{- end }}
         volumeMounts:
+        {{- if .Values.renderer.tts.gcpCredentials }}
         - name: gcp-creds
           readOnly: true
           mountPath: /opt/renny/Renny/Binaries/Linux/GoogleAuth.json
           subPath: GoogleAuth.json
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /health
@@ -162,12 +173,14 @@ spec:
           mountPath: /tmp
 {{- end }}
       volumes:
+        {{- if .Values.renderer.tts.gcpCredentials }}
         - name: gcp-creds
           secret:
-            secretName: renderer
+            secretName: renny
             items:
             - path: GoogleAuth.json
               key: tts-gcp-creds
+        {{- end }}
 {{- if .Values.telemetry.enabled }}
         - name: telemetry-script
           configMap:

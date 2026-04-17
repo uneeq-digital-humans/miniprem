@@ -1,0 +1,55 @@
+---
+# MiniPrem CNS Inventory File
+#
+# Copy this file to hosts.yml and configure your servers:
+#   cp hosts.yml.example hosts.yml
+#
+# Then run playbooks:
+#   ansible-playbook -i inventory/hosts.yml playbooks/cns-install.yml
+
+all:
+  children:
+    # CNS servers - on-premises NVIDIA GPU servers
+    cns:
+      hosts:
+        # Single server example
+        cns-server-1:
+          ansible_host: 192.168.1.100
+          ansible_user: ubuntu
+          ansible_ssh_private_key_file: ~/.ssh/id_rsa
+
+        # Additional servers (for multi-node setup)
+        # cns-server-2:
+        #   ansible_host: 192.168.1.101
+        #   ansible_user: ubuntu
+        #   ansible_ssh_private_key_file: ~/.ssh/id_rsa
+
+      vars:
+        # Kubernetes distribution: 'microk8s' or 'kubeadm'
+        cns_k8s_type: microk8s
+
+        # NVIDIA NGC API key (required for model downloads)
+        # Get one at: https://ngc.nvidia.com/
+        ngc_api_key: "{{ lookup('env', 'NGC_API_KEY') }}"
+
+        # Renny configuration
+        renny_replicas: 2
+        renny_namespace: uneeq
+
+        # GPU time-slicing (pods per GPU)
+        gpu_timeslice_replicas: 4
+
+        # Enable Phoenix observability
+        phoenix_enabled: true
+
+        # Enable Prometheus metrics
+        prometheus_enabled: true
+
+  vars:
+    # Global SSH settings
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+    ansible_python_interpreter: /usr/bin/python3
+
+    # Become settings (for sudo)
+    ansible_become: true
+    ansible_become_method: sudo

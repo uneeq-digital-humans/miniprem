@@ -1,0 +1,125 @@
+---
+# MiniPrem CNS Uninstallation Playbook
+#
+# Removes CNS deployment from target servers.
+#
+# Usage:
+#   # Remove MiniPrem components only
+#   ansible-playbook -i inventory/hosts.yml playbooks/cns-uninstall.yml
+#
+#   # Complete removal including Kubernetes
+#   ansible-playbook -i inventory/hosts.yml playbooks/cns-uninstall.yml -e "purge_kubernetes=true"
+
+- name: Uninstall CNS Deployment
+  hosts: cns
+  become: true
+  gather_facts: true
+
+  vars:
+    purge_kubernetes: false
+
+  tasks:
+    - name: Confirm uninstallation
+      pause:
+        prompt: "This will remove MiniPrem components. Continue? (yes/no)"
+      register: confirm
+      when: not ansible_check_mode
+
+    - name: Abort if not confirmed
+      fail:
+        msg: "Uninstallation cancelled"
+      when: confirm.user_input | default('yes') != 'yes'
+
+    - name: Remove MiniPrem Helm releases
+      block:
+        - name: Uninstall Renny
+          command: helm uninstall renny -n {{ renny_namespace | default('uneeq') }}
+          failed_when: false
+          changed_when: false
+
+        - name: Uninstall NIM Operator
+          command: helm uninstall nim-operator -n nim-operator
+          failed_when: false
+          changed_when: false
+
+        - name: Uninstall Phoenix
+          command: kubectl delete deployment phoenix -n {{ phoenix_namespace | default('observability') }}
+          failed_when: false
+          changed_when: false
+
+    - name: Remove namespaces
+      command: kubectl delete namespace {{ item }} --ignore-not-found
+      loop:
+        - "{{ renny_namespace | default('uneeq') }}"
+        - nim-operator
+        - nim-models
+        - nim-rag
+        - riva
+        - "{{ phoenix_namespace | default('observability') }}"
+      failed_when: false
+      changed_when: false
+
+    - name: Remove GPU Operator (if purging)
+      block:
+        - name: Uninstall GPU Operator
+          command: helm uninstall gpu-operator -n gpu-operator
+          failed_when: false
+          changed_when: false
+
+        - name: Delete GPU Operator namespace
+          command: kubectl delete namespace gpu-operator --ignore-not-found
+          failed_when: false
+          changed_when: false
+      when: purge_kubernetes
+
+    - name: Purge Kubernetes
+      block:
+        - name: Reset MicroK8s
+          command: microk8s reset --destroy-storage
+          failed_when: false
+          when: cns_k8s_type == 'microk8s'
+
+        - name: Remove MicroK8s
+          snap:
+            name: microk8s
+            state: absent
+          when: cns_k8s_type == 'microk8s'
+
+        - name: Reset kubeadm
+          command: kubeadm reset -f
+          failed_when: false
+          when: cns_k8s_type == 'kubeadm'
+
+        - name: Remove Kubernetes directories
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /etc/kubernetes
+            - /var/lib/kubelet
+            - /var/lib/etcd
+            - /root/.kube
+          when: cns_k8s_type == 'kubeadm'
+
+      when: purge_kubernetes
+
+    - name: Display completion message
+      debug:
+        msg: |
+
+          ════════════════════════════════════════════════════════════════
+          Uninstallation Complete
+
+          Removed:
+          - MiniPrem Helm releases
+          - MiniPrem namespaces
+          {% if purge_kubernetes %}
+          - GPU Operator
+          - Kubernetes ({{ cns_k8s_type }})
+          {% endif %}
+
+          {% if not purge_kubernetes %}
+          Kubernetes cluster preserved. To completely remove:
+            ansible-playbook playbooks/cns-uninstall.yml -e "purge_kubernetes=true"
+          {% endif %}
+          ════════════════════════════════════════════════════════════════

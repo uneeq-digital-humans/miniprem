@@ -4,8 +4,8 @@
 # MiniPrem Multi-Cloud Kubernetes Destruction Router
 #
 # This script provides a unified entry point for destroying MiniPrem deployments
-# across multiple cloud platforms. It handles:
-#   - Interactive platform selection (AWS, Azure, GCP)
+# across multiple cloud platforms and on-premises environments. It handles:
+#   - Interactive platform selection (AWS, Azure, GCP, NVIDIA CNS)
 #   - CLI tool validation with OS-specific install instructions
 #   - Authentication verification using environment variables and CLI
 #   - Delegation to platform-specific destruction scripts
@@ -69,37 +69,47 @@ select_platform() {
 ╚═══════════════════════════════════════════════════════════════╝
 "
 
-    echo "Select your cloud platform:"
+    echo "Select your deployment platform:"
     echo ""
-    echo "  1) Amazon Web Services (AWS)"
-    echo "  2) Microsoft Azure"
-    echo "  3) Google Cloud Platform (GCP)"
+    print_color "$BLUE" "  Cloud Managed Kubernetes:"
+    echo "    1) Amazon Web Services (AWS EKS)"
+    echo "    2) Microsoft Azure (AKS)"
+    echo "    3) Google Cloud Platform (GKE)"
     echo ""
-    echo -n "Enter your choice (1-3): "
+    print_color "$BLUE" "  On-Premises:"
+    echo "    4) NVIDIA Cloud Native Stack (CNS)"
+    echo ""
+    echo -n "Enter your choice (1-4): "
 
     read -r choice
 
     case $choice in
         1)
             PLATFORM="aws"
-            PLATFORM_NAME="Amazon Web Services (AWS)"
+            PLATFORM_NAME="Amazon Web Services (AWS EKS)"
             CLI_TOOL="aws"
-            DESTROY_SCRIPT="destroy-aws.sh"
+            DESTROY_SCRIPT="aws/destroy.sh"
             ;;
         2)
             PLATFORM="azure"
-            PLATFORM_NAME="Microsoft Azure"
+            PLATFORM_NAME="Microsoft Azure (AKS)"
             CLI_TOOL="az"
-            DESTROY_SCRIPT="destroy-azure.sh"
+            DESTROY_SCRIPT="azure/destroy.sh"
             ;;
         3)
             PLATFORM="gcp"
-            PLATFORM_NAME="Google Cloud Platform (GCP)"
+            PLATFORM_NAME="Google Cloud Platform (GKE)"
             CLI_TOOL="gcloud"
-            DESTROY_SCRIPT="destroy-gcp.sh"
+            DESTROY_SCRIPT="gke/destroy.sh"
+            ;;
+        4)
+            PLATFORM="cns"
+            PLATFORM_NAME="NVIDIA Cloud Native Stack (CNS)"
+            CLI_TOOL="kubectl"
+            DESTROY_SCRIPT="cns/destroy.sh"
             ;;
         *)
-            error "Invalid choice. Please run the script again and select 1, 2, or 3."
+            error "Invalid choice. Please run the script again and select 1-4."
             exit 1
             ;;
     esac
@@ -441,18 +451,29 @@ delegate_to_platform_script() {
         error "Platform-specific destruction script not found: $script_path"
         echo ""
 
-        if [[ "$PLATFORM" == "gcp" ]]; then
-            warning "GCP destruction support is planned but not yet implemented."
-            echo ""
-            echo "To track progress or contribute:"
-            echo "  - Check for open issues in the repository"
-            echo "  - See documentation for AWS/Azure destruction as reference"
-            exit 1
-        else
-            error "Expected script location: $script_path"
-            echo "Please ensure the destruction scripts are properly installed."
-            exit 1
-        fi
+        case "$PLATFORM" in
+            gcp)
+                warning "GCP destruction support is planned but not yet implemented."
+                echo ""
+                echo "To track progress or contribute:"
+                echo "  - Check for open issues in the repository"
+                echo "  - See documentation for AWS/Azure destruction as reference"
+                exit 1
+                ;;
+            cns)
+                warning "CNS destruction scripts are being developed."
+                echo ""
+                echo "For manual CNS cleanup, you can use:"
+                echo "  microk8s reset     # For MicroK8s installations"
+                echo "  kubeadm reset      # For kubeadm installations"
+                exit 1
+                ;;
+            *)
+                error "Expected script location: $script_path"
+                echo "Please ensure the destruction scripts are properly installed."
+                exit 1
+                ;;
+        esac
     fi
 
     # Make sure script is executable

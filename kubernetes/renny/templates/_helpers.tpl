@@ -34,7 +34,11 @@ Common labels
 {{- define "renny.labels" -}}
 app.kubernetes.io/name: renny
 app.kubernetes.io/instance: {{ .Release.Name }}
-app.kubernetes.io/version: {{ .Chart.Version }}
+{{- if .Values.deploymentDate }}
+app.kubernetes.io/version: renny-{{ .Values.deploymentDate }}
+{{- else }}
+app.kubernetes.io/version: renny-{{ now | date "2006-01-02" }}
+{{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
