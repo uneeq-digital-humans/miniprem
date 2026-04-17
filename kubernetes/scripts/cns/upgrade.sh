@@ -24,18 +24,13 @@ CHART_DIR="$KUBERNETES_DIR/renny"
 CNS_CONFIG_FILE="$SCRIPT_DIR/.cns_config"
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-print_color() { echo -e "${1}${2}${NC}"; }
-info() { print_color "$BLUE" "ℹ️  $*"; }
-success() { print_color "$GREEN" "✅ $*"; }
-warning() { print_color "$YELLOW" "⚠️  $*"; }
-error() { print_color "$RED" "❌ $*"; }
+info() { echo "ℹ️  $*"; }
+success() { echo "✅ $*"; }
+warning() { echo "⚠️  $*"; }
+error() { echo "❌ $*"; }
 
 ################################################################################
 # Detect kubectl/helm commands
@@ -129,7 +124,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --help|-h)
             echo ""
-            print_color "$BOLD" "MiniPrem CNS Upgrade"
+            echo "MiniPrem CNS Upgrade"
             echo ""
             echo "Usage: $0 [options]"
             echo ""
@@ -159,7 +154,7 @@ done
 # Main
 ################################################################################
 
-print_color "$BOLD" "
+echo "
 ╔═══════════════════════════════════════════════════════════════╗
 ║                   MiniPrem CNS Upgrade                        ║
 ╚═══════════════════════════════════════════════════════════════╝
@@ -207,7 +202,7 @@ fi
 
 if [[ "$CONFIG_ONLY" != "true" && "$FULL_UPGRADE" != "true" ]]; then
     echo ""
-    print_color "$BOLD" "What would you like to do?"
+    echo "What would you like to do?"
     echo ""
     echo "  1) Full Upgrade"
     echo "     - Pull latest MiniPrem scripts from GitLab"
@@ -257,7 +252,7 @@ fi
 
 if [[ "$FULL_UPGRADE" == "true" ]]; then
     echo ""
-    print_color "$BOLD" "Full Upgrade Selected"
+    echo "Full Upgrade Selected"
     echo ""
 
     # Check if we're in a git repository
@@ -324,7 +319,7 @@ fi
 
 if [[ "$CONFIG_ONLY" == "true" ]]; then
     echo ""
-    print_color "$BOLD" "Config Changes Only"
+    echo "Config Changes Only"
     echo ""
 
     echo "This will:"

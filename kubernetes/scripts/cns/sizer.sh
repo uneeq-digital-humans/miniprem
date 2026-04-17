@@ -20,15 +20,9 @@
 set -eo pipefail
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-print_color() { echo -e "${1}${2}${NC}"; }
 
 ################################################################################
 # GPU Database - VRAM requirements per Renny instance (in GB)
@@ -156,9 +150,9 @@ calculate_renny_capacity() {
 
 print_header() {
     echo ""
-    print_color "$BOLD" "╔═══════════════════════════════════════════════════════════════╗"
-    print_color "$BOLD" "║         MiniPrem CNS Deployment Sizer                         ║"
-    print_color "$BOLD" "╚═══════════════════════════════════════════════════════════════╝"
+    echo "╔═══════════════════════════════════════════════════════════════╗"
+    echo "║         MiniPrem CNS Deployment Sizer                         ║"
+    echo "╚═══════════════════════════════════════════════════════════════╝"
     echo ""
 }
 
@@ -168,16 +162,16 @@ print_config_table() {
     local gpu_count=$3
 
     echo ""
-    print_color "$CYAN" "GPU Configuration:"
+    echo "GPU Configuration:"
     echo "  Model: $gpu_name"
     echo "  VRAM per GPU: ${vram_gb}GB"
     echo "  GPU Count: $gpu_count"
     echo "  Total VRAM: $((vram_gb * gpu_count))GB"
     echo ""
 
-    print_color "$BOLD" "┌──────────────┬──────────────────┬──────────────────┐"
-    print_color "$BOLD" "│ Quality Mode │ Rennys (no LLM)  │ Rennys (+ 7B)    │"
-    print_color "$BOLD" "├──────────────┼──────────────────┼──────────────────┤"
+    echo "┌──────────────┬──────────────────┬──────────────────┐"
+    echo "│ Quality Mode │ Rennys (no LLM)  │ Rennys (+ 7B)    │"
+    echo "├──────────────┼──────────────────┼──────────────────┤"
 
     for qual in "web" "miniprem"; do
         # Use 1080p for calculations (resolution is set in Admin Portal)
@@ -195,9 +189,9 @@ print_config_table() {
             "$qual" "$rennys_no_llm instances" "$rennys_with_llm instances"
     done
 
-    print_color "$BOLD" "└──────────────┴──────────────────┴──────────────────┘"
+    echo "└──────────────┴──────────────────┴──────────────────┘"
     echo ""
-    print_color "$YELLOW" "Note: Resolution is configured per-persona in the Admin Portal."
+    echo "Note: Resolution is configured per-persona in the Admin Portal."
     echo ""
 }
 
@@ -212,17 +206,17 @@ generate_config() {
     local rennys_per_gpu=$((renny_count / gpu_count))
 
     echo ""
-    print_color "$GREEN" "Recommended Configuration:"
+    echo "Recommended Configuration:"
     echo ""
     echo "# Add to your environment or values file:"
     echo "RENNY_REPLICAS=$renny_count"
     echo "RENNY_QUALITY_LEVEL=$quality"
     echo "GPU_TIMESLICE_REPLICAS=$rennys_per_gpu"
     echo ""
-    print_color "$CYAN" "Note: Resolution is configured per-persona in the UneeQ Admin Portal."
+    echo "Note: Resolution is configured per-persona in the UneeQ Admin Portal."
     echo ""
 
-    print_color "$YELLOW" "To deploy with these settings:"
+    echo "To deploy with these settings:"
     echo "  RENNY_REPLICAS=$renny_count ./miniprem.sh deploy"
     echo ""
 }
@@ -230,7 +224,7 @@ generate_config() {
 show_gpu_menu() {
     echo "Select your GPU model:"
     echo ""
-    print_color "$BLUE" "  Datacenter GPUs (Recommended):"
+    echo "  Datacenter GPUs (Recommended):"
     echo "    1) NVIDIA H100 80GB"
     echo "    2) NVIDIA A100 80GB"
     echo "    3) NVIDIA A100 40GB"
@@ -238,13 +232,13 @@ show_gpu_menu() {
     echo "    5) NVIDIA A10/A10G (24GB)"
     echo "    6) NVIDIA T4 (16GB)"
     echo ""
-    print_color "$BLUE" "  Workstation GPUs:"
+    echo "  Workstation GPUs:"
     echo "    7) NVIDIA RTX PRO 6000 Blackwell (96GB)"
     echo "    8) NVIDIA RTX 6000 Ada / A6000 (48GB)"
     echo "    9) NVIDIA RTX 5000 Ada (32GB)"
     echo "    10) NVIDIA RTX A5000 (24GB)"
     echo ""
-    print_color "$BLUE" "  Other:"
+    echo "  Other:"
     echo "    11) Custom (enter VRAM manually)"
     echo "    12) Auto-detect from system"
     echo ""
@@ -260,7 +254,7 @@ interactive_mode() {
         local det_vram=$(echo "$detected" | cut -d'|' -f2)
         local det_count=$(get_gpu_count)
 
-        print_color "$GREEN" "Detected GPU: $det_name (${det_vram}GB) x $det_count"
+        echo "Detected GPU: $det_name (${det_vram}GB) x $det_count"
         echo ""
         read -p "Use detected GPU? [Y/n]: " use_detected
 
@@ -268,24 +262,24 @@ interactive_mode() {
             print_config_table "$det_name" "$det_vram" "$det_count"
 
             echo ""
-            print_color "$CYAN" "Quality Mode:"
+            echo "Quality Mode:"
             echo ""
             echo "  web      - For standard/stock digital humans (UneeQ stock character maps)"
             echo "  miniprem - For MiniPrem character maps ONLY"
-            print_color "$YELLOW" "             ⚠️  Only use if you have MiniPrem-specific character maps"
+            echo "             ⚠️  Only use if you have MiniPrem-specific character maps"
             echo ""
             read -p "Quality mode (web/miniprem) [web]: " quality
             quality=${quality:-web}
 
             if [[ "$quality" == "miniprem" ]]; then
-                print_color "$YELLOW" ""
-                print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
-                print_color "$YELLOW" "   Standard/stock digital humans should use 'web' quality."
+                echo ""
+                echo "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+                echo "   Standard/stock digital humans should use 'web' quality."
                 echo ""
                 read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
                 if [[ "${confirm_miniprem,,}" != "y" ]]; then
                     quality="web"
-                    print_color "$GREEN" "Changed to web quality (for standard digital humans)"
+                    echo "Changed to web quality (for standard digital humans)"
                 fi
             fi
 
@@ -326,14 +320,14 @@ interactive_mode() {
         12)
             detected=$(detect_gpu)
             if [[ -z "$detected" ]]; then
-                print_color "$RED" "No NVIDIA GPU detected"
+                echo "No NVIDIA GPU detected"
                 exit 1
             fi
             gpu_name=$(echo "$detected" | cut -d'|' -f1)
             vram_gb=$(echo "$detected" | cut -d'|' -f2)
             ;;
         *)
-            print_color "$RED" "Invalid selection"
+            echo "Invalid selection"
             exit 1
             ;;
     esac
@@ -344,24 +338,24 @@ interactive_mode() {
     print_config_table "$gpu_name" "$vram_gb" "$gpu_count"
 
     echo ""
-    print_color "$CYAN" "Quality Mode:"
+    echo "Quality Mode:"
     echo ""
     echo "  web      - For standard/stock digital humans (UneeQ stock character maps)"
     echo "  miniprem - For MiniPrem character maps ONLY"
-    print_color "$YELLOW" "             ⚠️  Only use if you have MiniPrem-specific character maps"
+    echo "             ⚠️  Only use if you have MiniPrem-specific character maps"
     echo ""
     read -p "Quality mode (web/miniprem) [web]: " quality
     quality=${quality:-web}
 
     if [[ "$quality" == "miniprem" ]]; then
-        print_color "$YELLOW" ""
-        print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
-        print_color "$YELLOW" "   Standard/stock digital humans should use 'web' quality."
+        echo ""
+        echo "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+        echo "   Standard/stock digital humans should use 'web' quality."
         echo ""
         read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
         if [[ "${confirm_miniprem,,}" != "y" ]]; then
             quality="web"
-            print_color "$GREEN" "Changed to web quality (for standard digital humans)"
+            echo "Changed to web quality (for standard digital humans)"
         fi
     fi
 
@@ -380,7 +374,7 @@ quick_estimate() {
     local vram=$(get_gpu_vram "$gpu")
 
     if [[ $vram -eq 0 ]]; then
-        print_color "$RED" "Unknown GPU: $gpu"
+        echo "Unknown GPU: $gpu"
         echo "Available GPUs: H100 80GB, A100 80GB, A100 40GB, L40, A10G, T4, RTX 6000 Ada, RTX A6000, RTX 4090"
         exit 1
     fi
@@ -422,7 +416,7 @@ apply_configuration() {
     local HELM=$(detect_helm)
 
     if [[ -z "$KUBECTL" ]]; then
-        print_color "$RED" "Error: kubectl not found. Is Kubernetes installed?"
+        echo "Error: kubectl not found. Is Kubernetes installed?"
         exit 1
     fi
 
@@ -432,9 +426,9 @@ apply_configuration() {
         GPU_NS="gpu-operator-resources"
     fi
 
-    print_color "$BOLD" ""
-    print_color "$BOLD" "Applying Configuration..."
-    print_color "$BOLD" "========================="
+    echo ""
+    echo "Applying Configuration..."
+    echo "========================="
     echo ""
     echo "  Renny Replicas: $renny_count"
     echo "  GPU Time-Slice: $rennys_per_gpu per GPU"
@@ -444,14 +438,14 @@ apply_configuration() {
     # Confirm before applying
     read -p "Apply this configuration? [y/N]: " confirm
     if [[ "${confirm,,}" != "y" ]]; then
-        print_color "$YELLOW" "Aborted."
+        echo "Aborted."
         exit 0
     fi
 
     echo ""
 
     # Step 1: Update GPU time-slicing ConfigMap
-    print_color "$BLUE" "Step 1/3: Updating GPU time-slicing ConfigMap..."
+    echo "Step 1/3: Updating GPU time-slicing ConfigMap..."
     cat <<EOF | $KUBECTL apply -f -
 apiVersion: v1
 kind: ConfigMap
@@ -472,46 +466,46 @@ data:
             replicas: $rennys_per_gpu
 EOF
     if [[ $? -eq 0 ]]; then
-        print_color "$GREEN" "  ✓ Time-slicing ConfigMap updated in $GPU_NS"
+        echo "  ✓ Time-slicing ConfigMap updated in $GPU_NS"
     else
-        print_color "$YELLOW" "  ⚠ ConfigMap update failed (GPU operator may not be installed)"
+        echo "  ⚠ ConfigMap update failed (GPU operator may not be installed)"
     fi
 
     # Step 2: Patch cluster policy (if exists - not used in MicroK8s nvidia addon)
-    print_color "$BLUE" "Step 2/3: Checking GPU Operator cluster policy..."
+    echo "Step 2/3: Checking GPU Operator cluster policy..."
     if $KUBECTL get clusterpolicies.nvidia.com/cluster-policy &>/dev/null 2>&1; then
         $KUBECTL patch clusterpolicies.nvidia.com/cluster-policy \
             --type merge \
             -p '{"spec": {"devicePlugin": {"config": {"name": "time-slicing-config", "default": "any"}}}}' 2>/dev/null
         if [[ $? -eq 0 ]]; then
-            print_color "$GREEN" "  ✓ Cluster policy patched"
+            echo "  ✓ Cluster policy patched"
         else
-            print_color "$YELLOW" "  ⚠ Cluster policy patch failed"
+            echo "  ⚠ Cluster policy patch failed"
         fi
     else
-        print_color "$CYAN" "  ℹ No cluster policy found (MicroK8s uses nvidia addon instead)"
+        echo "  ℹ No cluster policy found (MicroK8s uses nvidia addon instead)"
     fi
 
     # Step 3: Scale Renny deployment
-    print_color "$BLUE" "Step 3/3: Scaling Renny deployment to $renny_count replicas..."
+    echo "Step 3/3: Scaling Renny deployment to $renny_count replicas..."
 
     # Try to find Renny deployment
     local RENNY_DEPLOY=$($KUBECTL get deployment -n uneeq -o name 2>/dev/null | grep -E "renny|renderer" | head -1)
 
     if [[ -n "$RENNY_DEPLOY" ]]; then
         $KUBECTL scale "$RENNY_DEPLOY" -n uneeq --replicas="$renny_count"
-        print_color "$GREEN" "  ✓ Scaled $RENNY_DEPLOY to $renny_count replicas"
+        echo "  ✓ Scaled $RENNY_DEPLOY to $renny_count replicas"
     else
-        print_color "$YELLOW" "  ⚠ No Renny deployment found in 'uneeq' namespace"
-        print_color "$YELLOW" "    Run deploy script first, or set RENNY_REPLICAS=$renny_count"
+        echo "  ⚠ No Renny deployment found in 'uneeq' namespace"
+        echo "    Run deploy script first, or set RENNY_REPLICAS=$renny_count"
     fi
 
     echo ""
-    print_color "$GREEN" "Configuration applied!"
+    echo "Configuration applied!"
     echo ""
 
     # Show current status
-    print_color "$BOLD" "Current Status:"
+    echo "Current Status:"
     echo ""
 
     if [[ -n "$RENNY_DEPLOY" ]]; then
@@ -520,13 +514,13 @@ EOF
     fi
 
     echo ""
-    print_color "$CYAN" "Monitor rollout with:"
+    echo "Monitor rollout with:"
     echo "  $KUBECTL rollout status $RENNY_DEPLOY -n uneeq"
     echo ""
-    print_color "$CYAN" "Watch pods:"
+    echo "Watch pods:"
     echo "  $KUBECTL get pods -n uneeq -w"
     echo ""
-    print_color "$CYAN" "Check GPU usage:"
+    echo "Check GPU usage:"
     echo "  nvidia-smi -l 1"
 }
 
@@ -544,10 +538,10 @@ apply_interactive() {
         vram_gb=$(echo "$detected" | cut -d'|' -f2)
         gpu_count=$(get_gpu_count)
 
-        print_color "$GREEN" "Detected: $gpu_name (${vram_gb}GB) × $gpu_count"
+        echo "Detected: $gpu_name (${vram_gb}GB) × $gpu_count"
         echo ""
     else
-        print_color "$RED" "No GPU detected. Cannot auto-configure."
+        echo "No GPU detected. Cannot auto-configure."
         echo ""
         read -p "Enter GPU VRAM in GB: " vram_gb
         gpu_count=1
@@ -559,24 +553,24 @@ apply_interactive() {
 
     # Get user preferences
     echo ""
-    print_color "$CYAN" "Quality Mode:"
+    echo "Quality Mode:"
     echo ""
     echo "  web      - For standard/stock digital humans (UneeQ stock character maps)"
     echo "  miniprem - For MiniPrem character maps ONLY"
-    print_color "$YELLOW" "             ⚠️  Only use if you have MiniPrem-specific character maps"
+    echo "             ⚠️  Only use if you have MiniPrem-specific character maps"
     echo ""
     read -p "Quality mode (web/miniprem) [web]: " quality
     quality=${quality:-web}
 
     if [[ "$quality" == "miniprem" ]]; then
-        print_color "$YELLOW" ""
-        print_color "$YELLOW" "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
-        print_color "$YELLOW" "   Standard/stock digital humans should use 'web' quality."
+        echo ""
+        echo "⚠️  IMPORTANT: MiniPrem quality requires MiniPrem character maps."
+        echo "   Standard/stock digital humans should use 'web' quality."
         echo ""
         read -p "Do you have MiniPrem character maps? [y/N]: " confirm_miniprem
         if [[ "${confirm_miniprem,,}" != "y" ]]; then
             quality="web"
-            print_color "$GREEN" "Changed to web quality (for standard digital humans)"
+            echo "Changed to web quality (for standard digital humans)"
         fi
     fi
 
@@ -594,13 +588,13 @@ apply_interactive() {
     local max_total=$((max_per_gpu * gpu_count))
 
     echo ""
-    print_color "$CYAN" "Maximum Renny instances: $max_total"
+    echo "Maximum Renny instances: $max_total"
     read -p "How many Rennys to deploy? [$max_total]: " renny_count
     renny_count=${renny_count:-$max_total}
 
     # Validate
     if [[ $renny_count -gt $max_total ]]; then
-        print_color "$YELLOW" "Warning: $renny_count exceeds recommended max ($max_total)"
+        echo "Warning: $renny_count exceeds recommended max ($max_total)"
         read -p "Continue anyway? [y/N]: " force
         if [[ "${force,,}" != "y" ]]; then
             exit 1
@@ -644,7 +638,7 @@ main() {
             print_header
             local detected=$(detect_gpu)
             if [[ -z "$detected" ]]; then
-                print_color "$RED" "No NVIDIA GPU detected"
+                echo "No NVIDIA GPU detected"
                 exit 1
             fi
             local gpu_name=$(echo "$detected" | cut -d'|' -f1)
@@ -662,14 +656,14 @@ main() {
             print_header
             local detected=$(detect_gpu)
             if [[ -z "$detected" ]]; then
-                print_color "$RED" "No NVIDIA GPU detected"
+                echo "No NVIDIA GPU detected"
                 exit 1
             fi
             local gpu_name=$(echo "$detected" | cut -d'|' -f1)
             local vram_gb=$(echo "$detected" | cut -d'|' -f2)
             local gpu_count=$(get_gpu_count)
 
-            print_color "$GREEN" "Detected: $gpu_name (${vram_gb}GB) × $gpu_count"
+            echo "Detected: $gpu_name (${vram_gb}GB) × $gpu_count"
             print_config_table "$gpu_name" "$vram_gb" "$gpu_count"
 
             # Use defaults: web quality, no local LLM
@@ -678,7 +672,7 @@ main() {
             local max_total=$((max_per_gpu * gpu_count))
             local rennys_per_gpu=$max_per_gpu
 
-            print_color "$CYAN" "Recommended config: $max_total Rennys @ web quality (no local LLM)"
+            echo "Recommended config: $max_total Rennys @ web quality (no local LLM)"
             echo ""
 
             apply_configuration "$max_total" "$rennys_per_gpu" "web"

@@ -24,18 +24,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Color codes (define BEFORE sourcing common functions to avoid readonly conflicts)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-print_color() { echo -e "${1}${2}${NC}"; }
-info() { print_color "$BLUE" "ℹ️  $*"; }
-success() { print_color "$GREEN" "✅ $*"; }
-warning() { print_color "$YELLOW" "⚠️  $*"; }
-error() { print_color "$RED" "❌ $*"; }
+info() { echo "ℹ️  $*"; }
+success() { echo "✅ $*"; }
+warning() { echo "⚠️  $*"; }
+error() { echo "❌ $*"; }
 
 # Source common functions (optional - colors already defined above)
 source "$SCRIPT_DIR/../common/deployment-functions.sh" 2>/dev/null || true
@@ -55,7 +50,7 @@ CNS_SSH_KEY="${CNS_SSH_KEY:-~/.ssh/id_rsa}"
 ################################################################################
 
 main() {
-    print_color "$BOLD" "
+    echo "
 ╔═══════════════════════════════════════════════════════════════╗
 ║        NVIDIA Cloud Native Stack (CNS) Deployment             ║
 ╚═══════════════════════════════════════════════════════════════╝
