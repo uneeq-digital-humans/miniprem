@@ -313,6 +313,7 @@ services:
       - docker-compose.env
     environment:
       - NEW_SPEECH_OVERRIDE=1
+      - RENNY_TTS_USE_PROTO_API_KEY=1
       - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
       - TELEMETRY_BACKEND_URL=https://renny.services.uneeq.io
       - HEARTBEAT_INTERVAL_SECONDS=900

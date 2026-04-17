@@ -650,6 +650,12 @@ check_cloud_services() {
     check_wss_service "$dhop_ps_address"
 }
 
+# Enable protobuf API usage for TTS requests
+configure_protobuf_tts() {
+    update_env_variable "RENNY_TTS_USE_PROTO_API_KEY" "1"
+    success "$CHECKMARK Protobuf TTS API support enabled"
+}
+
 # Function to prompt for TTS provider selection
 select_tts_provider() {
     log_section "Text-to-Speech Provider Selection"
@@ -739,7 +745,7 @@ configure_eleven_labs() {
         update_env_variable "ELEVEN_LABS_STABILITY" "\"\""
         return 0
     fi
-    
+
     log_section "Configure Eleven Labs TTS"
     
     # Check if Eleven Labs API key is already set
@@ -2274,6 +2280,9 @@ main() {
     else
         COMPOSE_FILES="-f $PROJECT_ROOT/docker/docker-compose.full.yml"
     fi
+
+    # Enable protobuf API key support (required for configurable Eleven Labs TTS)
+    configure_protobuf_tts
 
     # Update docker-compose.yml based on TTS provider
     update_docker_compose_for_tts
