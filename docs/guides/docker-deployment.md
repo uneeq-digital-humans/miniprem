@@ -14,6 +14,8 @@ MiniPrem's Docker deployment provides a complete local development environment w
 - 50GB available disk space
 - Network access to `cr.uneeq.io` on port 443 (HTTPS)
 
+!> **Docker Desktop (macOS/Windows) does NOT support GPU acceleration for MiniPrem.** GPU-accelerated services (Renny, vLLM, RIVA) require native Ubuntu with Docker Engine and the NVIDIA Container Toolkit. Docker Desktop is suitable only for non-GPU services.
+
 ## Container Registry Access
 
 ### Harbor Registry Requirement
@@ -263,6 +265,8 @@ sudo systemctl restart docker
 ```bash
 docker run --rm --gpus all nvidia/cuda:12.0-base nvidia-smi
 ```
+
+?> **Driver version matters.** Not all 580.x driver sub-versions work correctly with MiniPrem. See the [NVIDIA Driver Guide](nvidia-drivers.md) for recommended versions and known issues.
 
 3. **Configure GPU for services**:
 ```yaml

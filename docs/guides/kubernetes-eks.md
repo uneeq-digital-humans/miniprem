@@ -48,7 +48,7 @@ The Kubernetes deployment provides a **production-ready, auto-scaling infrastruc
 - ✅ **Auto-scaling** (10-20 Renny instances)
 - ✅ **GPU time-slicing** for cost optimization
 - ✅ **Ubuntu 22.04 EKS AMIs** for Vulkan/Unreal Engine compatibility
-- ✅ **Automatic GPU driver installation** via NVIDIA GPU Operator
+- ✅ **Automatic GPU driver installation** via NVIDIA GPU Operator (580+ — see [Driver Guide](nvidia-drivers.md))
 - ✅ **CloudWatch integration** for centralized logging
 - ✅ **High availability** across 3 availability zones
 - ✅ **Infrastructure as Code** with Terraform
