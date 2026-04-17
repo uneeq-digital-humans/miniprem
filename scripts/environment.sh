@@ -29,9 +29,15 @@ update_env_variable() {
     # Harbor robot usernames contain $ (e.g., robot$customer-name)
     local escaped_value="${new_value//\$/\$\$}"
 
-    # Ensure the file exists
+    # Env file must exist - created by install script
     if [[ ! -f "$env_file" ]]; then
-        touch "$env_file"
+        echo ""
+        echo "ERROR: $env_file not found."
+        echo ""
+        echo "Run the Docker install script first:"
+        echo "  ./docker/scripts/install_miniprem.sh"
+        echo ""
+        return 1
     fi
 
     # Check if file is empty or doesn't end with newline
@@ -53,6 +59,7 @@ update_env_variable() {
 }
 
 # Function to configure Renny quality level based on deployment target
+# Only updates if the current value is different or not set
 configure_renny_quality() {
     # Validate that deployment target was set by caller
     if [ -z "$DEPLOYMENT_TARGET" ]; then
@@ -68,16 +75,21 @@ configure_renny_quality() {
     case "$DEPLOYMENT_TARGET" in
         "hardware")
             quality_level="miniprem"  # High-fidelity rendering for local/on-premise installations
-            info "Configuring for dedicated hardware: Higher rendering quality (RENNY_QUALITY_LEVEL=miniprem)"
             ;;
         "cloud")
             quality_level="web"  # Performance-optimized rendering for cloud platforms
-            info "Configuring for cloud platform: Optimized performance (RENNY_QUALITY_LEVEL=web)"
             ;;
         *)
             fatal "Invalid deployment target: $DEPLOYMENT_TARGET"
             ;;
     esac
+
+    # Check if already set to the correct value
+    local current_quality=$(read_env_variable "RENNY_QUALITY_LEVEL")
+    if [ "$current_quality" = "$quality_level" ]; then
+        info "Renny quality level already set to: $quality_level (no change needed)"
+        return
+    fi
 
     # Update the environment variable and capture result immediately
     if update_env_variable "RENNY_QUALITY_LEVEL" "$quality_level"; then
