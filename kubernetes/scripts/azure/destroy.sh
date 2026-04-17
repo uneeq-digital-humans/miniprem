@@ -897,7 +897,7 @@ echo "  - Monthly savings: ~\$8,000-12,000"
 echo "  - No more GPU instance charges"
 echo "  - No more data transfer charges"
 echo ""
-echo "To redeploy, run: ./scripts/deploy-azure.sh"
+echo "To redeploy, run: ./scripts/azure/deploy.sh"
 
 } # End of destroy_single_deployment function
 
