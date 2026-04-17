@@ -14,18 +14,13 @@
 set -euo pipefail
 
 # Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-print_color() { echo -e "${1}${2}${NC}"; }
-info() { print_color "$BLUE" "ℹ️  $*"; }
-success() { print_color "$GREEN" "✅ $*"; }
-warning() { print_color "$YELLOW" "⚠️  $*"; }
-error() { print_color "$RED" "❌ $*"; }
+info() { echo "ℹ️  $*"; }
+success() { echo "✅ $*"; }
+warning() { echo "⚠️  $*"; }
+error() { echo "❌ $*"; }
 
 ################################################################################
 # Configuration
@@ -62,7 +57,7 @@ run_kubectl() {
 ################################################################################
 
 main() {
-    print_color "$BOLD" "
+    echo "
 ╔═══════════════════════════════════════════════════════════════╗
 ║                   Stopping CNS Deployment                     ║
 ╚═══════════════════════════════════════════════════════════════╝

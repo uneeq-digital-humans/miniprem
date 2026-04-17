@@ -13,18 +13,13 @@
 set -euo pipefail
 
 # Color codes
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-print_color() { echo -e "${1}${2}${NC}"; }
-info() { print_color "$BLUE" "ℹ️  $*"; }
-success() { print_color "$GREEN" "✅ $*"; }
-warning() { print_color "$YELLOW" "⚠️  $*"; }
-error() { print_color "$RED" "❌ $*"; }
+info() { echo "ℹ️  $*"; }
+success() { echo "✅ $*"; }
+warning() { echo "⚠️  $*"; }
+error() { echo "❌ $*"; }
 
 ################################################################################
 # Configuration
@@ -69,7 +64,7 @@ run_kubectl() {
 ################################################################################
 
 check_kubernetes() {
-    print_color "$BOLD" "=== Kubernetes Cluster ==="
+    echo "=== Kubernetes Cluster ==="
 
     if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
         run_cmd "microk8s status" 2>/dev/null || warning "MicroK8s not running"
@@ -83,7 +78,7 @@ check_kubernetes() {
 }
 
 check_gpu() {
-    print_color "$BOLD" "=== GPU Status ==="
+    echo "=== GPU Status ==="
 
     # NVIDIA SMI
     echo "NVIDIA Driver:"
@@ -97,14 +92,14 @@ check_gpu() {
 }
 
 check_gpu_operator() {
-    print_color "$BOLD" "=== GPU Operator ==="
+    echo "=== GPU Operator ==="
 
     run_kubectl get pods -n gpu-operator 2>/dev/null || warning "GPU Operator namespace not found"
     echo ""
 }
 
 check_miniprem_components() {
-    print_color "$BOLD" "=== MiniPrem Components ==="
+    echo "=== MiniPrem Components ==="
 
     echo "Namespaces:"
     run_kubectl get namespaces | grep -E "uneeq|nim|riva|miniprem" 2>/dev/null || echo "  No MiniPrem namespaces found"
@@ -121,7 +116,7 @@ check_miniprem_components() {
 }
 
 check_services() {
-    print_color "$BOLD" "=== Services & Endpoints ==="
+    echo "=== Services & Endpoints ==="
 
     echo "Services in uneeq namespace:"
     run_kubectl get svc -n uneeq 2>/dev/null || echo "  None"
@@ -133,7 +128,7 @@ check_services() {
 }
 
 check_storage() {
-    print_color "$BOLD" "=== Storage ==="
+    echo "=== Storage ==="
 
     echo "Persistent Volume Claims:"
     run_kubectl get pvc -A 2>/dev/null || echo "  None"
@@ -145,7 +140,7 @@ check_storage() {
 ################################################################################
 
 show_summary() {
-    print_color "$BOLD" "=== Quick Summary ==="
+    echo "=== Quick Summary ==="
 
     # Cluster status
     if run_kubectl get nodes &>/dev/null; then
@@ -184,7 +179,7 @@ show_summary() {
 ################################################################################
 
 main() {
-    print_color "$BOLD" "
+    echo "
 ╔═══════════════════════════════════════════════════════════════╗
 ║                   CNS Deployment Status                       ║
 ╚═══════════════════════════════════════════════════════════════╝
