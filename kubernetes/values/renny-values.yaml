@@ -211,11 +211,5 @@ env:
     value: "1"
   - name: RENNY_TTS_USE_PROTO_API_KEY
     value: "1"
-  - name: A2F_ADDRESS
-    value: "http://localhost:52000"
-  - name: A2F_AUDIO_DELAY_TIME_MS
-    value: "240"
-  - name: A2F_AUDIO_SAMPLE_RATE
-    value: "16000"
   - name: RENNY_QUALITY_LEVEL
     value: "web"  # Cloud deployments use 'web' for optimized cloud performance
