@@ -948,77 +948,99 @@ atomic_file_update() {
     fi
 }
 
+# Helper function to check if env value needs updating
+# Returns 0 (true) if update needed, 1 (false) if already matches
+env_value_needs_update() {
+    local var_name="$1"
+    local new_value="$2"
+    local env_file="$PROJECT_ROOT/docker/docker-compose.env"
+
+    local current_value=$(grep "^${var_name}=" "$env_file" 2>/dev/null | cut -d'=' -f2-)
+    # Remove surrounding quotes if any
+    current_value=$(echo "$current_value" | sed 's/^"//;s/"$//')
+    # Unescape $$ back to $ for comparison
+    current_value="${current_value//\$\$/\$}"
+
+    [ "$current_value" != "$new_value" ]
+}
+
 # Function to update environment variables in docker-compose.env with batch operations
+# Only updates values that have actually changed
 update_env_file() {
     local env_file="$PROJECT_ROOT/docker/docker-compose.env"
     local temp_file=$(mktemp)
     local updates_made=false
-    
+
     # Copy original file to temp
     cp "$env_file" "$temp_file" || {
         rm -f "$temp_file"
         fatal "Failed to create temporary file for environment updates"
     }
-    
-    # Batch update all variables at once
+
+    # Batch update all variables at once - only if value changed
     if [ -n "$PLATFORM_KEY" ]; then
-        if grep -q "^DHOP_APIKEY=" "$temp_file"; then
-            # Escape special regex characters in the value for safe sed replacement
+        if grep -q "^DHOP_APIKEY=" "$temp_file" && env_value_needs_update "DHOP_APIKEY" "$PLATFORM_KEY"; then
             local escaped_platform_key=$(printf '%s\n' "$PLATFORM_KEY" | sed -e 's/[\/&]/\\&/g')
             sed -i "s|^DHOP_APIKEY=.*|DHOP_APIKEY=${escaped_platform_key}|" "$temp_file"
             updates_made=true
+            info "Updating DHOP_APIKEY"
         fi
     fi
 
     if [ -n "$TENANT_ID" ]; then
-        if grep -q "^DHOP_TENANTID=" "$temp_file"; then
-            # Escape special regex characters in the value for safe sed replacement
+        if grep -q "^DHOP_TENANTID=" "$temp_file" && env_value_needs_update "DHOP_TENANTID" "$TENANT_ID"; then
             local escaped_tenant_id=$(printf '%s\n' "$TENANT_ID" | sed -e 's/[\/&]/\\&/g')
             sed -i "s|^DHOP_TENANTID=.*|DHOP_TENANTID=${escaped_tenant_id}|" "$temp_file"
             updates_made=true
+            info "Updating DHOP_TENANTID"
         fi
     fi
-    
+
     # TTS-specific batch updates
     if [ "$TTS_PROVIDER" = "azure" ]; then
         if [ -n "$AZURE_REGION" ]; then
-            if grep -q "^AZURE_REGION=" "$temp_file"; then
+            if grep -q "^AZURE_REGION=" "$temp_file" && env_value_needs_update "AZURE_REGION" "$AZURE_REGION"; then
                 local escaped_azure_region=$(printf '%s\n' "$AZURE_REGION" | sed -e 's/[\/&]/\\&/g')
                 sed -i "s|^AZURE_REGION=.*|AZURE_REGION=${escaped_azure_region}|" "$temp_file"
                 updates_made=true
+                info "Updating AZURE_REGION"
             fi
         fi
 
         if [ -n "$AZURE_SPEECH_KEY" ]; then
-            if grep -q "^AZURE_SPEECH_KEY=" "$temp_file"; then
+            if grep -q "^AZURE_SPEECH_KEY=" "$temp_file" && env_value_needs_update "AZURE_SPEECH_KEY" "$AZURE_SPEECH_KEY"; then
                 local escaped_azure_speech=$(printf '%s\n' "$AZURE_SPEECH_KEY" | sed -e 's/[\/&]/\\&/g')
                 sed -i "s|^AZURE_SPEECH_KEY=.*|AZURE_SPEECH_KEY=${escaped_azure_speech}|" "$temp_file"
                 updates_made=true
+                info "Updating AZURE_SPEECH_KEY"
             fi
-            if grep -q "^AZURE_SPEECH=" "$temp_file"; then
+            if grep -q "^AZURE_SPEECH=" "$temp_file" && env_value_needs_update "AZURE_SPEECH" "$AZURE_SPEECH_KEY"; then
                 local escaped_azure_speech=$(printf '%s\n' "$AZURE_SPEECH_KEY" | sed -e 's/[\/&]/\\&/g')
                 sed -i "s|^AZURE_SPEECH=.*|AZURE_SPEECH=${escaped_azure_speech}|" "$temp_file"
                 updates_made=true
+                info "Updating AZURE_SPEECH"
             fi
         fi
     elif [ "$TTS_PROVIDER" = "elevenlabs" ]; then
         if [ -n "$ELEVEN_LABS_API_KEY" ]; then
-            if grep -q "^ELEVEN_LABS_API_KEY=" "$temp_file"; then
+            if grep -q "^ELEVEN_LABS_API_KEY=" "$temp_file" && env_value_needs_update "ELEVEN_LABS_API_KEY" "$ELEVEN_LABS_API_KEY"; then
                 local escaped_eleven_labs=$(printf '%s\n' "$ELEVEN_LABS_API_KEY" | sed -e 's/[\/&]/\\&/g')
                 sed -i "s|^ELEVEN_LABS_API_KEY=.*|ELEVEN_LABS_API_KEY=${escaped_eleven_labs}|" "$temp_file"
                 updates_made=true
+                info "Updating ELEVEN_LABS_API_KEY"
             fi
         fi
     elif [ "$TTS_PROVIDER" = "rime" ]; then
         if [ -n "$RIME_API_KEY" ]; then
-            if grep -q "^RIME_API_KEY=" "$temp_file"; then
+            if grep -q "^RIME_API_KEY=" "$temp_file" && env_value_needs_update "RIME_API_KEY" "$RIME_API_KEY"; then
                 local escaped_rime_key=$(printf '%s\n' "$RIME_API_KEY" | sed -e 's/[\/&]/\\&/g')
                 sed -i "s|^RIME_API_KEY=.*|RIME_API_KEY=${escaped_rime_key}|" "$temp_file"
                 updates_made=true
+                info "Updating RIME_API_KEY"
             fi
         fi
     fi
-    
+
     # Apply atomic update if changes were made
     if [ "$updates_made" = true ]; then
         if ! mv "$temp_file" "$env_file"; then
@@ -1028,20 +1050,40 @@ update_env_file() {
         success "$CHECKMARK Environment file updated with batch operations"
     else
         rm -f "$temp_file"
-        info "No environment variable updates needed"
+        info "No environment variable updates needed (values unchanged)"
     fi
 }
 
 # Function to configure region-specific endpoints
+# Only updates if the current endpoint doesn't match the selected region
 configure_region_endpoints() {
     local env_file="$PROJECT_ROOT/docker/docker-compose.env"
     local region="${UNEEQ_REGION:-us}"
 
+    # Check current endpoint to see if update is needed
+    local current_endpoint=$(grep "^DHOP_ADDRESS=" "$env_file" 2>/dev/null | cut -d'=' -f2-)
+
     if [ "$region" = "eu" ]; then
+        # Check if already configured for EU
+        if echo "$current_endpoint" | grep -q "api-eu.enterprise.uneeq.io"; then
+            info "Endpoints already configured for region: eu (no change needed)"
+            return
+        fi
         info "Configuring endpoints for region: eu"
         sed -i 's|api.enterprise.uneeq.io|api-eu.enterprise.uneeq.io|g' "$env_file"
     else
-        info "Configuring endpoints for region: us (default)"
+        # Check if already configured for US
+        if echo "$current_endpoint" | grep -q "api.enterprise.uneeq.io" && ! echo "$current_endpoint" | grep -q "api-eu"; then
+            info "Endpoints already configured for region: us (no change needed)"
+            return
+        fi
+        # Change EU back to US if needed
+        if echo "$current_endpoint" | grep -q "api-eu.enterprise.uneeq.io"; then
+            info "Configuring endpoints for region: us"
+            sed -i 's|api-eu.enterprise.uneeq.io|api.enterprise.uneeq.io|g' "$env_file"
+        else
+            info "Endpoints already configured for region: us (default)"
+        fi
     fi
 }
 

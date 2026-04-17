@@ -264,6 +264,20 @@ EOF
 start_services() {
     log_section "Starting MiniPrem Services"
 
+    # Check that env file exists (must be created by install script)
+    local env_file="$PROJECT_ROOT/docker/docker-compose.env"
+    if [[ ! -f "$env_file" ]]; then
+        echo ""
+        error "Environment file not found: $env_file"
+        echo ""
+        echo "Run the Docker install script first:"
+        echo "  ./docker/scripts/install_miniprem.sh"
+        echo ""
+        echo "Or use: ./miniprem.sh deploy"
+        echo ""
+        exit 1
+    fi
+
     # Ensure Harbor credentials are available (will prompt if needed)
     if ! ensure_harbor_credentials; then
         fatal "Cannot start services without valid Harbor credentials"
