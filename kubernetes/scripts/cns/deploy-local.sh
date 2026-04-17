@@ -674,6 +674,15 @@ calculate_recommended_replicas() {
     # Apply known GPU-specific overrides from tested capacity table
     case "$GPU_NAME" in
         *"RTX PRO 6000"*|*"Blackwell"*)
+            # RTX PRO 6000 Blackwell = 96GB VRAM
+            if [[ "$quality" == "miniprem" ]]; then
+                RECOMMENDED_REPLICAS=6
+            else
+                RECOMMENDED_REPLICAS=10
+            fi
+            ;;
+        *"RTX 6000"*|*"Ada"*|*"A6000"*)
+            # RTX 6000 Ada / RTX A6000 = 48GB VRAM
             if [[ "$quality" == "miniprem" ]]; then
                 RECOMMENDED_REPLICAS=3
             else
@@ -682,9 +691,9 @@ calculate_recommended_replicas() {
             ;;
         *"A100"*"80G"*)
             if [[ "$quality" == "miniprem" ]]; then
-                RECOMMENDED_REPLICAS=4
+                RECOMMENDED_REPLICAS=5
             else
-                RECOMMENDED_REPLICAS=6
+                RECOMMENDED_REPLICAS=8
             fi
             ;;
         *"A100"*"40G"*|*"A100"*)
@@ -805,18 +814,24 @@ prompt_for_quality_level() {
         echo "Recommendations for your GPU ($GPU_NAME - ${GPU_VRAM_GB}GB):"
         case "$GPU_NAME" in
             *"RTX PRO 6000"*|*"Blackwell"*)
+                # RTX PRO 6000 Blackwell = 96GB
+                echo "  • MiniPrem quality: 6 Rennys"
+                echo "  • Web quality: 10 Rennys"
+                ;;
+            *"RTX 6000"*|*"Ada"*|*"A6000"*)
+                # RTX 6000 Ada / RTX A6000 = 48GB
                 echo "  • MiniPrem quality: 3 Rennys"
                 echo "  • Web quality: 5 Rennys"
                 ;;
             *"A100"*"80G"*)
-                echo "  • MiniPrem quality: 4 Rennys"
-                echo "  • Web quality: 6 Rennys"
+                echo "  • MiniPrem quality: 5 Rennys"
+                echo "  • Web quality: 8 Rennys"
                 ;;
             *"A100"*|*"40G"*)
                 echo "  • MiniPrem quality: 2 Rennys"
                 echo "  • Web quality: 4 Rennys"
                 ;;
-            *"L4"*)
+            *"L4"*|*"RTX 4090"*)
                 echo "  • MiniPrem quality: 2 Rennys"
                 echo "  • Web quality: 3 Rennys"
                 ;;
@@ -875,10 +890,11 @@ prompt_for_renny_replicas() {
     echo "┌───────────────────────────┬───────┬─────────────┬──────────────────┐"
     echo "│ GPU                       │ VRAM  │ Web Mode    │ MiniPrem Mode    │"
     echo "├───────────────────────────┼───────┼─────────────┼──────────────────┤"
-    echo "│ RTX PRO 6000 Blackwell    │ 48GB  │ 5 replicas  │ 3 replicas       │"
-    echo "│ A100 80GB                 │ 80GB  │ 6 replicas  │ 4 replicas       │"
+    echo "│ RTX PRO 6000 Blackwell    │ 96GB  │ 10 replicas │ 6 replicas       │"
+    echo "│ A100 80GB                 │ 80GB  │ 8 replicas  │ 5 replicas       │"
+    echo "│ RTX 6000 Ada              │ 48GB  │ 5 replicas  │ 3 replicas       │"
     echo "│ A100 40GB                 │ 40GB  │ 4 replicas  │ 2 replicas       │"
-    echo "│ L4                        │ 24GB  │ 3 replicas  │ 2 replicas       │"
+    echo "│ L4 / RTX 4090             │ 24GB  │ 3 replicas  │ 2 replicas       │"
     echo "│ T4                        │ 16GB  │ 2 replicas  │ 1 replica        │"
     echo "└───────────────────────────┴───────┴─────────────┴──────────────────┘"
     echo ""

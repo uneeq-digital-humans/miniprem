@@ -60,16 +60,17 @@ NVIDIA Cloud Native Stack (CNS) is a reference architecture for deploying GPU-ac
 | CPU | 8 cores | 16+ cores |
 | RAM | 32 GB | 64+ GB |
 | Storage | 100 GB SSD | 500+ GB NVMe |
-| GPU | NVIDIA T4 (16GB) | RTX PRO 6000 (48GB) or A100 |
+| GPU | NVIDIA T4 (16GB) | RTX PRO 6000 Blackwell (96GB) or A100 |
 
 ### GPU Capacity Reference
 
 | GPU | VRAM | Web Mode* | MiniPrem Mode* |
 |-----|------|-----------|----------------|
-| RTX PRO 6000 Blackwell | 48GB | 5 replicas | 3 replicas |
-| A100 80GB | 80GB | 6 replicas | 4 replicas |
+| RTX PRO 6000 Blackwell | 96GB | 10 replicas | 6 replicas |
+| A100 80GB | 80GB | 8 replicas | 5 replicas |
+| RTX 6000 Ada | 48GB | 5 replicas | 3 replicas |
 | A100 40GB | 40GB | 4 replicas | 2 replicas |
-| L4 | 24GB | 3 replicas | 2 replicas |
+| L4 / RTX 4090 | 24GB | 3 replicas | 2 replicas |
 | T4 | 16GB | 2 replicas | 1 replica |
 
 > **\* Quality Mode Selection:**
