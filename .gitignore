@@ -87,3 +87,6 @@ kubernetes/values/my-renny-values.yml
 
 get_eleven_labs_voices.py
 CNS_Deployment_Installation_Guide.pdf
+DEMO_SCRIPT_*.md
+ISSUE_9_*.md
+LOCALE_FIX_*.md
