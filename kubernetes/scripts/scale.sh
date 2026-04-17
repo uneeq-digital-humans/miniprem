@@ -4,8 +4,8 @@
 # MiniPrem Multi-Cloud Kubernetes Scaling Router
 #
 # This script provides a unified entry point for scaling MiniPrem deployments
-# across multiple cloud platforms. It handles:
-#   - Interactive platform selection (AWS, Azure, GCP)
+# across multiple cloud platforms and on-premises environments. It handles:
+#   - Interactive platform selection (AWS, Azure, GCP, NVIDIA CNS)
 #   - CLI tool validation with OS-specific install instructions
 #   - Authentication verification using environment variables and CLI
 #   - Delegation to platform-specific scaling scripts
@@ -72,37 +72,47 @@ select_platform() {
 ╚═══════════════════════════════════════════════════════════════╝
 "
 
-    echo "Select your cloud platform:"
+    echo "Select your deployment platform:"
     echo ""
-    echo "  1) Amazon Web Services (AWS)"
-    echo "  2) Microsoft Azure"
-    echo "  3) Google Cloud Platform (GCP)"
+    print_color "$BLUE" "  Cloud Managed Kubernetes:"
+    echo "    1) Amazon Web Services (AWS EKS)"
+    echo "    2) Microsoft Azure (AKS)"
+    echo "    3) Google Cloud Platform (GKE)"
     echo ""
-    echo -n "Enter your choice (1-3): "
+    print_color "$BLUE" "  On-Premises:"
+    echo "    4) NVIDIA Cloud Native Stack (CNS)"
+    echo ""
+    echo -n "Enter your choice (1-4): "
 
     read -r choice
 
     case $choice in
         1)
             PLATFORM="aws"
-            PLATFORM_NAME="Amazon Web Services (AWS)"
+            PLATFORM_NAME="Amazon Web Services (AWS EKS)"
             CLI_TOOL="aws"
-            SCALING_SCRIPT="scale-aws.sh"
+            SCALING_SCRIPT="aws/scale.sh"
             ;;
         2)
             PLATFORM="azure"
-            PLATFORM_NAME="Microsoft Azure"
+            PLATFORM_NAME="Microsoft Azure (AKS)"
             CLI_TOOL="az"
-            SCALING_SCRIPT="scale-azure.sh"
+            SCALING_SCRIPT="azure/scale.sh"
             ;;
         3)
             PLATFORM="gcp"
-            PLATFORM_NAME="Google Cloud Platform (GCP)"
+            PLATFORM_NAME="Google Cloud Platform (GKE)"
             CLI_TOOL="gcloud"
-            SCALING_SCRIPT="scale-gcp.sh"
+            SCALING_SCRIPT="gke/scale.sh"
+            ;;
+        4)
+            PLATFORM="cns"
+            PLATFORM_NAME="NVIDIA Cloud Native Stack (CNS)"
+            CLI_TOOL="kubectl"
+            SCALING_SCRIPT="cns/scale.sh"
             ;;
         *)
-            error "Invalid choice. Please run the script again and select 1, 2, or 3."
+            error "Invalid choice. Please run the script again and select 1-4."
             exit 1
             ;;
     esac

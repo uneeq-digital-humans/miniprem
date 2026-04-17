@@ -2006,7 +2006,7 @@ pull_docker_with_tts_provider() {
 # Function to create desktop shortcut for Ubuntu Desktop users
 create_desktop_shortcut() {
     # Only create shortcut if running Ubuntu Desktop (has desktop environment)
-    if [ ! -d "$HOME/Desktop" ] || [ -z "$XDG_CURRENT_DESKTOP" ]; then
+    if [ ! -d "$HOME/Desktop" ] || [ -z "${XDG_CURRENT_DESKTOP:-}" ]; then
         info "Desktop environment not detected, skipping shortcut creation"
         return 0
     fi

@@ -1,6 +1,29 @@
-# Updating MiniPrem (Monitor + Renny)
+# Upgrading MiniPrem (Monitor + Renny)
 
-## Problem
+This guide covers upgrading your MiniPrem installation to get the latest features and fixes.
+
+## Quick Upgrade
+
+Run this single command:
+
+```bash
+cd /path/to/miniprem-2025
+sudo ./miniprem.sh upgrade
+```
+
+This will automatically:
+1. Back up your config files (credentials, terraform vars, etc.)
+2. Pull the latest code from git
+3. Restore your config files
+4. Pull the latest Renny image from Harbor
+5. Rebuild MiniPrem Monitor with updated Docker CLI
+
+After upgrade completes, restart services:
+```bash
+sudo ./miniprem.sh restart
+```
+
+## Common Issue: Docker API Version Mismatch
 
 If you see this error in MiniPrem Monitor:
 
@@ -8,25 +31,9 @@ If you see this error in MiniPrem Monitor:
 Error response from daemon: client version 1.43 is too old. Minimum supported API version is 1.44
 ```
 
-This means your MiniPrem Monitor container has an outdated Docker CLI that's incompatible with your host's Docker Engine.
+This means your MiniPrem Monitor container has an outdated Docker CLI. Running `./miniprem.sh upgrade` will fix this.
 
-## Solution (Easy Way)
-
-Run this single command on each affected server:
-
-```bash
-cd /path/to/miniprem-2025
-sudo ./miniprem.sh update
-```
-
-This will automatically:
-1. Pull the latest code from git
-2. Pull the latest Renny image
-3. Rebuild MiniPrem Monitor with updated Docker CLI
-4. Restart all services
-5. Verify the update was successful
-
-## Solution (Manual)
+## Manual Upgrade Steps
 
 If you prefer to run the steps manually:
 
@@ -34,9 +41,10 @@ If you prefer to run the steps manually:
 # 1. Navigate to your MiniPrem installation
 cd /path/to/miniprem-2025
 
-# 2. Discard local changes and pull latest code
-git checkout -- docker/docker-compose.yml
+# 2. Pull latest code (your config files will be preserved)
+git stash  # Stash any local changes
 git pull
+git stash pop  # Restore local changes
 
 # 3. Pull the latest Renny image
 cd docker
@@ -49,6 +57,8 @@ sudo docker compose build --no-cache --pull miniprem-monitor
 sudo docker compose down
 sudo docker compose up -d
 ```
+
+> **Note:** The `./miniprem.sh upgrade` command automatically backs up and restores your config files (configuration.dat, terraform.tfvars, .cns_config, etc.) so you don't lose your credentials.
 
 ## Verify the Fix
 

@@ -1,0 +1,36 @@
+---
+# CNS-specific variables
+
+# Kubernetes distribution: 'microk8s' or 'kubeadm'
+cns_k8s_type: microk8s
+
+# NVIDIA NGC API key for model downloads
+ngc_api_key: "{{ lookup('env', 'NGC_API_KEY') }}"
+
+# Harbor registry credentials (if using private registry)
+harbor_registry: cr.uneeq.io
+harbor_username: "{{ lookup('env', 'HARBOR_USERNAME', default='') }}"
+harbor_password: "{{ lookup('env', 'HARBOR_PASSWORD', default='') }}"
+
+# MiniPrem configuration
+miniprem_namespace: miniprem
+renny_namespace: uneeq
+renny_replicas: 2
+
+# GPU Configuration
+gpu_timeslice_replicas: 4
+gpu_operator_driver_enabled: true
+
+# Observability
+phoenix_enabled: true
+phoenix_namespace: observability
+prometheus_enabled: true
+prometheus_namespace: monitoring
+
+# NIM Configuration
+nim_operator_enabled: true
+nim_operator_namespace: nim-operator
+
+# Riva (Speech Services)
+riva_enabled: false
+riva_namespace: riva

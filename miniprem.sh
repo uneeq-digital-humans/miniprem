@@ -3,13 +3,210 @@
 # Change to the script's directory
 cd "$(dirname "$0")" || { echo "Failed to change directory to script location"; exit 1; }
 
-# Source the scripts
+# Add this line after changing to the script's directory
+PROJECT_ROOT=$(pwd)
+
+################################################################################
+# Detect Installation Type: Docker or CNS (Kubernetes)
+################################################################################
+
+# Check for CNS installation marker
+CNS_CONFIG_FILE="$PROJECT_ROOT/kubernetes/scripts/cns/.cns_config"
+CNS_INSTALLED=false
+
+if [ -f "$CNS_CONFIG_FILE" ]; then
+    CNS_INSTALLED=true
+fi
+
+# Also check if MicroK8s is running with Renny deployed
+if command -v microk8s &> /dev/null; then
+    if microk8s kubectl get deployment renny -n uneeq &>/dev/null 2>&1; then
+        CNS_INSTALLED=true
+    fi
+fi
+
+# For CNS installations, check permissions and route to CNS scripts
+if [ "$CNS_INSTALLED" = true ]; then
+    # Check if user has microk8s permissions
+    if command -v microk8s &> /dev/null; then
+        if ! microk8s status &>/dev/null 2>&1; then
+            echo ""
+            echo "⚠️  MicroK8s permission denied."
+            echo ""
+            echo "You need to run this command with sudo OR be in the microk8s group:"
+            echo ""
+            echo "  Option 1: Run with sudo"
+            echo "    sudo ./miniprem.sh ${1:-}"
+            echo ""
+            echo "  Option 2: Add yourself to microk8s group (recommended)"
+            echo "    sudo usermod -a -G microk8s \$USER"
+            echo "    newgrp microk8s  # Or logout and login again"
+            echo ""
+            exit 1
+        fi
+    fi
+    CNS_SCRIPTS_DIR="$PROJECT_ROOT/kubernetes/scripts/cns"
+
+    # Route commands to CNS scripts
+    case "${1:-}" in
+        start)
+            exec "$CNS_SCRIPTS_DIR/restart.sh" "${@:2}"
+            ;;
+        stop)
+            exec "$CNS_SCRIPTS_DIR/stop.sh" "${@:2}"
+            ;;
+        restart)
+            "$CNS_SCRIPTS_DIR/stop.sh"
+            exec "$CNS_SCRIPTS_DIR/restart.sh" "${@:2}"
+            ;;
+        status)
+            exec "$CNS_SCRIPTS_DIR/status.sh" "${@:2}"
+            ;;
+        scale)
+            # Use sizer.sh --apply for full configuration (GPU time-slicing + replicas + quality)
+            # This ensures GPU resources are properly allocated when scaling
+            exec "$CNS_SCRIPTS_DIR/sizer.sh" --apply
+            ;;
+        scale-quick)
+            # Quick scale without GPU reconfiguration (use if you know what you're doing)
+            exec "$CNS_SCRIPTS_DIR/scale.sh" "${@:2}"
+            ;;
+        sizer)
+            # GPU capacity calculator and configurator
+            exec "$CNS_SCRIPTS_DIR/sizer.sh" "${@:2}"
+            ;;
+        logs)
+            # For CNS, show Renny pod logs with pod selection
+            if command -v microk8s &> /dev/null; then
+                KUBECTL="microk8s kubectl"
+            else
+                KUBECTL="kubectl"
+            fi
+
+            # Get list of Renny pods
+            PODS=($($KUBECTL get pods -n uneeq -l app=renny -o jsonpath='{.items[*].metadata.name}' 2>/dev/null))
+
+            if [[ ${#PODS[@]} -eq 0 ]]; then
+                echo "No Renny pods found in uneeq namespace"
+                exit 1
+            fi
+
+            POD_ARG="${2:-}"
+
+            # If "all" specified, follow all pods
+            if [[ "$POD_ARG" == "all" ]]; then
+                # Each pod has 2 containers, so multiply by 3 to be safe
+                MAX_REQUESTS=$((${#PODS[@]} * 3))
+                echo "Following logs from ALL ${#PODS[@]} Renny pods (Ctrl+C to stop)..."
+                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=$MAX_REQUESTS
+            fi
+
+            # If specific pod name/number provided
+            if [[ -n "$POD_ARG" ]]; then
+                if [[ "$POD_ARG" =~ ^[0-9]+$ ]]; then
+                    # It's a number - use as index (1-based)
+                    IDX=$((POD_ARG - 1))
+                    if [[ $IDX -ge 0 && $IDX -lt ${#PODS[@]} ]]; then
+                        exec $KUBECTL logs -f "${PODS[$IDX]}" -n uneeq --all-containers=true
+                    else
+                        echo "Invalid pod number: $POD_ARG (have ${#PODS[@]} pods)"
+                        exit 1
+                    fi
+                else
+                    # It's a pod name
+                    exec $KUBECTL logs -f "$POD_ARG" -n uneeq --all-containers=true
+                fi
+            fi
+
+            # No argument - show menu
+            echo ""
+            echo "Select a Renny pod to view logs:"
+            echo ""
+            for i in "${!PODS[@]}"; do
+                STATUS=$($KUBECTL get pod "${PODS[$i]}" -n uneeq -o jsonpath='{.status.phase}' 2>/dev/null)
+                printf "  %d) %s (%s)\n" $((i+1)) "${PODS[$i]}" "$STATUS"
+            done
+            echo ""
+            echo "  all) Follow ALL pods"
+            echo ""
+            read -p "Enter selection [1-${#PODS[@]} or 'all']: " selection
+
+            if [[ "$selection" == "all" ]]; then
+                MAX_REQUESTS=$((${#PODS[@]} * 3))
+                exec $KUBECTL logs -f -l app=renny -n uneeq --all-containers=true --max-log-requests=$MAX_REQUESTS
+            elif [[ "$selection" =~ ^[0-9]+$ && $selection -ge 1 && $selection -le ${#PODS[@]} ]]; then
+                exec $KUBECTL logs -f "${PODS[$((selection-1))]}" -n uneeq --all-containers=true
+            else
+                echo "Invalid selection"
+                exit 1
+            fi
+            ;;
+        deploy)
+            exec "$CNS_SCRIPTS_DIR/deploy-local.sh" "${@:2}"
+            ;;
+        upgrade|update)
+            exec "$CNS_SCRIPTS_DIR/upgrade.sh" "${@:2}"
+            ;;
+        destroy)
+            exec "$CNS_SCRIPTS_DIR/destroy.sh" "${@:2}"
+            ;;
+        -h|--help|help)
+            echo ""
+            echo "MiniPrem CNS (Kubernetes) Management"
+            echo ""
+            echo "CNS installation detected. Available commands:"
+            echo ""
+            echo "  start       - Start the CNS deployment (scale up Renny pods)"
+            echo "  stop        - Stop the CNS deployment (scale down to 0)"
+            echo "  restart     - Restart the CNS deployment"
+            echo "  status      - Check CNS deployment status"
+            echo "  logs [N|all]- View Renny pod logs (select pod or 'all')"
+            echo ""
+            echo "Configuration & Scaling:"
+            echo "  upgrade             - Interactive upgrade menu"
+            echo "  upgrade --full      - Full upgrade (git + helm + new Renny)"
+            echo "  upgrade --config-only - Just apply values file changes"
+            echo "  upgrade --restart   - Just restart pods"
+            echo "  scale             - Interactive scaling with GPU config"
+            echo "  scale-quick N     - Quick scale to N replicas"
+            echo "  sizer             - GPU capacity calculator"
+            echo ""
+            echo "Deployment:"
+            echo "  deploy      - Run full CNS deployment (interactive)"
+            echo "  destroy     - Destroy CNS deployment"
+            echo ""
+            echo "Examples:"
+            echo "  ./miniprem.sh upgrade             # Apply renny-values-cns.yaml changes"
+            echo "  ./miniprem.sh upgrade --replicas 3 # Change replica count"
+            echo "  ./miniprem.sh upgrade --clear-secrets # Clear TTS/LLM secrets"
+            echo "  ./miniprem.sh scale               # Interactive GPU-aware scaling"
+            echo ""
+            echo "CNS Configuration: $CNS_CONFIG_FILE"
+            echo ""
+            exit 0
+            ;;
+        *)
+            echo "MiniPrem CNS installation detected."
+            echo "Run './miniprem.sh --help' for available commands."
+            echo ""
+            echo "Quick commands:"
+            echo "  ./miniprem.sh status   - Check deployment status"
+            echo "  ./miniprem.sh upgrade  - Full upgrade (git + helm + image)"
+            echo "  ./miniprem.sh scale    - Scale Renny (with GPU config)"
+            echo "  ./miniprem.sh logs     - View Renny logs"
+            exit 0
+            ;;
+    esac
+fi
+
+################################################################################
+# Docker Installation (Original behavior)
+################################################################################
+
+# Source the scripts for Docker mode
 source scripts/logging.sh
 source scripts/docker.sh
 source scripts/environment.sh
-
-# Add this line after changing to the script's directory
-PROJECT_ROOT=$(pwd)
 
 # Load the install type from the file
 if [ -f .miniprem_install_type ]; then
@@ -29,7 +226,7 @@ fi
 usage() {
     echo -e $WHITE
     cat <<EOF
-`basename $0` [start|stop|status|restart|logs|setup|pull|validate|config|custom]
+`basename $0` [start|stop|status|restart|logs|upgrade|setup|pull|validate|config|custom]
 Control the MiniPrem services
 
 Commands:
@@ -38,12 +235,23 @@ Commands:
     status:             Check the status of the MiniPrem services
     restart:            Restart the MiniPrem services
     logs:               View the logs of the MiniPrem services
+    upgrade:            Full upgrade (git pull + docker pull + rebuild)
     setup:              Run the Flowise chatflow setup
-    pull [--regenerate]: Pull latest MiniPrem updates from git
+    pull [--regenerate]: Pull latest code from git only (no docker pull)
     validate:           Validate custom services configuration
     config [--custom]:  Show final merged Docker Compose config
     custom list:        List all custom services
     custom add [name]:  Add a new custom service interactively
+
+Upgrade:
+    The 'upgrade' command performs a complete MiniPrem update:
+    1. Backs up your config files (credentials, terraform vars, etc.)
+    2. Pulls latest code from git
+    3. Restores your config files
+    4. Pulls latest Renny image from Harbor
+    5. Rebuilds MiniPrem Monitor locally
+
+    After upgrade, run './miniprem.sh restart' to apply changes.
 
 Options:
     -h, --help: Show this usage information
@@ -168,6 +376,171 @@ pull_updates() {
     # Show summary of changes
     info "Recent changes:"
     git log --oneline -5
+}
+
+################################################################################
+# Upgrade - Full upgrade with git pull + docker pull + rebuild
+################################################################################
+
+# Files that contain user credentials/config and must be preserved during git pull
+CONFIG_FILES_TO_PRESERVE=(
+    "docker/configuration.dat"
+    ".env"
+    "docker/.env"
+    "docker/docker-compose.custom.yml"
+    ".miniprem_install_type"
+    "kubernetes/scripts/cns/.cns_config"
+    "kubernetes/values/renny-values-cns.yaml"
+    "kubernetes/terraform/eks/terraform.tfvars"
+    "kubernetes/terraform/aks/terraform.tfvars"
+    "kubernetes/terraform/gke/terraform.tfvars"
+)
+
+backup_config_files() {
+    local backup_dir="$PROJECT_ROOT/.config_backup_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_dir"
+
+    local backed_up=0
+    for file in "${CONFIG_FILES_TO_PRESERVE[@]}"; do
+        local full_path="$PROJECT_ROOT/$file"
+        if [ -f "$full_path" ]; then
+            local dir=$(dirname "$file")
+            mkdir -p "$backup_dir/$dir"
+            cp "$full_path" "$backup_dir/$file"
+            ((backed_up++))
+        fi
+    done
+
+    if [ $backed_up -gt 0 ]; then
+        info "Backed up $backed_up config file(s) to $backup_dir"
+    fi
+    echo "$backup_dir"
+}
+
+restore_config_files() {
+    local backup_dir="$1"
+
+    if [ ! -d "$backup_dir" ]; then
+        warning "Backup directory not found: $backup_dir"
+        return 1
+    fi
+
+    local restored=0
+    for file in "${CONFIG_FILES_TO_PRESERVE[@]}"; do
+        local backup_file="$backup_dir/$file"
+        local target_file="$PROJECT_ROOT/$file"
+        if [ -f "$backup_file" ]; then
+            local dir=$(dirname "$target_file")
+            mkdir -p "$dir"
+            cp "$backup_file" "$target_file"
+            ((restored++))
+        fi
+    done
+
+    if [ $restored -gt 0 ]; then
+        success "$CHECKMARK Restored $restored config file(s)"
+    fi
+
+    # Clean up backup directory
+    rm -rf "$backup_dir"
+}
+
+upgrade_services() {
+    log_section "Upgrading MiniPrem (Docker)"
+
+    echo ""
+    info "This will:"
+    echo "  1. Backup your config files (credentials, etc.)"
+    echo "  2. Pull latest code from git"
+    echo "  3. Restore your config files"
+    echo "  4. Pull latest Renny image from Harbor"
+    echo "  5. Rebuild MiniPrem Monitor"
+    echo ""
+    echo "After upgrade, run './miniprem.sh restart' to apply changes."
+    echo ""
+
+    # Check if we're in a git repository
+    if ! git rev-parse --git-dir > /dev/null 2>&1; then
+        fatal "Not a git repository. Cannot upgrade."
+    fi
+
+    # Step 1: Backup config files
+    info "Step 1/5: Backing up config files..."
+    local backup_dir
+    backup_dir=$(backup_config_files)
+
+    # Step 2: Git pull (stash any other changes first)
+    info "Step 2/5: Pulling latest code from git..."
+
+    # Stash any uncommitted changes (except our preserved files)
+    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+        warning "Stashing uncommitted changes..."
+        git stash push -m "miniprem-upgrade-$(date +%Y%m%d_%H%M%S)" || true
+    fi
+
+    git pull
+    if [ $? -ne 0 ]; then
+        warning "Git pull failed. Restoring config files..."
+        restore_config_files "$backup_dir"
+        fatal "$CROSS Failed to pull updates from git."
+    fi
+    success "$CHECKMARK Git pull successful"
+
+    # Step 3: Restore config files
+    info "Step 3/5: Restoring config files..."
+    restore_config_files "$backup_dir"
+
+    # Step 4: Validate Harbor credentials and pull Renny
+    info "Step 4/5: Pulling latest Renny image..."
+
+    if ! ensure_harbor_credentials; then
+        fatal "Cannot pull Renny image without valid Harbor credentials"
+    fi
+
+    DOCKER_CMD=$(get_docker_command)
+
+    # Pull Renny image
+    info "Pulling cr.uneeq.io/uneeq/renny-renderer:enterprise-latest..."
+    if $DOCKER_CMD pull cr.uneeq.io/uneeq/renny-renderer:enterprise-latest; then
+        success "$CHECKMARK Renny image updated"
+    else
+        warning "Failed to pull Renny image. Check Harbor credentials."
+    fi
+
+    # Step 5: Rebuild MiniPrem Monitor (it's built locally, not pulled)
+    info "Step 5/5: Rebuilding MiniPrem Monitor..."
+
+    cd "$PROJECT_ROOT/docker"
+    if $DOCKER_CMD compose $COMPOSE_FILE build --no-cache --pull miniprem-monitor 2>/dev/null; then
+        success "$CHECKMARK MiniPrem Monitor rebuilt"
+    else
+        # Try without --pull flag (older docker-compose)
+        if $DOCKER_CMD compose $COMPOSE_FILE build --no-cache miniprem-monitor 2>/dev/null; then
+            success "$CHECKMARK MiniPrem Monitor rebuilt"
+        else
+            warning "Could not rebuild MiniPrem Monitor automatically."
+            echo "  Try manually: cd docker && docker compose build --no-cache miniprem-monitor"
+        fi
+    fi
+    cd "$PROJECT_ROOT"
+
+    # Show summary
+    echo ""
+    success "═══════════════════════════════════════════════════════════════"
+    success "  Upgrade Complete!"
+    success "═══════════════════════════════════════════════════════════════"
+    echo ""
+    info "Recent changes pulled:"
+    git log --oneline -5
+    echo ""
+    info "Next steps:"
+    echo "  1. Review the changes above"
+    echo "  2. Restart services: ./miniprem.sh restart"
+    echo ""
+    info "To verify after restart:"
+    echo "  ./miniprem.sh status"
+    echo "  docker exec miniprem-monitor docker version  # Should show API 1.46+"
+    echo ""
 }
 
 validate_custom_services() {
@@ -496,6 +869,9 @@ case "$1" in
         ;;
     setup)
         setup_flowise
+        ;;
+    upgrade|update)
+        upgrade_services
         ;;
     pull)
         pull_updates "$2"

@@ -1,0 +1,18 @@
+---
+# Global variables for all hosts
+
+# SSH Configuration
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+ansible_python_interpreter: /usr/bin/python3
+
+# Sudo settings
+ansible_become: true
+ansible_become_method: sudo
+
+# Retry settings
+ansible_ssh_retries: 3
+
+# Timeouts
+timeout_kubernetes_ready: 300
+timeout_gpu_ready: 300
+timeout_helm_install: 600

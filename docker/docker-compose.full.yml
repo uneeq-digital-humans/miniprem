@@ -157,7 +157,41 @@ services:
         max-file: "3"
     security_opt:
       - no-new-privileges:true
-  
+
+  # === Phoenix LLM Observability (Optional) ===
+  # Arize Phoenix for LLM tracing and debugging
+  # Enable by setting PHOENIX_ENABLED=true in your environment
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
+    profiles:
+      - phoenix  # Only starts with --profile phoenix or COMPOSE_PROFILES=phoenix
+    ports:
+      - "6006:6006"    # Phoenix UI
+      - "4317:4317"    # OTLP gRPC collector
+      - "9091:9090"    # Prometheus metrics (9091 to avoid conflict with Prometheus on 9090)
+    environment:
+      - PHOENIX_ENABLE_PROMETHEUS=true
+      - PHOENIX_WORKING_DIR=/phoenix
+      - PHOENIX_PORT=6006
+    volumes:
+      - phoenix_data:/phoenix
+    restart: unless-stopped
+    network_mode: host
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6006/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    security_opt:
+      - no-new-privileges:true
+
   # === THIRD TIER: Depends on vLLM ===
   flowise:
     build:
@@ -405,3 +439,4 @@ volumes:
   grafana_data:
   vllm_data:
   whisper_data:
+  phoenix_data:

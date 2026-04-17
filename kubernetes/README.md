@@ -2,9 +2,9 @@
 
 ![UneeQ Logo](https://presales.services.uneeq.io/uneeq-internal/assets/logos/UneeQ+Logo+Horizontal+CMYK.png)
 
-# Renny EKS Deployment Solution
+# MiniPrem Multi-Cloud Kubernetes Deployment
 
-> Production-ready Kubernetes deployment for Renny digital humans on AWS EKS
+> Production-ready Kubernetes deployment for Renny digital humans across AWS EKS, Azure AKS, Google GKE, and NVIDIA Cloud Native Stack (CNS)
 
 </div>
 
@@ -40,55 +40,101 @@ This folder contains a complete one-click deployment solution for Renny on AWS E
 
 ```
 kubernetes/
-├── terraform/           # Infrastructure as Code
-│   ├── main.tf         # Main Terraform configuration
-│   ├── variables.tf    # Variable definitions
-│   ├── outputs.tf      # Output definitions
-│   ├── vpc.tf          # VPC configuration
-│   ├── eks.tf          # EKS cluster configuration
-│   ├── node-groups.tf  # Node group configurations (Ubuntu EKS AMIs)
-│   ├── ubuntu_userdata.sh  # Ubuntu bootstrap script
-│   └── iam.tf          # IAM roles and policies
-├── manifests/          # Kubernetes manifests
-│   ├── namespace.yaml  # Namespace definition
-│   ├── gpu-operator.yaml
-│   └── autoscaler.yaml
-├── values/             # Helm chart values
-│   └── renny-values.yaml
-├── scripts/            # Deployment scripts
-│   ├── deploy.sh       # One-click deployment (~30-45 min)
-│   ├── scale.sh        # Scale Renny instances
-│   ├── destroy.sh      # Full cleanup (~15-20 min)
-│   ├── status.sh       # Check deployment status
-│   ├── cleanup.sh      # Emergency cleanup (no confirmations)
-│   └── eks/            # AWS EKS-specific scripts
-│       ├── check-aws-prerequisites.sh # Verify AWS setup
-│       └── check-vpc-usage.sh         # Analyze VPC usage and limits
-└── README.md           # This file
+├── terraform/                    # Infrastructure as Code
+│   ├── eks/                     # AWS EKS configuration
+│   ├── aks/                     # Azure AKS configuration
+│   ├── gke/                     # Google Cloud GKE configuration
+│   └── cns/                     # NVIDIA CNS configuration (if applicable)
+├── ansible/                      # Ansible playbooks for CNS
+│   ├── inventory/               # Host inventory files
+│   ├── playbooks/               # CNS installation playbooks
+│   ├── roles/                   # Ansible roles
+│   └── vars/                    # Version and configuration variables
+├── manifests/                    # Kubernetes manifests
+│   ├── namespace.yaml           # Namespace definition
+│   ├── gpu-operator.yaml        # GPU Operator configuration
+│   └── autoscaler/              # Autoscaler manifests per platform
+├── values/                       # Helm chart values
+│   ├── renny-values.yaml        # Default EKS values
+│   ├── renny-values-aks.yaml    # Azure AKS values
+│   └── phoenix-values.yaml      # Phoenix observability values
+├── renny/                        # Renny Helm chart source
+├── scripts/                      # Deployment scripts (organized by platform)
+│   ├── deploy.sh                # Main deployment router
+│   ├── destroy.sh               # Main destruction router
+│   ├── scale.sh                 # Main scaling router
+│   ├── status.sh                # Main status router
+│   ├── aws/                     # AWS EKS scripts
+│   │   ├── deploy.sh            # AWS deployment
+│   │   ├── destroy.sh           # AWS cleanup
+│   │   ├── scale.sh             # AWS scaling
+│   │   ├── status.sh            # AWS status
+│   │   └── check-*.sh           # AWS prerequisite checks
+│   ├── azure/                   # Azure AKS scripts
+│   │   ├── deploy.sh            # Azure deployment
+│   │   ├── destroy.sh           # Azure cleanup
+│   │   ├── scale.sh             # Azure scaling
+│   │   └── status.sh            # Azure status
+│   ├── gke/                     # Google Cloud GKE scripts (planned)
+│   ├── cns/                     # NVIDIA CNS scripts
+│   │   ├── deploy.sh            # CNS deployment router
+│   │   ├── deploy-local.sh      # Local CNS installation
+│   │   ├── deploy-remote.sh     # Remote CNS deployment
+│   │   ├── destroy.sh           # CNS cleanup
+│   │   ├── scale.sh             # CNS scaling
+│   │   └── status.sh            # CNS status
+│   └── common/                  # Shared utilities
+│       ├── deployment-functions.sh
+│       └── install-gpu-operator.sh
+├── README.md                     # This file
+├── AWS_SETUP.md                  # AWS prerequisites
+├── AZURE_SETUP.md                # Azure prerequisites
+├── CNS_SETUP.md                  # CNS prerequisites
+└── MULTI_CLOUD_GUIDE.md          # Platform comparison
 ```
 
-## Supported Cloud Providers
+## Supported Platforms
 
-MiniPrem Kubernetes deployment supports multiple cloud providers:
+MiniPrem Kubernetes deployment supports multiple platforms:
 
-### AWS EKS
+### Cloud Managed Kubernetes
+
+#### AWS EKS
 - **GPU Instance**: g5.4xlarge (NVIDIA A10G, 24GB VRAM)
 - **Cost**: ~$8,712/month (10 nodes)
 - **Setup Guide**: [AWS_SETUP.md](./AWS_SETUP.md)
-- **Deployment**: `./scripts/deploy.sh` (select AWS profile)
+- **Deployment**: `./scripts/deploy.sh` → Select "Amazon Web Services (AWS EKS)"
 
-### Azure AKS
+#### Azure AKS
 - **GPU Instance**: NC16as_T4_v3 (NVIDIA T4, 16GB VRAM)
 - **Cost**: ~$10,800/month (10 nodes)
 - **Setup Guide**: [AZURE_SETUP.md](./AZURE_SETUP.md)
-- **Deployment**: `./scripts/deploy.sh` (configure Azure credentials)
+- **Deployment**: `./scripts/deploy.sh` → Select "Microsoft Azure (AKS)"
 
-### Choosing a Cloud Provider
+#### Google Cloud GKE
+- **Status**: Planned
+- **Setup Guide**: [terraform/gke/README.md](./terraform/gke/README.md)
+
+### On-Premises
+
+#### NVIDIA Cloud Native Stack (CNS)
+- **Target**: On-premises NVIDIA GPU servers
+- **Hardware**: Any NVIDIA datacenter GPU (A100, H100, L40, T4, etc.)
+- **Setup Guide**: [CNS_SETUP.md](./CNS_SETUP.md)
+- **Deployment Options**:
+  - **Local Install**: `./scripts/deploy.sh` → Select "NVIDIA CNS" → "Local Install"
+  - **Remote Deploy**: `./scripts/deploy.sh` → Select "NVIDIA CNS" → "Remote Deploy"
+- **Kubernetes Options**: MicroK8s (single-node) or kubeadm (multi-node)
+- **Configuration**: Via Ansible playbooks in `ansible/`
+
+### Choosing a Platform
+
 See [MULTI_CLOUD_GUIDE.md](./MULTI_CLOUD_GUIDE.md) for detailed comparison.
 
 **Quick Decision:**
 - **Choose AWS** if: Lower cost priority, existing AWS infrastructure, need 24GB VRAM per GPU
-- **Choose Azure** if: Azure ecosystem, enterprise agreements, compliance requirements, need more RAM per node (110GB vs 64GB)
+- **Choose Azure** if: Azure ecosystem, enterprise agreements, compliance requirements
+- **Choose CNS** if: On-premises requirement, NVIDIA hardware available, air-gapped environment, Dell/NVIDIA partnership deployment
 
 ## 🚀 Quick Start
 
@@ -1289,7 +1335,6 @@ kubectl logs -n uneeq-renderer <pod-name> -c <container-name>
 
 # 6. Check node resources and scheduling issues
 kubectl describe nodes -l uneeq.io/node-type=renny | grep -A10 "Allocated resources"
-kubectl describe nodes -l uneeq.io/node-type=a2f | grep -A10 "Allocated resources"
 ```
 
 **Common Issues & Solutions:**

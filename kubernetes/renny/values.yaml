@@ -6,28 +6,25 @@ deployment:
   nodeType: renderer
   replicas: 4
 
+# IMPORTANT: Conversation platform (Flowise, etc.) is configured in the
+# UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
+# from DHOP based on persona configuration.
 renderer:
-  cp:
-    flowiseApiKey: ""  # the 'flowiseApiKey' is optional, can be set at Persona level
-    flowiseUrl: "" # the 'flowiseUrl' is required
   dhop:
-    apiKey: "" # The 'apiKey' parameter is required and should be base64-encoded
+    apiKey: "" # The 'apiKey' parameter is required
     tenantId: "" # The 'tenantId' parameter is required
-    url: "" # The 'url' parameter is required
+    url: "" # The 'url' parameter is required (e.g., wss://api.enterprise.uneeq.io:443/signalling-service)
   launchDarkly:
-    key: "" # The 'key' parameter is required
+    key: "" # Optional - feature flags
   tts:
+    # At least one TTS provider must be configured
     proxyUrl: ""
-    proxyApiKey: ""
     veritoneApiKey: ""
     azureRegion: ""
     azureSpeechKey: ""
     elevenlabsApiKey: ""
     elevenlabsModelId: ""
-    gcpCreds: ""
-    # The 'url' parameter is required
-    # The 'apiKey' parameter is required and should be base64-encoded
-    # The 'proxyApiKey'  is optional, without it will default to eTTS
+    gcpCredentials: ""
   container:
     requests:
       cpu: 3200m

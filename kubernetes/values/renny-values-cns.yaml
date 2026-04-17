@@ -1,0 +1,218 @@
+# Renny Helm values for NVIDIA Cloud Native Stack (CNS)
+# On-premises deployment on NVIDIA GPU hardware
+#
+# Key differences from cloud (EKS/AKS):
+#   - Uses local NIM for LLM inference (optional, for air-gapped deployments)
+#   - Uses local Riva for TTS (optional, can still use cloud TTS)
+#   - No autoscaling (fixed hardware)
+#   - Simpler node selection (typically single server)
+#
+# IMPORTANT: Conversation platform (Flowise, etc.) is configured in the
+# UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
+# from DHOP based on persona configuration.
+
+image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
+
+# Image pull secret for Harbor registry authentication
+imagePullSecrets:
+  - name: harbor-credentials
+
+# GPU time-slicing configuration
+# On CNS, this is critical for running multiple Rennys on limited GPUs
+gpuTimeSlicing:
+  enabled: true
+  replicasPerGpu: 4  # CNS default: 4 Rennys per GPU (adjust based on GPU memory)
+  #
+  # GPU Capacity Guide (without local LLM):
+  # ──────────────────────────────────────────────────────────────────────
+  # GPU                    | VRAM  | 4K Web Mode | 4K MiniPrem Mode
+  # ──────────────────────────────────────────────────────────────────────
+  # RTX PRO 6000 Blackwell | 48GB  | 5 replicas  | 3 replicas
+  # A100 80GB              | 80GB  | 6 replicas  | 4 replicas (estimated)
+  # A100 40GB              | 40GB  | 4 replicas  | 2 replicas (estimated)
+  # T4                     | 16GB  | 2 replicas  | 1 replica
+  # ──────────────────────────────────────────────────────────────────────
+  #
+  # Note: Running a local LLM (vLLM/NIM) will reduce available capacity.
+  # MiniPrem mode uses higher quality textures = more VRAM per instance.
+
+  configMap:
+    name: time-slicing-config
+    namespace: gpu-operator
+
+deployment:
+  nodeType: ""  # Empty = no node selector (single server deployments)
+  totalReplicas: 4  # Match gpuTimeSlicing.replicasPerGpu × number of GPUs
+
+renderer:
+  # DHOP connection (connects to UneeQ cloud for session orchestration)
+  # Conversation platform settings (Flowise URL, API keys) are configured
+  # in the UneeQ Admin Portal and retrieved automatically via DHOP.
+  dhop:
+    apiKey: ""  # SET DURING DEPLOYMENT - Get from UneeQ Admin Portal
+    tenantId: ""  # SET DURING DEPLOYMENT - Get from UneeQ Admin Portal
+    url: wss://api.enterprise.uneeq.io:443/signalling-service
+
+  launchDarkly:
+    key: ""  # Optional - feature flags
+
+  # TTS Configuration
+  # ────────────────────────────────────────────────────────────────────────────
+  # TTS is typically configured PER-PERSONA in the UneeQ Admin Portal.
+  # These values are ONLY needed if you want to set a GLOBAL default
+  # for all personas, or for local Riva TTS in air-gapped deployments.
+  #
+  # If your TTS is configured in the Admin Portal (recommended), leave these EMPTY.
+  # ────────────────────────────────────────────────────────────────────────────
+
+  tts:
+    # --- Local NVIDIA Riva (for air-gapped deployments only) ---
+    # rivaUrl: "localhost:50051"
+    # rivaUseSsl: false
+
+    # --- Cloud TTS (leave empty if configured in Admin Portal) ---
+    # Azure Speech Services
+    azureRegion: ""
+    azureSpeechKey: ""
+
+    # ElevenLabs
+    elevenlabsApiKey: ""
+    elevenlabsModelId: ""
+    elevenlabsOptimizeLatencyLevel: ""
+
+    # Google Cloud TTS
+    gcpCredentials: ""
+
+    # Veritone
+    veritoneApiKey: ""
+
+    # Custom TTS proxy
+    proxyUrl: ""
+
+  unrealEngine:
+    config: ""  # Base64 encoded configuration.dat
+    args:
+      - "/Game/Live_Levels/BlankScene"
+      - "-RenderOffScreen"
+      - "-ResX=1920"
+      - "-ResY=1080"
+      - "-NoTextureStreaming"
+
+  health:
+    url: "http://0.0.0.0:8081/health"
+
+  # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
+  sdlAudioDriver: "dummy"
+
+  # Quality Level: Controls UE5 rendering quality
+  # - miniprem: Optimized for dedicated hardware (PC/server) with higher quality
+  # - web: Optimized for cloud platforms (AWS/Azure/GCP) with balanced performance
+  qualityLevel: "miniprem"
+
+  # NVIDIA GPU settings
+  nvidia:
+    visibleDevices: "all"
+    driverCapabilities: "all"
+
+# Resource limits
+# CPU reduced to allow more replicas on limited-core systems
+# 24-core system: 2000m allows ~10 pods, 2500m allows ~8 pods
+resources:
+  limits:
+    nvidia.com/gpu: 1
+    memory: "8Gi"
+    cpu: "2500m"
+  requests:
+    nvidia.com/gpu: 1
+    memory: "6Gi"
+    cpu: "2000m"
+
+# Node selector - typically empty for single-server CNS
+# For multi-node CNS clusters, you might use:
+#   uneeq.io/node-type: gpu
+nodeSelector: {}
+
+# GPU toleration
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# Pod affinity - spread across GPUs if multiple available
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+    - weight: 100
+      podAffinityTerm:
+        labelSelector:
+          matchExpressions:
+          - key: app
+            operator: In
+            values:
+            - renny
+        topologyKey: kubernetes.io/hostname
+
+# Service configuration
+service:
+  type: ClusterIP  # Use NodePort if external access needed without ingress
+  ports:
+    health: 8081
+    webrtc: 8888
+    pixelstream: 8080
+
+# Health checks
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 120  # Longer for CNS (GPU warmup)
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: 8081
+  initialDelaySeconds: 60
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Autoscaling - DISABLED for CNS (fixed hardware)
+autoscaling:
+  enabled: false
+  # On CNS, you scale by changing deployment.totalReplicas manually
+  # or via: ./scale.sh <count>
+
+# Telemetry
+telemetry:
+  enabled: true
+  backendUrl: "https://renny.services.uneeq.io"
+  heartbeatInterval: 900
+  platform: "cns"  # Identifies this as on-premises deployment
+  deploymentId: ""  # Auto-generated during install
+
+# --- CNS-Specific: Local LLM via NIM (Full Stack Mode Only) ---
+# These settings are for air-gapped deployments using local LLM inference.
+# The conversation platform URL is configured in the UneeQ Admin Portal.
+# When using local NIM, set the conversation endpoint in the portal to
+# point to your local NIM service (e.g., http://<server-ip>:8000/v1)
+nim:
+  enabled: false  # Set to true only for full stack (air-gapped) deployments
+  # NIM endpoint (local vLLM or NIM container) - configure in Admin Portal
+  endpoint: "http://localhost:8000/v1"
+  # Model served by NIM
+  model: "meta/llama-3.1-8b-instruct"
+
+# --- CNS-Specific: Local Riva TTS/ASR (Full Stack Mode Only) ---
+# For air-gapped deployments requiring local speech services
+riva:
+  enabled: false  # Set to true if using NVIDIA Riva instead of cloud TTS
+  endpoint: "localhost:50051"
+  useSsl: false
+  # Riva models (deployed via NIM Operator)
+  ttsModel: "fastpitch_hifigan"
+  asrModel: "conformer"

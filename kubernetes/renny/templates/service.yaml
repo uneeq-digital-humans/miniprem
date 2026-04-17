@@ -21,4 +21,4 @@ spec:
       protocol: TCP
       name: pixelstream
   selector:
-    app: renderer
+    app: renny
