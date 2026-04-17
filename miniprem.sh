@@ -905,15 +905,15 @@ case "$1" in
     deploy)
         # No CNS detected - offer installation options
         echo ""
-        print_color "$BOLD" "MiniPrem Deployment"
+        echo -e "${BOLD}MiniPrem Deployment${NC}"
         echo ""
         echo "No existing installation detected. Choose your deployment type:"
         echo ""
-        print_color "$BLUE" "  1) Docker (Local Development)"
+        echo -e "${BLUE}  1) Docker (Local Development)${NC}"
         echo "     - Quick setup for local development and testing"
         echo "     - Requires: Docker, NVIDIA GPU with drivers"
         echo ""
-        print_color "$BLUE" "  2) NVIDIA CNS (Bare Metal Production)"
+        echo -e "${BLUE}  2) NVIDIA CNS (Bare Metal Production)${NC}"
         echo "     - Kubernetes-based deployment with GPU time-slicing"
         echo "     - Multiple Renny instances on a single GPU"
         echo "     - Requires: Ubuntu 24.04, NVIDIA GPU with drivers"
