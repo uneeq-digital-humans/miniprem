@@ -49,6 +49,7 @@ spec:
             secretKeyRef:
               name: renny
               key: tts-azure-speech-key
+              optional: true
         - name: DHOP_ADDRESS
           value: "{{ .Values.renderer.dhop.url }}/v2/ws/renderer"
         - name: DHOP_APIKEY
@@ -80,6 +81,7 @@ spec:
             secretKeyRef:
               name: renny
               key: launch-darkly-key
+              optional: true
         - name: TTS_ADDRESS
           value: {{ .Values.renderer.tts.proxyUrl }}
         - name: VERITONE_API_KEY
@@ -87,6 +89,7 @@ spec:
             secretKeyRef:
               name: renny
               key: tts-veritone-api-key
+              optional: true
         - name: LOG_JSON_FORMAT
           value: "true"
         - name: LOG_LEVEL # Log level for embedded go modules
@@ -115,10 +118,12 @@ spec:
         {{- end }}
         {{- end }}
         volumeMounts:
+        {{- if .Values.renderer.tts.gcpCredentials }}
         - name: gcp-creds
           readOnly: true
           mountPath: /opt/renny/Renny/Binaries/Linux/GoogleAuth.json
           subPath: GoogleAuth.json
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /health
@@ -168,12 +173,14 @@ spec:
           mountPath: /tmp
 {{- end }}
       volumes:
+        {{- if .Values.renderer.tts.gcpCredentials }}
         - name: gcp-creds
           secret:
             secretName: renny
             items:
             - path: GoogleAuth.json
               key: tts-gcp-creds
+        {{- end }}
 {{- if .Values.telemetry.enabled }}
         - name: telemetry-script
           configMap:
