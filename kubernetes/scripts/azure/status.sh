@@ -65,7 +65,7 @@ echo ""
 # Check if terraform state exists
 if [ ! -f "$TERRAFORM_DIR_AZURE/terraform.tfstate" ]; then
     echo -e "${RED}❌ No deployment found${NC}"
-    echo "Run ./scripts/deploy-azure.sh to create a deployment"
+    echo "Run ./scripts/azure/deploy.sh to create a deployment"
     exit 1
 fi
 
@@ -313,7 +313,7 @@ if [ "$MONITORING_ADDON" = "true" ]; then
     fi
 else
     echo -e "${YELLOW}⚠️  Azure Monitor not enabled${NC}"
-    echo "To enable: ./scripts/deploy-azure.sh (monitoring setup step)"
+    echo "To enable: ./scripts/azure/deploy.sh (monitoring setup step)"
 fi
 echo ""
 
@@ -532,8 +532,8 @@ echo "    --overrides='{\"spec\":{\"nodeSelector\":{\"agentpool\":\"rennygpu\"}}
 echo "    -- nvidia-smi"
 echo ""
 echo "Management Commands:"
-echo "  # Scale Renny: ./scripts/scale-azure.sh <count>"
-echo "  # Destroy: ./scripts/destroy-azure.sh"
+echo "  # Scale Renny: ./scripts/azure/scale.sh <count>"
+echo "  # Destroy: ./scripts/azure/destroy.sh"
 echo "  # View in Azure Portal:"
 echo "  #   https://portal.azure.com/#resource/subscriptions/.../resourceGroups/$RESOURCE_GROUP_NAME"
 echo ""

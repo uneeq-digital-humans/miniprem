@@ -119,7 +119,48 @@ client = OpenAI(base_url="http://localhost:8800/v1")
 
 ## Kubernetes Deployment
 
-For CNS/Kubernetes deployments, Phoenix is deployed via Ansible or Helm:
+For CNS/Kubernetes deployments, Phoenix is deployed via Ansible or Helm.
+
+### CNS (MicroK8s) Deployment
+
+Phoenix is **not** deployed by default when you run `./miniprem.sh deploy`. Enable it explicitly:
+
+```bash
+# From the repo root on the CNS host
+cd kubernetes/ansible
+ansible-playbook -i inventory/hosts.yml playbooks/phoenix-setup.yml
+```
+
+After deployment, verify and access the UI:
+
+```bash
+# Check Phoenix pod is running
+sudo microk8s kubectl get pods -n observability
+
+# Port-forward the Phoenix UI to your workstation (run from your workstation, not the CNS host)
+ssh -L 6006:localhost:6006 <cns-host>
+sudo microk8s kubectl port-forward -n observability svc/phoenix 6006:6006
+# Then open http://localhost:6006 in your browser
+
+# Alternative: expose via NodePort for LAN access
+sudo microk8s kubectl patch svc phoenix -n observability \
+  -p '{"spec": {"type": "NodePort"}}'
+sudo microk8s kubectl get svc phoenix -n observability  # Shows the assigned NodePort
+```
+
+**Connecting instrumentation to Phoenix on CNS:**
+
+Point your OTLP exporters at the in-cluster Phoenix service (from other pods) or the NodePort (from off-cluster):
+
+```bash
+# From another pod in the cluster:
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://phoenix.observability.svc.cluster.local:4317
+
+# From off-cluster (NodePort):
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://<cns-host>:<otlp-nodeport>
+```
+
+**Scraping Phoenix metrics into the MiniPrem Prometheus**: Phoenix exposes `/metrics` on port 9090 (or 9091 in Docker). The CNS deployment annotates the pod with `prometheus.io/scrape: "true"` so any Prometheus configured to auto-discover annotated pods will pick it up.
 
 ### Using Ansible
 
