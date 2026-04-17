@@ -23,17 +23,19 @@ New to MiniPrem? Choose your deployment option:
 
 ### Deployment Options
 
-MiniPrem supports two deployment architectures to match your needs:
+MiniPrem supports three deployment architectures to match your needs:
 
 | Deployment | Best For | Setup Time | Scale | Cost |
 |-----------|----------|------------|-------|------|
 | **[Docker (Local)](guides/getting-started.md)** | Development, demos, testing | 5-10 minutes | 1-5 instances | $100-500/mo |
-| **[Kubernetes/EKS](guides/kubernetes.md)** | Production, enterprise | 30-45 minutes | 10-20+ instances | $9,000+/mo |
+| **[Kubernetes/EKS](guides/kubernetes.md)** | Cloud production, enterprise | 30-45 minutes | 10-20+ instances | $9,000+/mo |
+| **[NVIDIA CNS (On-Premises)](CNS-DEPLOYMENT-GUIDE.md)** | Dell partners, edge, on-prem GPU servers | 20-30 minutes | Single-node, multi-pod (time-sliced) | Hardware only |
 
 **Start Here:**
 - **[Getting Started Guide](guides/getting-started.md)** - Docker installation and initial setup
-- **[Kubernetes/EKS Deployment](guides/kubernetes.md)** - Production-ready infrastructure with auto-scaling
-- **[CNS Deployment Guide](CNS-DEPLOYMENT-GUIDE.md)** - On-premises NVIDIA GPU deployment
+- **[Kubernetes/EKS Deployment](guides/kubernetes.md)** - Production-ready cloud infrastructure with auto-scaling
+- **[CNS Deployment Guide](CNS-DEPLOYMENT-GUIDE.md)** - On-premises NVIDIA GPU deployment (MicroK8s)
+- **[Phoenix Observability](PHOENIX_SETUP.md)** - Optional LLM tracing and metrics (opt-in)
 - **[Services Overview](guides/services.md)** - Understanding MiniPrem architecture
 
 ## CLI Reference
