@@ -10,6 +10,8 @@ from fastapi import WebSocket, WebSocketDisconnect
 from ..models.schemas import CommandRequest, CommandResponse
 from ..security.command_executor import CommandExecutor, SecurityError
 
+__all__ = ['ConnectionManager', '_log_websocket_disconnect']
+
 logger = logging.getLogger(__name__)
 
 

@@ -30,6 +30,7 @@ from .models.schemas import (
 from .routes.aks_metrics import get_aks_metrics_endpoint
 from .routes.cost_metrics import get_enhanced_cost_metrics_endpoint
 from .routes import cluster_management
+from .websocket.connection_manager import _log_websocket_disconnect
 
 # Configure logging with proper WebSocket disconnect handling
 logging.basicConfig(
@@ -45,46 +46,6 @@ logging.getLogger("uvicorn.protocols.websockets.wsproto_impl").setLevel(
 logging.getLogger("websockets.protocol").setLevel(logging.WARNING)
 logging.getLogger("websockets.server").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
-
-
-def _log_websocket_disconnect(connection_id: str, disconnect_exception: WebSocketDisconnect, context: str = ""):
-    """
-    Log WebSocket disconnections at appropriate levels based on disconnect codes.
-
-    Args:
-        connection_id: The client connection ID
-        disconnect_exception: The WebSocketDisconnect exception
-        context: Additional context about when the disconnect occurred
-    """
-    code = disconnect_exception.code
-    reason = disconnect_exception.reason or ""
-    context_msg = f" {context}" if context else ""
-
-    # Normal disconnects - log as DEBUG
-    if code == 1000:  # Normal closure
-        logger.debug(
-            f"WebSocket connection {connection_id} closed normally{context_msg} (code {code}): {reason or 'Normal closure'}")
-    elif code == 1001:  # Going away (browser/tab closed)
-        logger.debug(
-            f"WebSocket connection {connection_id} closed (client going away){context_msg} (code {code}): {reason or 'Client going away'}")
-
-    # Service restarts - log as INFO (expected but noteworthy)
-    elif code == 1012:  # Service restart
-        logger.info(
-            f"WebSocket connection {connection_id} closed (service restart){context_msg} (code {code}): {reason or 'Service restart'}")
-
-    # Other expected codes - log as INFO
-    elif code in [1002, 1003]:  # Protocol error, unsupported data
-        logger.info(
-            f"WebSocket connection {connection_id} closed (protocol issue){context_msg} (code {code}): {reason or 'Protocol issue'}")
-    elif code in [1005, 1006]:  # No status code, abnormal closure
-        logger.info(
-            f"WebSocket connection {connection_id} closed (network issue){context_msg} (code {code}): {reason or 'Network issue'}")
-
-    # Unexpected or abnormal disconnects - log as WARNING
-    else:
-        logger.warning(
-            f"WebSocket connection {connection_id} closed abnormally{context_msg} (code {code}): {reason or 'Unknown reason'}")
 
 
 app = FastAPI(
