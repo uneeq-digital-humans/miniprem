@@ -235,6 +235,22 @@ class DockerMonitor:
             return False
         return bool(self.IMAGE_NAME_PATTERN.match(name))
 
+    def _parse_json_lines(self, output: str, error_class: type, error_context: str) -> List[Dict[str, Any]]:
+        if not output.strip():
+            return []
+        
+        parsed = []
+        for line in output.strip().split('\n'):
+            if not line.strip():
+                continue
+            try:
+                parsed.append(json.loads(line))
+            except json.JSONDecodeError as e:
+                raise error_class(f'Failed to parse {error_context} output: {str(e)}')
+            except Exception as e:
+                raise error_class(f'Unexpected error parsing {error_context} output: {str(e)}')
+        return parsed
+
     def _parse_docker_ps_output(self, output: str) -> List[Dict[str, Any]]:
         """
         Parse Docker ps JSON output into structured data.
@@ -248,33 +264,21 @@ class DockerMonitor:
         Raises:
             DockerCommandError: If output parsing fails
         """
-        try:
-            containers = []
-            if not output.strip():
-                return containers
-
-            # Docker ps with --format json returns one JSON object per line
-            for line in output.strip().split('\n'):
-                if line.strip():
-                    container_data = json.loads(line)
-                    containers.append({
-                        "id": container_data.get("ID", ""),
-                        "name": container_data.get("Names", ""),
-                        "image": container_data.get("Image", ""),
-                        "status": container_data.get("Status", ""),
-                        "ports": container_data.get("Ports", ""),
-                        "created": container_data.get("CreatedAt", ""),
-                        "command": container_data.get("Command", ""),
-                        "state": container_data.get("State", ""),
-                        "labels": container_data.get("Labels", "")
-                    })
-
-            return containers
-
-        except json.JSONDecodeError as e:
-            raise DockerCommandError(f"Failed to parse Docker ps output: {str(e)}")
-        except Exception as e:
-            raise DockerCommandError(f"Unexpected error parsing Docker ps output: {str(e)}")
+        raw_containers = self._parse_json_lines(output, DockerCommandError, 'Docker ps')
+        containers = []
+        for container_data in raw_containers:
+            containers.append({
+                "id": container_data.get("ID", ""),
+                "name": container_data.get("Names", ""),
+                "image": container_data.get("Image", ""),
+                "status": container_data.get("Status", ""),
+                "ports": container_data.get("Ports", ""),
+                "created": container_data.get("CreatedAt", ""),
+                "command": container_data.get("Command", ""),
+                "state": container_data.get("State", ""),
+                "labels": container_data.get("Labels", "")
+            })
+        return containers
 
     def _parse_docker_images_output(self, output: str) -> List[Dict[str, Any]]:
         """
@@ -289,30 +293,18 @@ class DockerMonitor:
         Raises:
             DockerCommandError: If output parsing fails
         """
-        try:
-            images = []
-            if not output.strip():
-                return images
-
-            # Docker images with --format json returns one JSON object per line
-            for line in output.strip().split('\n'):
-                if line.strip():
-                    image_data = json.loads(line)
-                    images.append({
-                        "repository": image_data.get("Repository", ""),
-                        "tag": image_data.get("Tag", ""),
-                        "image_id": image_data.get("ID", ""),
-                        "created": image_data.get("CreatedAt", ""),
-                        "size": image_data.get("Size", ""),
-                        "digest": image_data.get("Digest", "")
-                    })
-
-            return images
-
-        except json.JSONDecodeError as e:
-            raise DockerCommandError(f"Failed to parse Docker images output: {str(e)}")
-        except Exception as e:
-            raise DockerCommandError(f"Unexpected error parsing Docker images output: {str(e)}")
+        raw_images = self._parse_json_lines(output, DockerCommandError, 'Docker images')
+        images = []
+        for image_data in raw_images:
+            images.append({
+                "repository": image_data.get("Repository", ""),
+                "tag": image_data.get("Tag", ""),
+                "image_id": image_data.get("ID", ""),
+                "created": image_data.get("CreatedAt", ""),
+                "size": image_data.get("Size", ""),
+                "digest": image_data.get("Digest", "")
+            })
+        return images
 
     def _parse_docker_stats_output(self, output: str) -> List[Dict[str, Any]]:
         """
@@ -327,32 +319,20 @@ class DockerMonitor:
         Raises:
             DockerCommandError: If output parsing fails
         """
-        try:
-            stats = []
-            if not output.strip():
-                return stats
-
-            # Docker stats with --format json returns one JSON object per line
-            for line in output.strip().split('\n'):
-                if line.strip():
-                    stats_data = json.loads(line)
-                    stats.append({
-                        "container_id": stats_data.get("ID", ""),
-                        "name": stats_data.get("Name", ""),
-                        "cpu_percent": stats_data.get("CPUPerc", "0.00%"),
-                        "memory_usage": stats_data.get("MemUsage", "0B / 0B"),
-                        "memory_percent": stats_data.get("MemPerc", "0.00%"),
-                        "network_io": stats_data.get("NetIO", "0B / 0B"),
-                        "block_io": stats_data.get("BlockIO", "0B / 0B"),
-                        "pids": stats_data.get("PIDs", "0")
-                    })
-
-            return stats
-
-        except json.JSONDecodeError as e:
-            raise DockerCommandError(f"Failed to parse Docker stats output: {str(e)}")
-        except Exception as e:
-            raise DockerCommandError(f"Unexpected error parsing Docker stats output: {str(e)}")
+        raw_stats = self._parse_json_lines(output, DockerCommandError, 'Docker stats')
+        stats = []
+        for stats_data in raw_stats:
+            stats.append({
+                "container_id": stats_data.get("ID", ""),
+                "name": stats_data.get("Name", ""),
+                "cpu_percent": stats_data.get("CPUPerc", "0.00%"),
+                "memory_usage": stats_data.get("MemUsage", "0B / 0B"),
+                "memory_percent": stats_data.get("MemPerc", "0.00%"),
+                "network_io": stats_data.get("NetIO", "0B / 0B"),
+                "block_io": stats_data.get("BlockIO", "0B / 0B"),
+                "pids": stats_data.get("PIDs", "0")
+            })
+        return stats
 
     async def get_containers(self, all_containers: bool = True) -> List[Dict[str, Any]]:
         """

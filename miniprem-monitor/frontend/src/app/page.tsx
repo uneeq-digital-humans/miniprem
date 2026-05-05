@@ -743,9 +743,9 @@ Available Clusters: ${availableClusters.length}`;
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors" data-testid="dashboard-root">
+    <div className="min-h-screen bg-white dark:bg-uneeq-liquorice transition-colors" data-testid="dashboard-root">
       {/* Header */}
-      <header className="header-gradient shadow-lg" data-testid="dashboard-header">
+      <header className="shadow-lg" style={{ background: "linear-gradient(135deg, #0E0B33 0%, #0D0B5D 60%, #232236 100%)" }} data-testid="dashboard-header">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -804,7 +804,7 @@ Available Clusters: ${availableClusters.length}`;
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 dark:bg-uneeq-liquorice">
         {/* System Metrics */}
         <MetricsCard
           metrics={systemMetrics}

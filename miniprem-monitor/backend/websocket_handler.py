@@ -91,6 +91,7 @@ class WebSocketManager:
 
         self._running = False
         self._update_task: Optional[asyncio.Task] = None
+        self._ping_counter: int = 0
 
     async def connect(self, websocket: WebSocket) -> str:
         """
@@ -130,7 +131,12 @@ class WebSocketManager:
             self.auth_handler.cleanup_client(client_id)
 
             # Cleanup session state
-            asyncio.create_task(self.session_manager.cleanup_client(client_id))
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(self.session_manager.cleanup_client(client_id))
+            except Exception:
+                pass
 
             logger.info(f"WebSocket client {client_id} disconnected. Total connections: {len(self.active_connections)}")
 
@@ -156,7 +162,6 @@ class WebSocketManager:
             return True
 
         except WebSocketDisconnect:
-            logger.info(f"Client {client_id} disconnected during send")
             self.disconnect(client_id)
             return False
         except Exception as e:
@@ -188,6 +193,23 @@ class WebSocketManager:
         if disconnected_clients:
             logger.info(f"Cleaned up {len(disconnected_clients)} disconnected clients")
 
+    async def _safe_collect(self, key: str, coro, errors: dict) -> Optional[Dict[str, Any]]:
+        try:
+            result = await coro
+            return {"success": True, "data": result, "count": len(result)}
+        except PrivilegeError as e:
+            errors[key] = f"Authentication required: {str(e)}"
+            logger.info(f"Authentication required: {str(e)}")
+            return None
+        except (DockerCommandError, KubernetesCommandError) as e:
+            errors[key] = str(e)
+            logger.warning(str(e))
+            return None
+        except Exception as e:
+            errors[key] = f"Unexpected error: {str(e)}"
+            logger.error(f"Unexpected error: {str(e)}")
+            return None
+
     async def _collect_monitoring_data(self) -> MonitoringData:
         """
         Collect monitoring data from Docker and Kubernetes.
@@ -211,93 +233,14 @@ class WebSocketManager:
         kubernetes_nodes = None
 
         # Collect Docker data
-        try:
-            docker_containers = await self.docker_monitor.get_containers()
-            docker_containers = {
-                "success": True,
-                "data": docker_containers,
-                "count": len(docker_containers)
-            }
-        except PrivilegeError as e:
-            errors["docker_containers"] = f"Authentication required: {str(e)}"
-            logger.info(f"Authentication required for Docker containers: {str(e)}")
-        except DockerCommandError as e:
-            errors["docker_containers"] = str(e)
-            logger.warning(f"Failed to collect Docker containers: {str(e)}")
-        except Exception as e:
-            errors["docker_containers"] = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error collecting Docker containers: {str(e)}")
-
-        try:
-            docker_images = await self.docker_monitor.get_images()
-            docker_images = {
-                "success": True,
-                "data": docker_images,
-                "count": len(docker_images)
-            }
-        except DockerCommandError as e:
-            errors["docker_images"] = str(e)
-            logger.warning(f"Failed to collect Docker images: {str(e)}")
-        except Exception as e:
-            errors["docker_images"] = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error collecting Docker images: {str(e)}")
-
-        try:
-            docker_stats = await self.docker_monitor.get_stats()
-            docker_stats = {
-                "success": True,
-                "data": docker_stats,
-                "count": len(docker_stats)
-            }
-        except DockerCommandError as e:
-            errors["docker_stats"] = str(e)
-            logger.warning(f"Failed to collect Docker stats: {str(e)}")
-        except Exception as e:
-            errors["docker_stats"] = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error collecting Docker stats: {str(e)}")
+        docker_containers = await self._safe_collect("docker_containers", self.docker_monitor.get_containers(), errors)
+        docker_images = await self._safe_collect("docker_images", self.docker_monitor.get_images(), errors)
+        docker_stats = await self._safe_collect("docker_stats", self.docker_monitor.get_stats(), errors)
 
         # Collect Kubernetes data
-        try:
-            kubernetes_pods = await self.k8s_monitor.get_pods()
-            kubernetes_pods = {
-                "success": True,
-                "data": kubernetes_pods,
-                "count": len(kubernetes_pods)
-            }
-        except KubernetesCommandError as e:
-            errors["kubernetes_pods"] = str(e)
-            logger.warning(f"Failed to collect Kubernetes pods: {str(e)}")
-        except Exception as e:
-            errors["kubernetes_pods"] = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error collecting Kubernetes pods: {str(e)}")
-
-        try:
-            kubernetes_services = await self.k8s_monitor.get_services()
-            kubernetes_services = {
-                "success": True,
-                "data": kubernetes_services,
-                "count": len(kubernetes_services)
-            }
-        except KubernetesCommandError as e:
-            errors["kubernetes_services"] = str(e)
-            logger.warning(f"Failed to collect Kubernetes services: {str(e)}")
-        except Exception as e:
-            errors["kubernetes_services"] = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error collecting Kubernetes services: {str(e)}")
-
-        try:
-            kubernetes_nodes = await self.k8s_monitor.get_nodes()
-            kubernetes_nodes = {
-                "success": True,
-                "data": kubernetes_nodes,
-                "count": len(kubernetes_nodes)
-            }
-        except KubernetesCommandError as e:
-            errors["kubernetes_nodes"] = str(e)
-            logger.warning(f"Failed to collect Kubernetes nodes: {str(e)}")
-        except Exception as e:
-            errors["kubernetes_nodes"] = f"Unexpected error: {str(e)}"
-            logger.error(f"Unexpected error collecting Kubernetes nodes: {str(e)}")
+        kubernetes_pods = await self._safe_collect("kubernetes_pods", self.k8s_monitor.get_pods(), errors)
+        kubernetes_services = await self._safe_collect("kubernetes_services", self.k8s_monitor.get_services(), errors)
+        kubernetes_nodes = await self._safe_collect("kubernetes_nodes", self.k8s_monitor.get_nodes(), errors)
 
         return MonitoringData(
             timestamp=timestamp,
@@ -337,6 +280,15 @@ class WebSocketManager:
 
                     # Wait for next update interval
                     await asyncio.sleep(self.update_interval)
+
+                    # Ping-pong heartbeat every 5 cycles
+                    self._ping_counter += 1
+                    if self._ping_counter % 5 == 0:
+                        for client_id, websocket in list(self.active_connections.items()):
+                            try:
+                                await websocket.ping()
+                            except Exception:
+                                self.disconnect(client_id)
 
                 except asyncio.CancelledError:
                     logger.info("WebSocket broadcast task cancelled")
