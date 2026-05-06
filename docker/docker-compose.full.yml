@@ -220,8 +220,11 @@ services:
       - FLOWISE_FILE_SIZE_LIMIT=50mb
       # Disable queue mode temporarily
       - MODE=local
-      # Disable LangChain tracing
-      - LANGCHAIN_TRACING_V2=false
+      # Phoenix LLM observability (set PHOENIX_ENABLED=true when using --profile phoenix)
+      - PHOENIX_ENABLED=${PHOENIX_ENABLED:-false}
+      - NODE_OPTIONS=--require /otel/otel-init.js --max-old-space-size=8192
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+      - OTEL_SERVICE_NAME=flowise
       # Debug settings
       - DEBUG=flowise:*
     restart: unless-stopped
