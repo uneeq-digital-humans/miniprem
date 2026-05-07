@@ -5,9 +5,7 @@ services:
 
   # === MONITORING SERVICE ===
   miniprem-monitor:
-    build:
-      context: ../miniprem-monitor
-      dockerfile: Dockerfile
+    image: "cr.uneeq.io/public/miniprem-monitor@sha256:dcad83fb9c7d21ce0d6badb1973b1df5b7cbc053341254b4bd96a5b3c1c456da"
     container_name: miniprem-monitor
     runtime: nvidia  # GPU access for machine_id generation via nvidia-smi
     network_mode: host  # Direct access to Docker daemon and localhost services
