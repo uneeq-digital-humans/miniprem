@@ -2023,6 +2023,82 @@ pull_docker_with_tts_provider() {
 }
 
 # Function to create desktop shortcut for Ubuntu Desktop users
+enable_systemd_autostart() {
+    log_section "Enabling MiniPrem Auto-start at Boot"
+
+    # Only meaningful on systemd-based Linux (Ubuntu workstations qualify).
+    if ! command -v systemctl >/dev/null 2>&1 || [ ! -d /run/systemd/system ]; then
+        info "systemd not detected, skipping auto-start setup"
+        return 0
+    fi
+
+    # Must be root to write unit files and enable services.
+    if [ "$(id -u)" -ne 0 ]; then
+        warning "Not running as root; skipping auto-start setup."
+        warning "Re-run the installer with sudo to enable boot-time auto-start."
+        return 0
+    fi
+
+    local unit_path="/etc/systemd/system/miniprem.service"
+    local tmp_unit
+    tmp_unit=$(mktemp)
+
+    cat > "$tmp_unit" << EOF
+[Unit]
+Description=MiniPrem (UneeQ Renny + monitor)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=$PROJECT_ROOT
+ExecStart=$PROJECT_ROOT/miniprem.sh start
+ExecStop=$PROJECT_ROOT/miniprem.sh stop
+TimeoutStartSec=600
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Idempotent install: only rewrite the unit if content differs.
+    if [ -f "$unit_path" ] && cmp -s "$tmp_unit" "$unit_path"; then
+        info "miniprem.service already up-to-date at $unit_path"
+        rm -f "$tmp_unit"
+    else
+        install -m 0644 "$tmp_unit" "$unit_path"
+        rm -f "$tmp_unit"
+        success "$CHECKMARK Wrote $unit_path"
+        systemctl daemon-reload
+    fi
+
+    # Make sure dockerd itself comes up at boot.
+    if ! systemctl is-enabled --quiet docker.service 2>/dev/null; then
+        if systemctl enable docker.service >/dev/null 2>&1; then
+            success "$CHECKMARK Enabled docker.service at boot"
+        else
+            warning "Could not enable docker.service; check 'systemctl status docker'"
+        fi
+    else
+        info "docker.service already enabled at boot"
+    fi
+
+    # Enable miniprem.service for boot. Do NOT --now: the installer already
+    # called start_miniprem, services are running, and a redundant start
+    # would just no-op.
+    if systemctl enable miniprem.service >/dev/null 2>&1; then
+        success "$CHECKMARK miniprem.service enabled — will auto-start at boot"
+    else
+        error "Failed to enable miniprem.service"
+        return 1
+    fi
+
+    info "Verify with: systemctl status miniprem.service"
+    info "Disable with: sudo systemctl disable miniprem.service"
+}
+
 create_desktop_shortcut() {
     # Only create shortcut if running Ubuntu Desktop (has desktop environment)
     if [ ! -d "$HOME/Desktop" ] || [ -z "${XDG_CURRENT_DESKTOP:-}" ]; then
@@ -2267,6 +2343,9 @@ main() {
 
     # Install type
     prompt_for_install_type
+
+    # Optional: install as systemd service so MiniPrem auto-starts at boot
+    prompt_for_autostart
 
     check_environment
 
@@ -2528,6 +2607,11 @@ main() {
         setup_flowise_chatflow
     fi
 
+    # Optional: enable auto-start at boot (gated by prompt_for_autostart)
+    if [ "${INSTALL_AS_SERVICE:-no}" = "yes" ]; then
+        enable_systemd_autostart
+    fi
+
     # Create desktop shortcut for easy launching (Ubuntu Desktop only)
     create_desktop_shortcut
 
@@ -2541,6 +2625,9 @@ main() {
     info "- Renny service health at http://localhost:8081/health"
     info ""
     info "To stop the services, use: $PROJECT_ROOT/miniprem.sh stop"
+    if [ "${INSTALL_AS_SERVICE:-no}" = "yes" ]; then
+        info "MiniPrem will auto-start at boot (managed by systemd: miniprem.service)."
+    fi
 
     # Prompt for custom Docker services setup
     prompt_custom_services

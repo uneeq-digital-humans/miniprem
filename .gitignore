@@ -5,6 +5,7 @@ docker/*.bak
 docker/notes_for_myself
 docker/configuration.dat
 docker/notes_for_myself.md
+.vscode
 
 # CNS deployment state — contains Harbor + UneeQ credentials, written 0600
 # by kubernetes/scripts/cns/deploy-local.sh. Never commit.
