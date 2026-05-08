@@ -34,6 +34,27 @@ prompt_for_install_type() {
     fi
 }
 
+# Function to prompt user whether to install MiniPrem as a systemd service
+# (auto-start at boot regardless of which user logs in). Sets INSTALL_AS_SERVICE
+# to "yes" or "no". Defaults to "no" on empty/invalid input.
+prompt_for_autostart() {
+    INSTALL_AS_SERVICE="no"
+    echo ""
+    echo "Install MiniPrem as a systemd service?"
+    echo "  - Auto-starts at boot, even before any user logs in"
+    echo "  - Requires root (this installer is already running with sudo)"
+    echo "  - Disable later with: sudo systemctl disable miniprem.service"
+    read -p "Install as service? [y/N] " autostart_choice
+    case "${autostart_choice}" in
+        y|Y|yes|YES|Yes)
+            INSTALL_AS_SERVICE="yes"
+            ;;
+        *)
+            INSTALL_AS_SERVICE="no"
+            ;;
+    esac
+}
+
 # Function to prompt for deployment target
 prompt_deployment_target() {
     # Check if deployment target already set (e.g., via CLI argument)
