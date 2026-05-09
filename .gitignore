@@ -12,6 +12,13 @@ docker/notes_for_myself.md
 kubernetes/scripts/cns/.cns_config
 kubernetes/scripts/cns/.cns_deploy_progress
 
+# Per-customer seed files for unattended installs (contain credentials).
+# seed.example.env IS tracked; everything else matching *.seed* is not.
+*.seed
+*.seed.env
+seed.env
+!seed.example.env
+
 # Logs
 logs/
 docker/*.log
