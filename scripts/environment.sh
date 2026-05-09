@@ -5,7 +5,7 @@
 # Function to read existing values from the .env file
 read_env_variable() {
     local var_name="$1"
-    local env_file="docker/docker-compose.env"
+    local env_file="$PROJECT_ROOT/docker/docker-compose.env"
     local value=""
 
     if [ -f "$env_file" ]; then
@@ -23,7 +23,7 @@ read_env_variable() {
 update_env_variable() {
     local var_name="$1"
     local new_value="$2"
-    local env_file="docker/docker-compose.env"
+    local env_file="$PROJECT_ROOT/docker/docker-compose.env"
 
     # Escape $ as $$ for Docker Compose .env file compatibility
     # Harbor robot usernames contain $ (e.g., robot$customer-name)
