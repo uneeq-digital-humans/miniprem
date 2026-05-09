@@ -31,6 +31,7 @@ source "$PROJECT_ROOT/scripts/logging.sh"
 source "$PROJECT_ROOT/scripts/audio.sh"
 source "$PROJECT_ROOT/scripts/hash.sh"
 source "$PROJECT_ROOT/scripts/environment.sh"
+source "$PROJECT_ROOT/scripts/seed.sh"
 source "$PROJECT_ROOT/scripts/prompts.sh"
 source "$PROJECT_ROOT/scripts/prerequisites.sh"
 
@@ -143,6 +144,13 @@ Options:
     --renny-image <image>        Docker image name for Renny
     --region <us|eu>             UneeQ region (us or eu, default: us)
     --deployment-target <type>   Deployment target (hardware or cloud)
+    --seed <file>                Load values from a seed file (implies --non-interactive).
+                                 See seed.example.env for the full key reference.
+    --non-interactive            Disable all interactive prompts; missing required values
+                                 abort the install with the full list of what's missing.
+    --interactive                Force interactive mode even when --seed is given.
+    --force                      Auto-confirm "continue?" gates (port conflicts, duplicate
+                                 installs, etc.). Equivalent to MINIPREM_SEED_FORCE=yes.
     --help                       Show this help message
 EOF
 }
@@ -538,13 +546,23 @@ check_wss_service() {
     fi
 }
 
-# Function to prompt for a value with a default, only if value is not already set
+# Function to prompt for a value with a default, only if value is not already set.
+# Optional 3rd argument is the seed-key name to record under MINIPREM_SEED_MISSING
+# when the value is empty in non-interactive mode.
 check_and_prompt_for_value() {
     local prompt_message=$1
     local current_value=$2
+    local seed_key=${3:-}
     local input_value=$current_value
 
     if [ -z "$current_value" ]; then
+        if seed_is_non_interactive; then
+            if [ -n "$seed_key" ]; then
+                seed_record_missing "$seed_key" "$prompt_message"
+            fi
+            echo ""
+            return 1
+        fi
         read -p "$prompt_message: " input_value
         if [ -z "$input_value" ]; then
             echo ""
@@ -636,13 +654,26 @@ configure_protobuf_tts() {
 # Function to prompt for TTS provider selection
 select_tts_provider() {
     log_section "Text-to-Speech Provider Selection"
-    
+
+    # Honor a pre-set value (from --seed or CLI)
+    if [ -n "${TTS_PROVIDER:-}" ]; then
+        seed_validate_choice TTS_PROVIDER "azure|elevenlabs|rime"
+        echo "$TTS_PROVIDER" > "$PROJECT_ROOT/.miniprem_tts_provider"
+        info "Using TTS provider: $TTS_PROVIDER"
+        return 0
+    fi
+
+    if seed_is_non_interactive; then
+        seed_record_missing "MINIPREM_SEED_TTS_PROVIDER" "azure|elevenlabs|rime"
+        return 0
+    fi
+
     echo "Select your preferred text-to-speech provider:"
     echo "1) Azure (Microsoft TTS)"
     echo "2) Eleven Labs"
     echo "3) RIME"
     read -p "Enter choice [1-3]: " tts_choice
-    
+
     case "$tts_choice" in
         1)
             TTS_PROVIDER="azure"
@@ -676,38 +707,45 @@ configure_azure_tts() {
         update_env_variable "AZURE_SPEECH_KEY" "\"\""
         return 0
     fi
-    
+
     log_section "Configure Azure TTS"
-    
-    # Check if Azure region is already set
-    local AZURE_REGION_VAL=$(read_env_variable "AZURE_REGION")
-    if [ -z "$AZURE_REGION_VAL" ]; then
-        read -p "Enter your Azure region (e.g., eastus): " AZURE_REGION
-        if [ -z "$AZURE_REGION" ]; then
-            warning "No Azure region provided. Azure TTS may not function correctly."
+
+    # Resolve precedence: existing global (from seed/CLI) > env file > prompt
+    if [ -z "${AZURE_REGION:-}" ]; then
+        AZURE_REGION=$(read_env_variable "AZURE_REGION")
+    fi
+    if [ -z "$AZURE_REGION" ]; then
+        if seed_is_non_interactive; then
+            seed_record_missing "MINIPREM_SEED_AZURE_REGION" "Azure region (when TTS=azure)"
         else
-            update_env_variable "AZURE_REGION" "\"$AZURE_REGION\""
-            success "$CHECKMARK Azure region configured"
+            read -p "Enter your Azure region (e.g., eastus): " AZURE_REGION
+            if [ -z "$AZURE_REGION" ]; then
+                warning "No Azure region provided. Azure TTS may not function correctly."
+            fi
         fi
-    else
-        AZURE_REGION="$AZURE_REGION_VAL"
-        success "$CHECKMARK Azure region already configured"
+    fi
+    if [ -n "$AZURE_REGION" ]; then
+        update_env_variable "AZURE_REGION" "\"$AZURE_REGION\""
+        success "$CHECKMARK Azure region configured"
     fi
 
-    # Check if Azure speech key is already set
-    local AZURE_SPEECH_KEY_VAL=$(read_env_variable "AZURE_SPEECH_KEY")
-    if [ -z "$AZURE_SPEECH_KEY_VAL" ]; then
-        read -p "Enter your Azure speech key: " AZURE_SPEECH_KEY
-        if [ -z "$AZURE_SPEECH_KEY" ]; then
-            warning "No Azure speech key provided. Azure TTS may not function correctly."
+    if [ -z "${AZURE_SPEECH_KEY:-}" ]; then
+        AZURE_SPEECH_KEY=$(read_env_variable "AZURE_SPEECH_KEY")
+    fi
+    if [ -z "$AZURE_SPEECH_KEY" ]; then
+        if seed_is_non_interactive; then
+            seed_record_missing "MINIPREM_SEED_AZURE_SPEECH_KEY" "Azure speech key (when TTS=azure)"
         else
-            update_env_variable "AZURE_SPEECH_KEY" "\"$AZURE_SPEECH_KEY\""
-            update_env_variable "AZURE_SPEECH" "\"$AZURE_SPEECH_KEY\""
-            success "$CHECKMARK Azure speech key configured"
+            read -p "Enter your Azure speech key: " AZURE_SPEECH_KEY
+            if [ -z "$AZURE_SPEECH_KEY" ]; then
+                warning "No Azure speech key provided. Azure TTS may not function correctly."
+            fi
         fi
-    else
-        AZURE_SPEECH_KEY="$AZURE_SPEECH_KEY_VAL"
-        success "$CHECKMARK Azure speech key already configured"
+    fi
+    if [ -n "$AZURE_SPEECH_KEY" ]; then
+        update_env_variable "AZURE_SPEECH_KEY" "\"$AZURE_SPEECH_KEY\""
+        update_env_variable "AZURE_SPEECH" "\"$AZURE_SPEECH_KEY\""
+        success "$CHECKMARK Azure speech key configured"
     fi
 }
 
@@ -724,26 +762,29 @@ configure_eleven_labs() {
     fi
 
     log_section "Configure Eleven Labs TTS"
-    
-    # Check if Eleven Labs API key is already set
-    local ELEVEN_LABS_API_KEY_VAL=$(read_env_variable "ELEVEN_LABS_API_KEY")
-    if [ -z "$ELEVEN_LABS_API_KEY_VAL" ]; then
-        read -p "Enter your Eleven Labs API key: " ELEVEN_LABS_API_KEY
-        if [ -z "$ELEVEN_LABS_API_KEY" ]; then
-            warning "No Eleven Labs API key provided. Eleven Labs services may not function correctly."
+
+    # Resolve precedence: existing global (from seed/CLI) > env file > prompt
+    if [ -z "${ELEVEN_LABS_API_KEY:-}" ]; then
+        ELEVEN_LABS_API_KEY=$(read_env_variable "ELEVEN_LABS_API_KEY")
+    fi
+    if [ -z "$ELEVEN_LABS_API_KEY" ]; then
+        if seed_is_non_interactive; then
+            seed_record_missing "MINIPREM_SEED_ELEVEN_LABS_API_KEY" "Eleven Labs API key (when TTS=elevenlabs)"
         else
-            # Update the environment variable
-            update_env_variable "ELEVEN_LABS_API_KEY" "\"$ELEVEN_LABS_API_KEY\""
-            # Set default values for other Eleven Labs parameters
-            update_env_variable "ELEVEN_LABS_MODEL_ID" "\"eleven_flash_v2_5\""
-            update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "1"
-            update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "0.5"
-            update_env_variable "ELEVEN_LABS_STABILITY" "0.5"
-            success "$CHECKMARK Eleven Labs API key configured"
+            read -p "Enter your Eleven Labs API key: " ELEVEN_LABS_API_KEY
+            if [ -z "$ELEVEN_LABS_API_KEY" ]; then
+                warning "No Eleven Labs API key provided. Eleven Labs services may not function correctly."
+            fi
         fi
-    else
-        ELEVEN_LABS_API_KEY="$ELEVEN_LABS_API_KEY_VAL"
-        success "$CHECKMARK Eleven Labs API key already configured"
+    fi
+    if [ -n "$ELEVEN_LABS_API_KEY" ]; then
+        update_env_variable "ELEVEN_LABS_API_KEY" "\"$ELEVEN_LABS_API_KEY\""
+        # Set default values for other Eleven Labs parameters
+        update_env_variable "ELEVEN_LABS_MODEL_ID" "\"eleven_flash_v2_5\""
+        update_env_variable "ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL" "1"
+        update_env_variable "ELEVEN_LABS_SIMILARITY_BOOST" "0.5"
+        update_env_variable "ELEVEN_LABS_STABILITY" "0.5"
+        success "$CHECKMARK Eleven Labs API key configured"
     fi
 }
 
@@ -760,20 +801,23 @@ setup_rime_credentials() {
     
     log_section "Setting up RIME credentials"
 
-    # Check if RIME_API_KEY is already set
-    local RIME_API_KEY_VAL=$(read_env_variable "RIME_API_KEY")
-
-    if [ -z "$RIME_API_KEY_VAL" ]; then
-        read -p "Enter your RIME API key: " RIME_API_KEY
-        if [ -z "$RIME_API_KEY" ]; then
-            warning "No RIME API key provided. RIME services may not function correctly."
+    # Resolve precedence: existing global (from seed/CLI) > env file > prompt
+    if [ -z "${RIME_API_KEY:-}" ]; then
+        RIME_API_KEY=$(read_env_variable "RIME_API_KEY")
+    fi
+    if [ -z "$RIME_API_KEY" ]; then
+        if seed_is_non_interactive; then
+            seed_record_missing "MINIPREM_SEED_RIME_API_KEY" "RIME API key (when TTS=rime)"
         else
-            update_env_variable "RIME_API_KEY" "\"$RIME_API_KEY\""
-            success "$CHECKMARK RIME API key configured"
+            read -p "Enter your RIME API key: " RIME_API_KEY
+            if [ -z "$RIME_API_KEY" ]; then
+                warning "No RIME API key provided. RIME services may not function correctly."
+            fi
         fi
-    else
-        RIME_API_KEY="$RIME_API_KEY_VAL"
-        success "$CHECKMARK RIME API key already configured"
+    fi
+    if [ -n "$RIME_API_KEY" ]; then
+        update_env_variable "RIME_API_KEY" "\"$RIME_API_KEY\""
+        success "$CHECKMARK RIME API key configured"
     fi
 
     # Only pull RIME images if we're using RIME
@@ -784,15 +828,20 @@ setup_rime_credentials() {
             return 0
         fi
 
-        # Prompt for quay.io password for RIME images
-        local RIME_QUAY_PASSWORD=""
-        while [ -z "$RIME_QUAY_PASSWORD" ]; do
-            read -s -p "Enter the quay.io password for RIME (rimelabs+uneeq): " RIME_QUAY_PASSWORD
-            echo
-            if [ -z "$RIME_QUAY_PASSWORD" ]; then
-                warning "No password entered. Please provide the quay.io password for RIME."
+        # Resolve quay.io RIME password (seed/CLI > prompt)
+        if [ -z "${RIME_QUAY_PASSWORD:-}" ]; then
+            if seed_is_non_interactive; then
+                seed_record_missing "MINIPREM_SEED_RIME_QUAY_PASSWORD" "quay.io RIME password (when TTS=rime, no cached images)"
+                return 0
             fi
-        done
+            while [ -z "$RIME_QUAY_PASSWORD" ]; do
+                read -s -p "Enter the quay.io password for RIME (rimelabs+uneeq): " RIME_QUAY_PASSWORD
+                echo
+                if [ -z "$RIME_QUAY_PASSWORD" ]; then
+                    warning "No password entered. Please provide the quay.io password for RIME."
+                fi
+            done
+        fi
 
         # Login to quay.io for RIME images
         info "Logging in to quay.io for RIME images..."
@@ -1073,7 +1122,14 @@ configure_region_endpoints() {
 # Function to prompt user for region selection
 prompt_for_region() {
     if [ -n "${UNEEQ_REGION:-}" ]; then
-        info "Using region from CLI argument: $UNEEQ_REGION"
+        seed_validate_choice UNEEQ_REGION "us|eu"
+        info "Using region: $UNEEQ_REGION"
+        return
+    fi
+    if seed_is_non_interactive; then
+        # Region has a sensible default ("us"); apply it instead of failing.
+        UNEEQ_REGION="us"
+        info "Region defaulted to 'us' (set MINIPREM_SEED_REGION=eu for EU)"
         return
     fi
     echo ""
@@ -1605,8 +1661,7 @@ setup_flowise_chatflow() {
     if ! wait_for_service "http://localhost:3000/" 60 5 "Flowise UI"; then
         warning "Flowise service did not become available within the expected timeframe."
         warning "However, the container might still be starting up properly."
-        read -p "Do you want to proceed with creating the chatflow anyway? (y/n): " continue_anyway
-        if [[ ! "$continue_anyway" =~ ^[Yy]$ ]]; then
+        if ! seed_confirm "Do you want to proceed with creating the chatflow anyway?"; then
             warning "Chatflow setup skipped. You can run it manually later with: setup-chatflow-post-deployment.sh"
             cd "$current_dir"  # Return to original directory
             return 1
@@ -1740,8 +1795,7 @@ check_environment() {
                 # Special handling for redis-server on 6379
                 if [ "$port" = "6379" ] && [ "$proc_name" = "redis-server" ]; then
                     echo -e "\nRedis appears to be running locally on port 6379."
-                    read -p "Would you like to try stopping it automatically? [y/N]: " stop_redis
-                    if [[ "$stop_redis" =~ ^[Yy]$ ]]; then
+                    if seed_confirm "Would you like to try stopping it automatically?"; then
                         sudo service redis-server stop || true
                         sudo systemctl stop redis || true
                         # Re-check if port is still in use
@@ -1782,7 +1836,9 @@ check_environment() {
         done
         if [ $found -eq 1 ]; then
             echo -e "\n\e[1;33m[WARNING] Local service conflicts detected.\e[0m"
-            read -p "\nPress Enter to exit and resolve the conflict(s)..." _
+            if seed_is_interactive; then
+                read -p "Press Enter to exit and resolve the conflict(s)..." _
+            fi
             exit 1
         fi
     fi
@@ -1861,12 +1917,11 @@ check_duplicate_installations() {
         printf "| %-${box_width}s |\n" "It's recommended to use only one installation of MiniPrem."
         echo "+${border}+"
 
-        read -p "Do you want to continue with this installation? (y/N): " continue_install
-        if [[ ! "$continue_install" =~ ^[Yy]$ ]]; then
+        if seed_confirm "Do you want to continue with this installation despite duplicates?"; then
+            warning "Continuing with installation despite duplicate installations detected."
+        else
             fatal "Installation aborted due to multiple MiniPrem installations detected."
         fi
-
-        warning "Continuing with installation despite duplicate installations detected."
     else
         success "$CHECKMARK No duplicate MiniPrem installations detected."
     fi
@@ -2166,6 +2221,33 @@ prompt_custom_services() {
     echo "  🔧 Custom Docker Services Setup"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
+
+    # Non-interactive path: a pre-authored file may be supplied; otherwise skip.
+    if seed_is_non_interactive; then
+        if [ -n "${CUSTOM_SERVICES_FILE_SEED:-}" ]; then
+            if [ ! -f "$CUSTOM_SERVICES_FILE_SEED" ]; then
+                fatal "MINIPREM_SEED_CUSTOM_SERVICES_FILE points to a missing file: $CUSTOM_SERVICES_FILE_SEED"
+            fi
+            info "Installing custom services from seeded file: $CUSTOM_SERVICES_FILE_SEED"
+            cp "$CUSTOM_SERVICES_FILE_SEED" "$custom_file" || \
+                fatal "Failed to copy custom services file into $custom_file"
+            if [ -f "$merge_script" ]; then
+                "$merge_script" --prefer-custom || \
+                    warning "Custom services merge reported issues; review docker-compose.override.yml"
+            fi
+            return 0
+        fi
+        case "${CUSTOM_SERVICES_CHOICE:-no}" in
+            y|yes|Y|YES|Yes)
+                warning "MINIPREM_SEED_CUSTOM_SERVICES=yes but no MINIPREM_SEED_CUSTOM_SERVICES_FILE provided; skipping (non-interactive cannot open editor)."
+                ;;
+            *)
+                info "Skipping custom services setup (non-interactive)."
+                ;;
+        esac
+        return 0
+    fi
+
     info "Would you like to add custom Docker services (database, cache, etc.)?"
     echo ""
 
@@ -2274,8 +2356,7 @@ prompt_custom_services() {
                     echo ""
                     "$merge_script" --check 2>&1 | grep -E "WARN|conflict"
                     echo ""
-                    read -p "Continue with merge? Custom services will override official ones. [y/N]: " continue_merge
-                    if [[ ! "${continue_merge,,}" =~ ^(y|yes)$ ]]; then
+                    if ! seed_confirm "Continue with merge? Custom services will override official ones."; then
                         info "Skipping merge. Edit $custom_file to resolve conflicts."
                         info "Run merge manually when ready: $merge_script"
                         return 0
@@ -2326,7 +2407,7 @@ prompt_custom_services() {
 
 main() {
     # Parse command line arguments using getopt (before any interactive prompts)
-    OPTIONS=$(getopt -o '' --long help,platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target:,region: -- "$@")
+    OPTIONS=$(getopt -o '' --long help,platform-address:,platform-key:,tenant-id:,tts-address:,tts-key:,azure-region:,azure-speech-key:,renny-image:,deployment-target:,region:,seed:,non-interactive,interactive,force -- "$@")
     if [ $? -ne 0 ]; then
         usage
         exit 1
@@ -2339,7 +2420,47 @@ main() {
         exit 0
     fi
 
+    # Early scan for seed-mode flags so they take effect before any prompts.
+    # Honor environment-variable equivalents too: MINIPREM_SEED_FILE acts like
+    # --seed FILE for callers who can't easily pass CLI flags (e.g. via sudo).
+    local _early_args=("$@")
+    local _early_seed_file="${MINIPREM_SEED_FILE:-}"
+    local _i
+    for ((_i=0; _i<${#_early_args[@]}; _i++)); do
+        case "${_early_args[$_i]}" in
+            --seed)
+                _early_seed_file="${_early_args[$((_i+1))]:-}"
+                ;;
+            --non-interactive)
+                INTERACTIVE_MODE="no"
+                ;;
+            --interactive)
+                INTERACTIVE_MODE="yes"
+                ;;
+            --force)
+                FORCE_CONFIRMATIONS="yes"
+                ;;
+        esac
+    done
+
+    if [ -n "$_early_seed_file" ]; then
+        seed_load_file "$_early_seed_file"
+        # --interactive (or MINIPREM_INTERACTIVE=yes) overrides the implicit
+        # non-interactive that --seed sets, enabling mixed mode.
+        for ((_i=0; _i<${#_early_args[@]}; _i++)); do
+            if [ "${_early_args[$_i]}" = "--interactive" ]; then
+                INTERACTIVE_MODE="yes"
+                break
+            fi
+        done
+        seed_apply_to_vars
+    fi
+
     print_logo
+
+    if seed_is_non_interactive; then
+        info "Running in non-interactive mode${SEED_FILE:+ (seed: $SEED_FILE)}"
+    fi
 
     # Install type
     prompt_for_install_type
@@ -2359,6 +2480,10 @@ main() {
 
     # Ensure docker-compose.env exists
     ensure_env_file_exists
+
+    # If a seed provided Harbor credentials, write them into docker-compose.env
+    # so miniprem.sh start (and the systemd unit) can authenticate at boot.
+    seed_apply_harbor_creds
 
     # Select TTS provider before configuring
     select_tts_provider
@@ -2473,6 +2598,14 @@ main() {
                 echo "$DEPLOYMENT_TARGET" > "$PROJECT_ROOT/.miniprem_deployment_target" 2>/dev/null || true
                 shift 2
                 ;;
+            --seed)
+                # Already handled in the early scan; consume and continue.
+                shift 2
+                ;;
+            --non-interactive|--interactive|--force)
+                # Already handled in the early scan; consume and continue.
+                shift
+                ;;
             --)
                 shift
                 break
@@ -2515,45 +2648,57 @@ main() {
             info "RIME API key: ${RIME_API_KEY:0:8}****${RIME_API_KEY: -8}"
         fi
 
-        while true; do
-            read -p "All configuration values are already set. Proceed with installation? (Y/n): " confirm
-            case "${confirm,,}" in
-                y|yes)
-                    break
-                    ;;
-                n|no)
-                    info "Installation aborted by user."
-                    exit 0
-                    ;;
-                *)
-                    echo "Please enter 'y' or 'n'."
-                    ;;
-            esac
-        done
+        if seed_is_non_interactive; then
+            info "All configuration values are set; proceeding (non-interactive)."
+        else
+            while true; do
+                read -p "All configuration values are already set. Proceed with installation? (Y/n): " confirm
+                case "${confirm,,}" in
+                    y|yes|"")
+                        break
+                        ;;
+                    n|no)
+                        info "Installation aborted by user."
+                        exit 0
+                        ;;
+                    *)
+                        echo "Please enter 'y' or 'n'."
+                        ;;
+                esac
+            done
+        fi
     else
-        PLATFORM_KEY=$(check_and_prompt_for_value "Enter the UneeQ platform API key" "$PLATFORM_KEY")
-        TENANT_ID=$(check_and_prompt_for_value "Enter the Tenant ID" "$TENANT_ID")
-        
+        PLATFORM_KEY=$(check_and_prompt_for_value "Enter the UneeQ platform API key" "$PLATFORM_KEY" "MINIPREM_SEED_PLATFORM_KEY")
+        TENANT_ID=$(check_and_prompt_for_value "Enter the Tenant ID" "$TENANT_ID" "MINIPREM_SEED_TENANT_ID")
+
         # Only prompt for Azure credentials if Azure TTS is selected
         if [ "$TTS_PROVIDER" = "azure" ]; then
-            AZURE_REGION=$(check_and_prompt_for_value "Enter the Azure region" "$AZURE_REGION")
-            AZURE_SPEECH_KEY=$(check_and_prompt_for_value "Enter the Azure speech key" "$AZURE_SPEECH_KEY")
+            AZURE_REGION=$(check_and_prompt_for_value "Enter the Azure region" "$AZURE_REGION" "MINIPREM_SEED_AZURE_REGION")
+            AZURE_SPEECH_KEY=$(check_and_prompt_for_value "Enter the Azure speech key" "$AZURE_SPEECH_KEY" "MINIPREM_SEED_AZURE_SPEECH_KEY")
         fi
-        
-        RENNY_IMAGE=$(check_and_prompt_for_value "Enter the Renny image name" "$RENNY_IMAGE")
 
-        # Check if required arguments are provided
-        if [ -z "$PLATFORM_KEY" ] || [ -z "$TENANT_ID" ] || [ -z "$RENNY_IMAGE" ]; then
-            usage
-            fatal "Missing required arguments. Please provide the required arguments."
-        fi
-        
-        # Check if Azure credentials are provided when Azure TTS is selected
-        if [ "$TTS_PROVIDER" = "azure" ] && ([ -z "$AZURE_REGION" ] || [ -z "$AZURE_SPEECH_KEY" ]); then
-            usage
-            fatal "Azure TTS selected but Azure credentials are missing."
+        RENNY_IMAGE=$(check_and_prompt_for_value "Enter the Renny image name" "$RENNY_IMAGE" "MINIPREM_SEED_RENNY_IMAGE")
+
+        # In non-interactive mode, missing values are aggregated and reported
+        # by seed_check_required below — skip the per-field fatals.
+        if seed_is_interactive; then
+            # Check if required arguments are provided
+            if [ -z "$PLATFORM_KEY" ] || [ -z "$TENANT_ID" ] || [ -z "$RENNY_IMAGE" ]; then
+                usage
+                fatal "Missing required arguments. Please provide the required arguments."
+            fi
+
+            # Check if Azure credentials are provided when Azure TTS is selected
+            if [ "$TTS_PROVIDER" = "azure" ] && ([ -z "$AZURE_REGION" ] || [ -z "$AZURE_SPEECH_KEY" ]); then
+                usage
+                fatal "Azure TTS selected but Azure credentials are missing."
+            fi
         fi
     fi
+
+    # Final aggregation point: any non-interactive run that accumulated missing
+    # required keys fails here with the full list, before any destructive work.
+    seed_check_required
 
     # Update the environment file with collected values
     update_env_file
@@ -2577,21 +2722,37 @@ main() {
     # No need to setup RIME credentials here as we did it earlier based on TTS_PROVIDER selection
     
     if [ "$INSTALL_TYPE" = "full" ]; then
-        echo -e "\nChoose your speech-to-text backend (only one will be enabled):"
-        echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
-        echo "2) FastWhisper (GPU-optimized, locally built)"
-        echo "3) Do not use local STT (UneeQ default STT will be used)"
-        read -p "Enter choice [1-3]: " stt_choice
+        # Honor STT_PROVIDER from --seed/CLI: whisper -> 1, fastwhisper -> 2, none -> 3
+        local stt_choice=""
+        if [ -n "${STT_PROVIDER:-}" ]; then
+            seed_validate_choice STT_PROVIDER "whisper|fastwhisper|none"
+            case "$STT_PROVIDER" in
+                whisper)     stt_choice="1" ;;
+                fastwhisper) stt_choice="2" ;;
+                none)        stt_choice="3" ;;
+            esac
+            info "Using STT provider: $STT_PROVIDER"
+        elif seed_is_non_interactive; then
+            seed_record_missing "MINIPREM_SEED_STT_PROVIDER" "whisper|fastwhisper|none (full install only)"
+            seed_check_required  # exits if missing
+        else
+            echo -e "\nChoose your speech-to-text backend (only one will be enabled):"
+            echo "1) Whisper (OpenAI, onerahmet/openai-whisper-asr-webservice)"
+            echo "2) FastWhisper (GPU-optimized, locally built)"
+            echo "3) Do not use local STT (UneeQ default STT will be used)"
+            read -p "Enter choice [1-3]: " stt_choice
+        fi
+
         if [[ "$stt_choice" == "1" ]] || [[ "$stt_choice" == "2" ]] || [[ "$stt_choice" == "3" ]]; then
             # Update docker-compose.yml for the selected STT backend
             update_docker_compose_for_stt "$stt_choice"
-            
+
             # If FastWhisper is selected, build the image
             if [[ "$stt_choice" == "2" ]]; then
                 build_fast_whisper_image
             fi
         else
-            echo "Invalid choice, exiting."
+            echo "Invalid STT choice, exiting."
             exit 1
         fi
     fi

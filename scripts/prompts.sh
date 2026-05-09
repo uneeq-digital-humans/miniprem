@@ -6,6 +6,21 @@
 
 # Function to prompt user for installation type (default vs full)
 prompt_for_install_type() {
+    # Honor a pre-set value (from --seed or CLI) if present
+    if [ -n "${INSTALL_TYPE:-}" ]; then
+        seed_validate_choice INSTALL_TYPE "default|full"
+        echo "$INSTALL_TYPE" > "$PROJECT_ROOT/.miniprem_install_type" || \
+            warning "Failed to write installation type marker, but continuing..."
+        mark_installation_marker_created
+        info "Using installation type: $INSTALL_TYPE"
+        return 0
+    fi
+
+    if seed_is_non_interactive; then
+        seed_record_missing "MINIPREM_SEED_INSTALL_TYPE" "default|full"
+        return 0
+    fi
+
     INSTALL_TYPE=""
     echo "Select installation type:"
     echo "1) Default Install (Renny with internal speech processing only)"
@@ -38,6 +53,19 @@ prompt_for_install_type() {
 # (auto-start at boot regardless of which user logs in). Sets INSTALL_AS_SERVICE
 # to "yes" or "no". Defaults to "no" on empty/invalid input.
 prompt_for_autostart() {
+    # Honor a pre-set value (from --seed or CLI). Default to "no" in
+    # non-interactive mode if unspecified — autostart is opt-in.
+    if [ -n "${INSTALL_AS_SERVICE:-}" ]; then
+        seed_validate_choice INSTALL_AS_SERVICE "yes|no"
+        info "Using install-as-service: $INSTALL_AS_SERVICE"
+        return 0
+    fi
+    if seed_is_non_interactive; then
+        INSTALL_AS_SERVICE="no"
+        info "Install-as-service defaulted to 'no' (set MINIPREM_SEED_INSTALL_AS_SERVICE=yes to enable)"
+        return 0
+    fi
+
     INSTALL_AS_SERVICE="no"
     echo ""
     echo "Install MiniPrem as a systemd service?"
@@ -57,9 +85,11 @@ prompt_for_autostart() {
 
 # Function to prompt for deployment target
 prompt_deployment_target() {
-    # Check if deployment target already set (e.g., via CLI argument)
+    # Check if deployment target already set (e.g., via CLI argument or seed)
     if [ -n "${DEPLOYMENT_TARGET:-}" ]; then
-        info "$CHECKMARK Using deployment target from command line: $DEPLOYMENT_TARGET"
+        seed_validate_choice DEPLOYMENT_TARGET "hardware|cloud"
+        info "$CHECKMARK Using deployment target: $DEPLOYMENT_TARGET"
+        echo "$DEPLOYMENT_TARGET" > "$PROJECT_ROOT/.miniprem_deployment_target" 2>/dev/null || true
         return 0
     fi
 
@@ -70,6 +100,11 @@ prompt_deployment_target() {
             info "$CHECKMARK Using previously configured deployment target: $DEPLOYMENT_TARGET"
             return 0
         fi
+    fi
+
+    if seed_is_non_interactive; then
+        seed_record_missing "MINIPREM_SEED_DEPLOYMENT_TARGET" "hardware|cloud"
+        return 0
     fi
 
     log_section "Deployment Target Selection"
@@ -191,13 +226,29 @@ prompt_for_telemetry_consent() {
 └─────────────────────────────────────────────────────────────────┘
 EOF
 
-    # Prompt for consent
+    # Prompt for consent (or honor a pre-set TELEMETRY_CONSENT from --seed/CLI)
     echo ""
-    read -p "Do you consent to anonymous telemetry? [Y/n] " telemetry_consent
-
-    # Default to yes if user just presses enter
-    if [[ -z "$telemetry_consent" ]]; then
-        telemetry_consent="y"
+    local telemetry_consent
+    if [ -n "${TELEMETRY_CONSENT:-}" ]; then
+        seed_validate_choice TELEMETRY_CONSENT "yes|no"
+        # Normalize to single-char form expected by the downstream regex below.
+        if [ "$TELEMETRY_CONSENT" = "yes" ]; then
+            telemetry_consent="y"
+        else
+            telemetry_consent="n"
+        fi
+        info "Using telemetry consent from seed/CLI: $TELEMETRY_CONSENT"
+    elif seed_is_non_interactive; then
+        # No silent opt-in for telemetry under unattended installs.
+        seed_record_missing "MINIPREM_SEED_TELEMETRY_CONSENT" "yes|no"
+        echo ""
+        return 0
+    else
+        read -p "Do you consent to anonymous telemetry? [Y/n] " telemetry_consent
+        # Default to yes if user just presses enter
+        if [[ -z "$telemetry_consent" ]]; then
+            telemetry_consent="y"
+        fi
     fi
 
     # Handle response
