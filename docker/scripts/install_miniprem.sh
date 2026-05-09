@@ -513,58 +513,55 @@ retry_network_operation() {
 check_wss_service() {
     local url=$1
 
-    # Extract the protocol, address, port, and path from the URL
-    local components
-    mapfile -t components < <(extract_url_components "$url")
-    local protocol="${components[0]}"
-    local address="${components[1]}"
-    local port="${components[2]}"
-    local path="${components[3]}"
-
-    # Default port if not specified
-    if [[ -z $port ]]; then
-        if [[ $protocol == "wss://" ]]; then
-            port=443
-        else
-            port=80
-        fi
-    fi
+    # Map ws/wss to http/https for curl. curl handles WebSocket upgrade via
+    # standard https with the Upgrade headers below — it doesn't need the
+    # ws scheme.
+    local probe_url="${url/wss:/https:}"
+    probe_url="${probe_url/ws:/http:}"
 
     info "Testing WebSocket connection to $url..."
-    info "  Protocol: $protocol, Host: $address, Port: $port, Path: $path"
 
-    # Generate a valid Sec-WebSocket-Key
-    local valid_key=$(openssl rand -base64 16)
+    local valid_key
+    valid_key=$(openssl rand -base64 16)
 
-    # Temporarily disable exit-on-error for socat command
+    # curl flags:
+    #   -i        : include response headers in stdout so we can grep the status line
+    #   --http1.1 : WebSocket upgrade is HTTP/1.1; istio-envoy negotiates HTTP/2
+    #               by default which doesn't return a 101 to a 1.1-style upgrade
+    #   --connect-timeout 5 : fail fast on a genuinely unreachable host
+    #   --max-time 8        : enough to read the upgrade response (typically <1s);
+    #                         if curl hangs past this it's because the server held
+    #                         the connection after 101, which is itself proof of
+    #                         reachability and we'll have already captured the
+    #                         status line
     set +e
     local response
-    # Use socat to test the WebSocket connection
-    if [[ $protocol == "wss://" ]]; then
-        response=$(echo -e "GET $path HTTP/1.1\r\nHost: $address\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $valid_key\r\nSec-WebSocket-Version: 13\r\n\r\n" | socat -t 5 - SSL:$address:$port,verify=0 2>&1)
-        local socat_exit=$?
-    else
-        response=$(echo -e "GET $path HTTP/1.1\r\nHost: $address\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $valid_key\r\nSec-WebSocket-Version: 13\r\n\r\n" | socat -t 5 - TCP:$address:$port 2>&1)
-        local socat_exit=$?
-    fi
-    set -e  # Re-enable exit-on-error
+    response=$(curl -sS -i --http1.1 \
+        --connect-timeout 5 \
+        --max-time 8 \
+        -H "Connection: Upgrade" \
+        -H "Upgrade: websocket" \
+        -H "Sec-WebSocket-Key: $valid_key" \
+        -H "Sec-WebSocket-Version: 13" \
+        "$probe_url" 2>&1)
+    local curl_exit=$?
+    set -e
 
-    # Debug output
-    info "  Socat exit code: $socat_exit"
-    if [ $socat_exit -ne 0 ]; then
-        warning "Socat command failed with exit code $socat_exit"
-        info "First 5 lines of response:"
-        echo "$response" | head -5
-    fi
+    # Pull the first HTTP status line out of curl's combined output. Any
+    # status line — 101, 2xx, 3xx, 4xx, 5xx — is proof that DNS, TLS, and
+    # HTTP routing all reached a live service. Auth-gated upgrades that
+    # return 401/403/426 are not a "platform unreachable" problem; that
+    # surfaces later as a credential error in a more meaningful place.
+    local status_line
+    status_line=$(echo "$response" | grep -m1 -E '^HTTP/1\.[01] [0-9]{3}' || true)
 
-    # Check if the response contains "101 Switching Protocols"
-    if [[ $response == *"101 Switching Protocols"* || $response == *"200 OK"* ]]; then
+    if [ -n "$status_line" ]; then
+        info "  Response: $status_line"
         success "$CHECKMARK Service at $url is reachable."
     else
-        error "$CROSS Service at $url is not reachable."
-        info "Expected '101 Switching Protocols' or '200 OK' in response"
-        info "Actual response (first 10 lines):"
-        echo "$response" | head -10
+        error "$CROSS Service at $url is not reachable (curl exit $curl_exit, no HTTP status line)."
+        info "First 5 lines of curl output:"
+        echo "$response" | head -5
         fatal "WebSocket connection test failed for $url"
     fi
 }
