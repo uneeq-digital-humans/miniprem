@@ -18,6 +18,8 @@
 - [Quick Start](#quick-start)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
+  - [Optional: Auto-Start at Boot](#optional-auto-start-at-boot)
+  - [Unattended Installation (Seed Files)](#unattended-installation-seed-files)
 - [Accessing Services](#accessing-services)
 - [Managing MiniPrem](#managing-miniprem)
 - [Scaling with Multiple Renny Instances](#scaling-with-multiple-renny-instances)
@@ -171,6 +173,100 @@ This architecture is optimized for kiosk deployments where the user's browser an
    - Download the Gemma3 LLM model (this may take 5-15 minutes)
    - Set up the initial Flowise chatflow
 
+### Optional: Auto-Start at Boot
+
+Right after the install-type prompt, the installer asks whether to install MiniPrem as a **systemd service**:
+
+```
+Install MiniPrem as a systemd service?
+  - Auto-starts at boot, even before any user logs in
+  - Requires root (this installer is already running with sudo)
+  - Disable later with: sudo systemctl disable miniprem.service
+Install as service? [y/N]
+```
+
+Answer **y** when:
+
+- You're deploying to a workstation or kiosk that should come up running MiniPrem after every reboot.
+- The machine is shared by multiple non-admin users — the systemd service runs as root and is independent of who is logged in (or whether anyone is).
+
+Answer **N** (the default) when you want manual control over starts/stops via `./miniprem.sh start`.
+
+When enabled, the installer:
+
+1. Writes `/etc/systemd/system/miniprem.service` configured to run `miniprem.sh start` after `docker.service`.
+2. Runs `systemctl enable docker.service miniprem.service` so both come up automatically at boot.
+3. Leaves the running services alone — the install step already started them.
+
+Verify and manage the service:
+
+```bash
+systemctl status miniprem.service        # current state
+systemctl is-enabled miniprem.service    # confirms boot-time enablement
+sudo systemctl restart miniprem.service  # restart via systemd
+sudo systemctl disable miniprem.service  # opt out without uninstalling
+```
+
+The service runs as root, so it inherits Harbor credentials cached during install (`/root/.docker/config.json` plus `docker/docker-compose.env`). If Harbor robot tokens later expire, the unit will fail at boot — refresh credentials by running `./miniprem.sh start` once interactively, then `sudo systemctl restart miniprem.service`.
+
+### Unattended Installation (Seed Files)
+
+For unattended deployments — typically when third parties install MiniPrem on customer hardware — provide a **seed file** that pre-fills every interactive prompt:
+
+```bash
+sudo ./docker/scripts/install_miniprem.sh --seed /path/to/customer.seed
+```
+
+This is the supported path for hands-off installs. The seed file is plain shell (`KEY=value` lines), every key is prefixed `MINIPREM_SEED_`, and unknown keys are warned about at load time as a typo guard.
+
+#### Authoring a seed file
+
+Start from the documented template at the repo root:
+
+```bash
+cp seed.example.env customer.seed
+chmod 600 customer.seed
+$EDITOR customer.seed
+```
+
+[seed.example.env](seed.example.env) lists every key, grouped by section (install shape, platform credentials, Harbor registry, TTS provider, optional STT, etc.) with comments calling out which keys are required versus optional and which only apply when a particular TTS provider is selected.
+
+#### Flags
+
+| Flag | Effect |
+|------|--------|
+| `--seed <file>` | Load seed values from `<file>`. Implies `--non-interactive`. |
+| `--non-interactive` | Disable all interactive prompts; missing required values abort the install with the full list of what's missing. |
+| `--interactive` | Force interactive mode even when `--seed` is given (seed values pre-fill, prompts cover any gaps). Useful while authoring seed files. |
+| `--force` | Auto-confirm "continue?" gates (port conflicts, duplicate-install detection, merge conflicts). Equivalent to `MINIPREM_SEED_FORCE=yes` in the seed file. |
+
+The `MINIPREM_SEED_FILE` environment variable is honored as an alternative to `--seed FILE` — useful when invoking via tooling that strips arguments.
+
+#### Precedence
+
+Where the same value can be supplied multiple ways, the highest wins:
+
+1. CLI flags on `install_miniprem.sh` (e.g. `--platform-key=XXX`)
+2. Values in the seed file
+3. Interactive prompts (skipped under `--non-interactive`)
+
+#### Validation
+
+Before any destructive work begins (image pulls, container starts), the installer aggregates every missing required key into a single error report and aborts. You won't fail halfway through a 20GB image pull because of a missing tenant ID.
+
+#### Security
+
+- **Seed files contain credentials.** `chmod 600` them, hand them to operators over a secure channel, and have them wipe the file after install.
+- The repo's [.gitignore](.gitignore) ignores `*.seed`, `*.seed.env`, and `seed.env` so per-customer seed files don't accidentally land in version control. Only `seed.example.env` (the unfilled template) is tracked.
+
+#### Mixed mode
+
+Pass both `--seed` and `--interactive` together to apply seeded values *and* still get prompts for anything missing. This is the right mode while iterating on a new seed file:
+
+```bash
+sudo ./docker/scripts/install_miniprem.sh --seed customer.seed --interactive
+```
+
 ## Accessing Services
 
 Once installation is complete, you can access the following services:
@@ -309,6 +405,8 @@ Use the included `miniprem.sh` script to manage the platform:
 ```
 
 The services started will depend on your installation type (Default or Full) as specified during installation. The installation type is saved in the `.miniprem_install_type` file. To switch between installation types, simply run the installer again and select a different option.
+
+If you opted in to [Auto-Start at Boot](#optional-auto-start-at-boot) during install, MiniPrem also runs as a systemd service. The two control paths coexist — `./miniprem.sh start|stop|restart` works as before, and `sudo systemctl restart miniprem.service` is the equivalent path through systemd. The systemd unit calls `miniprem.sh` under the hood, so configuration and behavior stay identical regardless of which you use.
 
 ### Default Install Services
 * MiniPrem Monitor (Container/Kubernetes Monitoring)
