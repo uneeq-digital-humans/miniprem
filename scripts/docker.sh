@@ -204,18 +204,8 @@ pull_docker_images() {
         fi
     fi
 
-    # Docker login for Harbor registry
-    info "Logging in to Harbor registry (cr.uneeq.io) for Renny images..."
-    info "If you don't have Harbor credentials:"
-    info "  - Contact: help@uneeq.com"
-    info "  - Or ask your UneeQ representative"
-    echo
-
-    read -p "Enter Harbor robot username (e.g., robot\$customer-name): " HARBOR_USERNAME
-    read -s -p "Enter Harbor robot password: " HARBOR_PASSWORD
-    echo
-
-    # Test network connectivity to Harbor
+    # Pre-flight: clearer error if Harbor itself is unreachable than letting
+    # docker login fail with a generic network error.
     info "Testing connectivity to cr.uneeq.io..."
     if ! curl --max-time 10 --silent --fail --output /dev/null "https://cr.uneeq.io" 2>/dev/null; then
         warning "Cannot reach cr.uneeq.io"
@@ -227,10 +217,13 @@ pull_docker_images() {
     fi
     success "$CHECKMARK Network connectivity to Harbor verified"
 
-    # Log in to Harbor registry using stdin to provide credentials
-    # Note: eval is needed for DOCKER_CMD expansion, single quotes prevent $HARBOR_USERNAME expansion
-    echo "$HARBOR_PASSWORD" | eval "$DOCKER_CMD" login https://cr.uneeq.io -u \'"$HARBOR_USERNAME"\' --password-stdin
-    if [ $? -ne 0 ]; then
+    # Authenticate to Harbor. ensure_harbor_credentials (defined in
+    # environment.sh) is the single source of truth: it reads existing creds
+    # from docker-compose.env (populated by seed_apply_harbor_creds for
+    # seeded installs) and only falls back to a prompt when those are
+    # missing. In non-interactive mode the prompt fails fast with a missing-
+    # key report instead of hanging on stdin.
+    if ! ensure_harbor_credentials; then
         echo ""
         error "ERROR: Harbor Registry Authentication Failed"
         echo ""
@@ -243,12 +236,6 @@ pull_docker_images() {
         echo ""
         fatal "Please contact UneeQ Support for further assistance."
     fi
-    success "$CHECKMARK Successfully logged in to Harbor registry."
-
-    # Save credentials for future use (e.g., after reboot)
-    update_env_variable "HARBOR_USERNAME" "$HARBOR_USERNAME"
-    update_env_variable "HARBOR_PASSWORD" "$HARBOR_PASSWORD"
-    success "$CHECKMARK Harbor credentials saved for future sessions"
 
     # Pull images for the selected install type
     info "Pulling Docker images for selected install type..."

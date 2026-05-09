@@ -119,8 +119,18 @@ check_harbor_credentials() {
     return 0
 }
 
-# Prompt for and save Harbor credentials
+# Prompt for and save Harbor credentials. Returns 0 on success, 1 if the
+# caller is non-interactive and creds aren't available — in that case the
+# missing keys are recorded for seed_check_required to surface alongside
+# any other missing values.
 prompt_harbor_credentials() {
+    if seed_is_non_interactive; then
+        warning "Harbor credentials are not available in docker-compose.env."
+        seed_record_missing "MINIPREM_SEED_HARBOR_USERNAME" "Harbor robot username"
+        seed_record_missing "MINIPREM_SEED_HARBOR_PASSWORD" "Harbor robot password"
+        return 1
+    fi
+
     info "Harbor registry credentials required for cr.uneeq.io"
     info "If you don't have Harbor credentials:"
     info "  - Contact: help@uneeq.com"
@@ -160,8 +170,12 @@ ensure_harbor_credentials() {
         warning "Saved Harbor credentials failed - may be expired or invalid"
     fi
 
-    # Credentials missing or invalid - prompt user
-    prompt_harbor_credentials
+    # Credentials missing or invalid. prompt_harbor_credentials returns
+    # non-zero in non-interactive mode (after recording the missing keys),
+    # in which case there's no point trying to log in with empty creds.
+    if ! prompt_harbor_credentials; then
+        return 1
+    fi
     if login_harbor_registry; then
         success "$CHECKMARK Harbor login successful"
         return 0
