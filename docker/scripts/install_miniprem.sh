@@ -513,35 +513,51 @@ retry_network_operation() {
 check_wss_service() {
     local url=$1
 
-    # Convert wss:// to https:// for curl (curl handles the WebSocket upgrade over HTTPS)
-    local curl_url="${url/wss:\/\//https://}"
-    curl_url="${curl_url/ws:\/\//http://}"
+    # Map ws/wss to http/https for curl. curl handles WebSocket upgrade via
+    # standard https with the Upgrade headers below — it doesn't need the
+    # ws scheme.
+    local probe_url="${url/wss:/https:}"
+    probe_url="${probe_url/ws:/http:}"
 
     info "Testing WebSocket connection to $url..."
 
     local valid_key
     valid_key=$(openssl rand -base64 16)
 
+    # curl flags:
+    #   -i        : include response headers in stdout so we can grep the status line
+    #   --http1.1 : WebSocket upgrade is HTTP/1.1; istio-envoy negotiates HTTP/2
+    #               by default which doesn't return a 101 to a 1.1-style upgrade
+    #   --connect-timeout 5 : fail fast on a genuinely unreachable host
+    #   --max-time 20       : enough to read the upgrade response; if curl hangs
+    #                         past this it's because the server held the connection
+    #                         after 101, which is itself proof of reachability
     set +e
-    local http_code
-    # --max-time 20 so firewall timeouts don't stall the install indefinitely.
-    http_code=$(curl -sk -o /dev/null -w "%{http_code}" \
+    local response
+    response=$(curl -sS -i --http1.1 \
+        --connect-timeout 5 \
         --max-time 20 \
         -H "Connection: Upgrade" \
         -H "Upgrade: websocket" \
-        -H "Sec-WebSocket-Version: 13" \
         -H "Sec-WebSocket-Key: $valid_key" \
-        "$curl_url" 2>/dev/null)
+        -H "Sec-WebSocket-Version: 13" \
+        "$probe_url" 2>&1)
     local curl_exit=$?
     set -e
 
-    info "  HTTP response code: $http_code"
+    # Pull the first HTTP status line out of curl's combined output. Any
+    # status line — 101, 2xx, 3xx, 4xx, 5xx — is proof that DNS, TLS, and
+    # HTTP routing all reached a live service. Auth-gated upgrades that
+    # return 401/403/426 are not a "platform unreachable" problem; that
+    # surfaces later as a credential error in a more meaningful place.
+    local status_line
+    status_line=$(echo "$response" | grep -m1 -E '^HTTP/1\.[01] [0-9]{3}' || true)
 
-    # 101 = WebSocket upgrade, 200 = OK, 401/403 = reachable but requires auth
-    if [[ "$http_code" == "101" || "$http_code" == "200" || "$http_code" == "401" || "$http_code" == "403" ]]; then
-        success "$CHECKMARK Service at $url is reachable (HTTP $http_code)."
+    if [ -n "$status_line" ]; then
+        info "  Response: $status_line"
+        success "$CHECKMARK Service at $url is reachable."
     else
-        warning "$CROSS Could not verify $url (HTTP ${http_code:-timeout/error})."
+        warning "$CROSS Could not verify $url (curl exit $curl_exit, no HTTP status line)."
         warning "Installation will continue — verify network allows port 443 outbound before starting Renny."
     fi
 }
