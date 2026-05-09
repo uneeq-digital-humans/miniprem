@@ -309,10 +309,10 @@ update_docker_compose_image() {
 read_docker_compose_value() {
     local key=$1
     local install_type=$(cat "$PROJECT_ROOT/.miniprem_install_type" 2>/dev/null || echo "default")
-    local compose_file="docker/docker-compose.yml"
+    local compose_file="$PROJECT_ROOT/docker/docker-compose.yml"
 
     if [ "$install_type" = "full" ]; then
-        compose_file="docker/docker-compose.full.yml"
+        compose_file="$PROJECT_ROOT/docker/docker-compose.full.yml"
     fi
 
     if [[ -f "$compose_file" ]]; then
@@ -320,7 +320,7 @@ read_docker_compose_value() {
     else
         warning "Docker compose file $compose_file not found. Trying fallback options."
         # Try miniprem services file as fallback
-        compose_file="docker/docker-compose.miniprem.services.yml"
+        compose_file="$PROJECT_ROOT/docker/docker-compose.miniprem.services.yml"
         if [[ -f "$compose_file" ]]; then
             yq eval ".services.renny.$key" "$compose_file"
         else
