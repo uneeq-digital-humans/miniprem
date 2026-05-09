@@ -2530,19 +2530,24 @@ main() {
 
     eval set -- "$OPTIONS"
 
-    # Initialize variables with existing values from .env file
-    PLATFORM_ADDRESS=$(read_env_variable "DHOP_ADDRESS")
-    PLATFORM_KEY=$(read_env_variable "DHOP_APIKEY")
-    TENANT_ID=$(read_env_variable "DHOP_TENANTID")
-    AZURE_REGION=$(read_env_variable "AZURE_REGION")
+    # Initialize variables: prefer pre-set values (from --seed or CLI),
+    # fall back to existing env-file values. ':=' only assigns when the
+    # variable is unset or empty, so seeded/CLI values are preserved.
+    : "${PLATFORM_ADDRESS:=$(read_env_variable "DHOP_ADDRESS")}"
+    : "${PLATFORM_KEY:=$(read_env_variable "DHOP_APIKEY")}"
+    : "${TENANT_ID:=$(read_env_variable "DHOP_TENANTID")}"
+    : "${AZURE_REGION:=$(read_env_variable "AZURE_REGION")}"
 
-    # Try both AZURE_SPEECH and AZURE_SPEECH_KEY to handle both possibilities
-    AZURE_SPEECH_KEY=$(read_env_variable "AZURE_SPEECH")
-    if [ -z "$AZURE_SPEECH_KEY" ]; then
-        AZURE_SPEECH_KEY=$(read_env_variable "AZURE_SPEECH_KEY")
+    # AZURE_SPEECH_KEY: prefer seeded value, then env file (try both legacy
+    # names AZURE_SPEECH and AZURE_SPEECH_KEY).
+    if [ -z "${AZURE_SPEECH_KEY:-}" ]; then
+        AZURE_SPEECH_KEY=$(read_env_variable "AZURE_SPEECH")
+        if [ -z "$AZURE_SPEECH_KEY" ]; then
+            AZURE_SPEECH_KEY=$(read_env_variable "AZURE_SPEECH_KEY")
+        fi
     fi
 
-    RENNY_IMAGE=$(read_docker_compose_value "image")
+    : "${RENNY_IMAGE:=$(read_docker_compose_value "image")}"
 
     # Debug output - strip quotes from values
     PLATFORM_ADDRESS=$(echo "$PLATFORM_ADDRESS" | sed 's/^"//;s/"$//')
