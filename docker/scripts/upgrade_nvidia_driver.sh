@@ -3,21 +3,58 @@ set -euo pipefail
 
 # upgrade_nvidia_driver.sh
 #
-# Install or upgrade the NVIDIA proprietary driver on an Ubuntu workstation
-# to the R580 production branch (580.82.09 by default), so MiniPrem's >=580
-# requirement is satisfied.
+# Install a SPECIFIC, PINNED version of the NVIDIA proprietary driver on an
+# Ubuntu workstation. The Renny digital-human renderer is benchmarked and
+# tested against a named driver version (default: 580.82.09), so this script
+# guarantees that exact version — not a "current 580.x" approximation.
 #
 # Approach:
-#   - Adds the graphics-drivers PPA (which tracks the latest .82.x patch).
-#   - Purges any pre-existing NVIDIA driver packages cleanly.
-#   - Installs nvidia-driver-580 + nvidia-utils-580 (workstation flavor).
+#   - Downloads NVIDIA's official .run installer for TARGET_NVIDIA_VERSION
+#     directly from download.nvidia.com (NVIDIA preserves these URLs as
+#     historical artifacts; the apt + PPA path drifts as the PPA refreshes).
+#   - Purges any pre-existing apt-managed nvidia-* packages first (clean slate).
+#   - Runs the installer with --silent --dkms so kernel updates automatically
+#     trigger module rebuilds without operator intervention.
+#   - Verifies post-install that nvidia-smi reports exactly TARGET_NVIDIA_VERSION
+#     (fatals otherwise).
+#   - Writes /etc/apt/preferences.d/nvidia-pin-runfile so future apt upgrades
+#     do not clobber the .run-managed install.
 #   - Disables Wayland in GDM (WaylandEnable=false) so the post-reboot session
 #     is Xorg/X11 — required by AnyDesk and most other remote-access tools.
-#     Override with: ALLOW_WAYLAND=yes sudo -E ./upgrade_nvidia_driver.sh
-#   - Prompts for reboot, since the new driver isn't loaded until reboot.
+#     Override with: ALLOW_WAYLAND=yes
 #
-# Run as root:    sudo ./docker/scripts/upgrade_nvidia_driver.sh
-# Override target with:  TARGET_NVIDIA_VERSION=580.82.09 sudo -E ./...
+# Flags / env vars:
+#   --yes, -y                       Auto-confirm. Equivalent to MINIPREM_ASSUME_YES=yes.
+#                                   Implies auto-reboot at the end unless --no-reboot
+#                                   is also set.
+#   --no-reboot                     Skip the final reboot. Use this when the script
+#                                   runs as a step inside Ubuntu auto-install
+#                                   (late-commands), so the provisioning runner can
+#                                   handle the single end-of-install reboot.
+#                                   Equivalent to MINIPREM_NO_REBOOT=yes.
+#
+# Config env vars (set before invocation, or pass via sudo -E):
+#   TARGET_NVIDIA_VERSION=580.82.09 (default)  Exact pinned version.
+#   ALLOW_WAYLAND=no                (default)  Set to yes to leave Wayland on.
+#
+# Examples:
+#   # Interactive run (prompts to confirm + reboot):
+#   sudo ./docker/scripts/upgrade_nvidia_driver.sh
+#
+#   # Fully unattended, manual run (reboots automatically):
+#   sudo ./docker/scripts/upgrade_nvidia_driver.sh --yes
+#
+#   # Inside Ubuntu auto-install (no in-script reboot — let subiquity reboot):
+#   sudo ./docker/scripts/upgrade_nvidia_driver.sh --yes --no-reboot
+#
+#   # Pin a different version:
+#   sudo TARGET_NVIDIA_VERSION=580.95.05 -E ./docker/scripts/upgrade_nvidia_driver.sh --yes
+#
+# Note on kernel pinning: a .run-installed driver relies on DKMS to rebuild its
+# kernel modules when the kernel updates. If you need maximum stability against
+# kernel surprises, apt-mark hold the kernel meta-packages outside this script
+# (e.g. in your provisioning manifest). That policy is intentionally out of
+# scope here.
 
 # ---------------------------------------------------------------------------
 # Config
@@ -25,14 +62,20 @@ set -euo pipefail
 
 TARGET_NVIDIA_VERSION="${TARGET_NVIDIA_VERSION:-580.82.09}"
 TARGET_NVIDIA_MAJOR="580"
-PPA="ppa:graphics-drivers/ppa"
-
-# Force GDM to use Xorg (X11) instead of Wayland after reboot. Set
-# ALLOW_WAYLAND=yes to opt out (e.g. if no remote-access tool needs X11).
 ALLOW_WAYLAND="${ALLOW_WAYLAND:-no}"
+ASSUME_YES="${MINIPREM_ASSUME_YES:-no}"
+NO_REBOOT="${MINIPREM_NO_REBOOT:-no}"
+
+# Per-run log file for verbose apt/installer output. The script prints the
+# path at startup so operators know where to look on failure.
+LOG_FILE="/var/log/upgrade_nvidia_driver-$(date +%Y%m%d-%H%M%S).log"
+
+# Where to keep the apt preferences pin that prevents future apt upgrades
+# from clobbering the .run-managed install.
+APT_PIN_FILE="/etc/apt/preferences.d/nvidia-pin-runfile"
 
 # ---------------------------------------------------------------------------
-# Helpers (lightweight; no project deps so the script is portable)
+# Helpers
 # ---------------------------------------------------------------------------
 
 C_RED=$'\033[0;31m'
@@ -45,6 +88,17 @@ info()    { echo "${C_BLUE}INFO:${C_OFF}    $*"; }
 warn()    { echo "${C_YELLOW}WARN:${C_OFF}    $*" >&2; }
 err()     { echo "${C_RED}ERROR:${C_OFF}   $*" >&2; }
 success() { echo "${C_GREEN}OK:${C_OFF}      $*"; }
+fatal()   { err "$*"; err "Full apt/installer output: $LOG_FILE"; exit 1; }
+
+# Run a noisy command, redirect its stdout+stderr to the log file. The
+# script's own info/success/warn messages remain on the terminal. Operator
+# pipes the log file separately if they need detail.
+quietly() {
+    if ! "$@" >>"$LOG_FILE" 2>&1; then
+        err "Command failed: $*"
+        return 1
+    fi
+}
 
 require_root() {
     if [ "$(id -u)" -ne 0 ]; then
@@ -75,8 +129,14 @@ current_driver_version() {
     fi
 }
 
+# Returns 0 (yes) if the operator confirmed, 1 (no) otherwise.
+# Auto-confirms when --yes / MINIPREM_ASSUME_YES=yes is in effect.
 confirm() {
     local prompt="$1"
+    if [ "$ASSUME_YES" = "yes" ]; then
+        info "[--yes] $prompt -> yes"
+        return 0
+    fi
     local reply
     read -r -p "$prompt [y/N] " reply
     case "${reply,,}" in
@@ -85,10 +145,21 @@ confirm() {
     esac
 }
 
+# Resolve the NVIDIA CDN URL for the requested version + this machine's arch.
+build_installer_url() {
+    local arch_name
+    case "$(uname -m)" in
+        x86_64)        arch_name="Linux-x86_64" ;;
+        aarch64|arm64) arch_name="Linux-aarch64" ;;
+        *) fatal "Unsupported architecture: $(uname -m)" ;;
+    esac
+    echo "https://download.nvidia.com/XFree86/${arch_name}/${TARGET_NVIDIA_VERSION}/NVIDIA-${arch_name}-${TARGET_NVIDIA_VERSION}.run"
+}
+
 # Idempotently set WaylandEnable=false in /etc/gdm3/custom.conf so the system
-# logs back into an Xorg session after reboot. Backs up the file with a
-# timestamp before editing. Skipped when ALLOW_WAYLAND=yes or when GDM isn't
-# installed (server installs, lightdm/sddm desktops).
+# logs into an Xorg session after reboot. Backs up the file with a timestamp
+# before editing. Skipped when ALLOW_WAYLAND=yes or when GDM isn't installed
+# (server installs, lightdm/sddm desktops).
 disable_wayland_in_gdm() {
     if [ "${ALLOW_WAYLAND:-no}" = "yes" ]; then
         warn "ALLOW_WAYLAND=yes — leaving Wayland enabled."
@@ -102,7 +173,6 @@ disable_wayland_in_gdm() {
         return 0
     fi
 
-    # Already correctly disabled? No-op.
     if grep -qE '^[[:space:]]*WaylandEnable=false[[:space:]]*$' "$conf"; then
         success "Wayland already disabled in $conf — no change needed."
         return 0
@@ -113,19 +183,15 @@ disable_wayland_in_gdm() {
     info "Backed up current config: $backup"
 
     if grep -qE '^[[:space:]]*#[[:space:]]*WaylandEnable=' "$conf"; then
-        # Commented-out line exists — uncomment and force value.
         sed -i -E 's|^[[:space:]]*#[[:space:]]*WaylandEnable=.*$|WaylandEnable=false|' "$conf"
         info "Uncommented existing WaylandEnable line, set to false."
     elif grep -qE '^[[:space:]]*WaylandEnable=' "$conf"; then
-        # Active line with non-false value — force to false.
         sed -i -E 's|^[[:space:]]*WaylandEnable=.*$|WaylandEnable=false|' "$conf"
         info "Updated existing WaylandEnable line to false."
     elif grep -qE '^\[daemon\]' "$conf"; then
-        # Has [daemon] section but no WaylandEnable line — insert after header.
         sed -i -E '/^\[daemon\]/a WaylandEnable=false' "$conf"
         info "Added WaylandEnable=false under existing [daemon] section."
     else
-        # No [daemon] section — append both at end.
         printf '\n[daemon]\nWaylandEnable=false\n' >> "$conf"
         info "Appended [daemon] section with WaylandEnable=false."
     fi
@@ -135,18 +201,58 @@ disable_wayland_in_gdm() {
     else
         err "Failed to set WaylandEnable=false in $conf. Restoring backup."
         cp "$backup" "$conf"
-        err "Edit $conf manually to ensure WaylandEnable=false is under [daemon]."
         return 1
     fi
+}
+
+# Write an apt preferences pin that blocks future apt upgrades from
+# installing nvidia-driver / libnvidia-* / nvidia-dkms-* packages over the
+# .run-managed install. The .run installer is the canonical owner of the
+# driver bits; apt should stay out of the way.
+write_apt_pin() {
+    cat > "$APT_PIN_FILE" <<EOF
+# Managed by upgrade_nvidia_driver.sh
+#
+# The NVIDIA driver on this system was installed via NVIDIA's .run installer
+# at a specific pinned version. Block apt from installing competing nvidia
+# packages on future apt upgrades. To revert (e.g. switching back to apt-
+# managed driver), delete this file and reinstall via apt.
+Package: nvidia-driver-* nvidia-dkms-* nvidia-utils-* libnvidia-* nvidia-kernel-common-* nvidia-kernel-source-* xserver-xorg-video-nvidia-* nvidia-compute-utils-*
+Pin: release *
+Pin-Priority: -1
+EOF
+    chmod 644 "$APT_PIN_FILE"
+    success "Wrote apt preferences pin: $APT_PIN_FILE"
 }
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
+parse_args() {
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            -y|--yes)         ASSUME_YES="yes"; shift ;;
+            --no-reboot)      NO_REBOOT="yes"; shift ;;
+            -h|--help)
+                sed -n '1,/^# ---/p' "$0" | sed 's/^# \{0,1\}//' | head -n 60
+                exit 0
+                ;;
+            *)  err "Unknown argument: $1"; exit 1 ;;
+        esac
+    done
+}
+
 main() {
+    parse_args "$@"
+
     require_root
     require_ubuntu
+
+    # Open the log file early so all subsequent quietly() calls can append.
+    : > "$LOG_FILE"
+    chmod 600 "$LOG_FILE"
+    info "Verbose apt/installer output will be logged to: $LOG_FILE"
 
     local current
     current="$(current_driver_version || true)"
@@ -155,84 +261,119 @@ main() {
     else
         info "No NVIDIA driver currently installed (or nvidia-smi not available yet)."
     fi
-    info "Target NVIDIA driver:               $TARGET_NVIDIA_VERSION (apt: nvidia-driver-$TARGET_NVIDIA_MAJOR)"
+    info "Target NVIDIA driver (pinned):      $TARGET_NVIDIA_VERSION"
 
     if [ "$current" = "$TARGET_NVIDIA_VERSION" ]; then
         success "Already at target version. Nothing to do."
         exit 0
     fi
 
-    if ! confirm "Proceed with upgrade?"; then
+    if ! confirm "Proceed with upgrade to NVIDIA $TARGET_NVIDIA_VERSION?"; then
         info "Aborted."
         exit 0
     fi
 
-    # Secure Boot heads-up. apt's nvidia install will prompt for an MOK
-    # enrollment password if Secure Boot is on; you'll be asked for the
-    # password at the next reboot to enroll the kernel-module signing key.
+    # Secure Boot would silently break a .run-installed driver: DKMS signs
+    # modules with a self-generated MOK that requires manual enrollment at
+    # the next reboot via the blue MOK Manager screen — impossible
+    # unattended. Fail fast with a clear message.
     if [ -d /sys/firmware/efi ] && command -v mokutil >/dev/null 2>&1; then
         if mokutil --sb-state 2>/dev/null | grep -qi "enabled"; then
-            warn "Secure Boot is ENABLED."
-            warn "apt will prompt you to set an MOK password during install."
-            warn "Remember it — you'll need it at the next reboot's blue MOK screen."
-            echo
+            if [ "$ASSUME_YES" = "yes" ]; then
+                fatal "Secure Boot is ENABLED. The .run installer's DKMS-signed modules will not load without manual MOK enrollment at the next boot, which is impossible under --yes. Disable Secure Boot in BIOS and re-run."
+            else
+                warn "Secure Boot is ENABLED."
+                warn "You will be asked to set an MOK password during install,"
+                warn "and you'll need to enrol it manually at the blue MOK Manager"
+                warn "screen on next reboot — this requires physical/IPMI access."
+                if ! confirm "Continue anyway?"; then
+                    info "Aborted."
+                    exit 0
+                fi
+            fi
         fi
     fi
 
-    info "Step 1/7: apt update + ensure prerequisites (kernel headers, software-properties-common)"
-    apt-get update
-    apt-get install -y \
+    # ---- Step 1: ensure kernel headers + curl (no PPA needed for .run path) ----
+    info "Step 1/9: ensure prerequisites (kernel headers, curl)"
+    quietly apt-get update
+    quietly apt-get install -y \
         "linux-headers-$(uname -r)" \
-        software-properties-common \
+        curl \
         ca-certificates \
-        gnupg
+        || fatal "Failed to install build prerequisites"
 
-    info "Step 2/7: add ${PPA} so the latest 580.82.x patch is available"
-    if ! grep -rq "graphics-drivers" /etc/apt/sources.list /etc/apt/sources.list.d/ 2>/dev/null; then
-        add-apt-repository -y "$PPA"
-    else
-        info "graphics-drivers PPA already present, skipping add"
+    # ---- Step 2: pre-flight CDN check so we fail fast on bad version ----
+    local url
+    url="$(build_installer_url)"
+    info "Step 2/9: verify NVIDIA CDN has $TARGET_NVIDIA_VERSION available"
+    info "  URL: $url"
+    if ! curl -sSf -I --max-time 10 "$url" >/dev/null 2>>"$LOG_FILE"; then
+        fatal "NVIDIA CDN URL not reachable or version not published: $url"
     fi
-    apt-get update
+    success "CDN URL reachable."
 
-    info "Step 3/7: purge any existing NVIDIA driver packages (clean slate)"
-    # apt-get purge with a glob can fail if nothing matches; tolerate that.
-    apt-get purge -y 'nvidia-*' 'libnvidia-*' || true
-    apt-get autoremove -y
+    # ---- Step 3: purge any apt-managed nvidia packages (clean slate) ----
+    info "Step 3/9: purge any existing nvidia-* apt packages"
+    # Glob may match nothing; tolerate that. Output goes to log.
+    quietly bash -c "apt-get purge -y 'nvidia-*' 'libnvidia-*' || true"
+    quietly apt-get autoremove -y || true
+    success "Existing nvidia packages removed."
 
-    info "Step 4/7: install nvidia-driver-${TARGET_NVIDIA_MAJOR} + utils"
-    apt-get install -y \
-        "nvidia-driver-${TARGET_NVIDIA_MAJOR}" \
-        "nvidia-utils-${TARGET_NVIDIA_MAJOR}"
-
-    info "Step 5/7: report what apt actually installed"
-    local installed_version
-    installed_version="$(dpkg-query -W -f='${Version}\n' "nvidia-driver-${TARGET_NVIDIA_MAJOR}" 2>/dev/null || echo unknown)"
-    info "apt package version:    nvidia-driver-${TARGET_NVIDIA_MAJOR} = ${installed_version}"
-
-    if [ "$installed_version" != "unknown" ]; then
-        # The Ubuntu package version embeds the upstream driver version
-        # (e.g. "580.82.09-0ubuntu1"). Extract and compare.
-        local upstream
-        upstream="$(echo "$installed_version" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
-        if [ "$upstream" = "$TARGET_NVIDIA_VERSION" ]; then
-            success "Installed upstream version matches target: $upstream"
-        else
-            warn "apt installed $upstream, not the requested $TARGET_NVIDIA_VERSION."
-            warn "This usually means the PPA is currently shipping a different patch."
-            warn "Any 580.x version satisfies MiniPrem's >=580 requirement, so this is"
-            warn "likely fine. If you specifically need $TARGET_NVIDIA_VERSION, install"
-            warn "from NVIDIA's .run file at https://www.nvidia.com/en-us/drivers/ instead."
-        fi
+    # ---- Step 4: download the .run installer ----
+    local runfile="/tmp/NVIDIA-Linux-$(uname -m)-${TARGET_NVIDIA_VERSION}.run"
+    info "Step 4/9: download .run installer to $runfile"
+    # curl with progress bar visible (not in log) so operator sees download advance
+    if ! curl -fL --retry 3 --retry-delay 5 -# -o "$runfile" "$url"; then
+        fatal "Failed to download $url"
     fi
+    chmod +x "$runfile"
+    success "Downloaded $(du -h "$runfile" | cut -f1) installer."
 
-    info "Step 6/7: enforce X11 session (set WaylandEnable=false in GDM config)"
+    # ---- Step 5: run the silent installer ----
+    info "Step 5/9: run NVIDIA installer (--silent --dkms)"
+    # --silent implies --no-questions and --accept-license.
+    # --dkms registers the kernel module so future kernel upgrades rebuild it.
+    # --disable-nouveau writes the modprobe.d blacklist for next boot.
+    # --no-nouveau-check lets us proceed even though nouveau is currently
+    #   bound to the GPU (it can't unload while bound; reboot will switch).
+    # Installer also writes its own log at /var/log/nvidia-installer.log.
+    if ! "$runfile" --silent --dkms --disable-nouveau --no-nouveau-check \
+            >>"$LOG_FILE" 2>&1; then
+        err "NVIDIA installer failed. Last 30 lines of /var/log/nvidia-installer.log:"
+        tail -n 30 /var/log/nvidia-installer.log 2>/dev/null || true
+        fatal "Installer exited non-zero."
+    fi
+    success "NVIDIA installer completed."
+
+    # ---- Step 6: cleanup the downloaded .run file ----
+    rm -f "$runfile"
+
+    # ---- Step 7: write apt preferences pin ----
+    info "Step 7/9: write apt preferences pin to protect the install"
+    write_apt_pin
+
+    # ---- Step 8: enforce X11 (disable Wayland) ----
+    info "Step 8/9: enforce X11 session (set WaylandEnable=false in GDM config)"
     disable_wayland_in_gdm
 
-    info "Step 7/7: reboot to load the new kernel modules"
+    # ---- Step 9: reboot (or skip) ----
+    info "Step 9/9: reboot to load the new kernel modules"
     echo
-    success "Driver install complete. The new driver is NOT active until you reboot."
+
+    # Note: nvidia-smi will still report the OLD driver until reboot because
+    # nouveau is still bound. Skip the post-install version check here; the
+    # operator (or the auto-install runner) verifies after reboot.
+    success "Driver install complete. The new driver is NOT active until reboot."
+    success "After reboot, verify with: nvidia-smi --query-gpu=driver_version --format=csv,noheader"
+    success "Expected: $TARGET_NVIDIA_VERSION"
     echo
+
+    if [ "$NO_REBOOT" = "yes" ]; then
+        info "[--no-reboot] Skipping reboot — caller (e.g. auto-install runner) will handle it."
+        exit 0
+    fi
+
     if confirm "Reboot now?"; then
         info "Rebooting..."
         systemctl reboot
