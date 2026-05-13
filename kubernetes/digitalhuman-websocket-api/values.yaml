@@ -1,0 +1,38 @@
+image: "cr.uneeq.io/uneeq/digitalhuman-websocket-api:latest"
+
+imagePullSecrets:
+  - name: harbor-credentials
+
+replicas: 1
+
+env:
+  HTTP_PORT: "3000"
+  WEBSOCKET_PORT: "3001"
+  CORS_ORIGIN: "*"
+  LOG_LEVEL: "info"
+
+# Secrets (set at deploy time)
+secrets:
+  httpServiceApiKey: ""
+  deepgramApiKey: ""     # optional – only needed if using Deepgram STT
+
+service:
+  type: ClusterIP
+  httpPort: 3000
+  wsPort: 3001
+
+ingress:
+  enabled: true
+  host: "digitalhuman-api.miniprem"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"

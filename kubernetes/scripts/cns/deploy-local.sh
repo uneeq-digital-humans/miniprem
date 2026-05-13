@@ -1674,6 +1674,95 @@ deploy_miniprem_stack() {
 }
 
 ################################################################################
+# Digital Human Stack Deployment (additive – does not touch renny)
+################################################################################
+
+deploy_digitalhuman_stack() {
+    info "Deploying Digital Human stack (interface, websocket-api, asr)..."
+
+    local KUBECTL="kubectl"
+    local HELM="helm"
+
+    if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
+        KUBECTL="microk8s kubectl"
+        HELM="microk8s helm3"
+    fi
+
+    local NS="${KUBE_NAMESPACE:-uneeq}"
+    local VALUES_DIR="$KUBERNETES_DIR/values"
+
+    # ── Enable ingress addon if not already active ──────────────────────────
+    if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
+        microk8s enable ingress 2>/dev/null || true
+    fi
+
+    # ── Idempotent /etc/hosts entries ────────────────────────────────────────
+    for host in digitalhuman digitalhuman-api digitalhuman-asr; do
+        grep -q "${host}.miniprem" /etc/hosts 2>/dev/null || \
+            echo "127.0.0.1 ${host}.miniprem" | sudo tee -a /etc/hosts > /dev/null
+    done
+    success "hostnames: digitalhuman.miniprem digitalhuman-api.miniprem digitalhuman-asr.miniprem"
+
+    # ── NGC registry credentials (needed to pull Nemotron NIM image) ─────────
+    if [[ -n "${NGC_API_KEY:-}" ]]; then
+        $KUBECTL create secret docker-registry ngc-registry-credentials \
+            --docker-server=nvcr.io \
+            --docker-username='$oauthtoken' \
+            --docker-password="${NGC_API_KEY}" \
+            -n "$NS" --dry-run=client -o yaml | $KUBECTL apply -f -
+
+        $KUBECTL create secret generic nim-credentials \
+            --from-literal=NGC_API_KEY="${NGC_API_KEY}" \
+            -n "$NS" --dry-run=client -o yaml | $KUBECTL apply -f -
+
+        success "NGC secrets provisioned in namespace ${NS}"
+    else
+        warning "NGC_API_KEY not set – skipping digitalhuman-asr deployment (NIM requires it)"
+    fi
+
+    # ── Install digitalhuman-interface ───────────────────────────────────────
+    if [[ -f "$KUBERNETES_DIR/digitalhuman-interface/Chart.yaml" ]]; then
+        $HELM upgrade --install digitalhuman-interface \
+            "$KUBERNETES_DIR/digitalhuman-interface" \
+            -f "$VALUES_DIR/digitalhuman-interface-values-cns.yaml" \
+            -n "$NS" \
+            --wait --timeout 5m || warning "digitalhuman-interface deployment skipped or failed"
+        success "digitalhuman-interface deployed"
+    fi
+
+    # ── Install digitalhuman-websocket-api ───────────────────────────────────
+    if [[ -f "$KUBERNETES_DIR/digitalhuman-websocket-api/Chart.yaml" ]]; then
+        local WS_ARGS=()
+        if [[ -n "${DH_WS_API_KEY:-}" ]]; then
+            WS_ARGS+=(--set "secrets.httpServiceApiKey=${DH_WS_API_KEY}")
+        fi
+        if [[ -n "${DEEPGRAM_API_KEY:-}" ]]; then
+            WS_ARGS+=(--set "secrets.deepgramApiKey=${DEEPGRAM_API_KEY}")
+        fi
+
+        $HELM upgrade --install digitalhuman-ws-api \
+            "$KUBERNETES_DIR/digitalhuman-websocket-api" \
+            -f "$VALUES_DIR/digitalhuman-websocket-api-values-cns.yaml" \
+            -n "$NS" \
+            "${WS_ARGS[@]}" \
+            --wait --timeout 5m || warning "digitalhuman-websocket-api deployment skipped or failed"
+        success "digitalhuman-websocket-api deployed"
+    fi
+
+    # ── Install digitalhuman-asr (requires NGC_API_KEY) ──────────────────────
+    if [[ -n "${NGC_API_KEY:-}" ]] && [[ -f "$KUBERNETES_DIR/digitalhuman-asr/Chart.yaml" ]]; then
+        $HELM upgrade --install digitalhuman-asr \
+            "$KUBERNETES_DIR/digitalhuman-asr" \
+            -f "$VALUES_DIR/digitalhuman-asr-values-cns.yaml" \
+            -n "$NS" \
+            --wait --timeout 15m || warning "digitalhuman-asr deployment skipped or failed"
+        success "digitalhuman-asr deployed (NIM model download may take 5-10 min)"
+    fi
+
+    success "Digital Human stack deployment initiated"
+}
+
+################################################################################
 # Telemetry Consent
 ################################################################################
 
@@ -1928,6 +2017,12 @@ main() {
     start_spinner "Deploying Renny via Helm..."
     deploy_miniprem_stack 2>&1 | tail -20
     stop_spinner 0 "Renny deployed"
+
+    # Deploy Digital Human stack (additive – no existing manifests modified)
+    CLEANUP_STAGE="Digital Human deployment"
+    start_spinner "Deploying Digital Human stack..."
+    deploy_digitalhuman_stack 2>&1 | tail -20
+    stop_spinner 0 "Digital Human stack deployed"
 
     # Disable cleanup trap for successful completion
     CLEANUP_ENABLED=false

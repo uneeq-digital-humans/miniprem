@@ -650,3 +650,87 @@ PURGE_ALL=true ./cns/destroy.sh
 | `kubernetes/values/renny-values-cns.yaml` | Helm values for CNS |
 | `kubernetes/ansible/playbooks/cns-install.yml` | Ansible playbook |
 | `docker/docker-compose.env` | Renny environment config |
+
+---
+
+## Digital Human Stack (Dell Deployment)
+
+Three additional pods installed **additively** alongside the existing renny/vLLM/Flowise stack.
+No existing manifests are modified.
+
+### Pods
+
+| Pod | Image | GPU? | VRAM | Port |
+|-----|-------|------|------|------|
+| `digitalhuman-interface` | `cr.uneeq.io/uneeq/digitalhuman-interface:latest` | No | 0 | 80 |
+| `digitalhuman-websocket-api` | `cr.uneeq.io/uneeq/digitalhuman-websocket-api:latest` | No | 0 | 3000 (HTTP), 3001 (WS) |
+| `digitalhuman-asr` | `nvcr.io/nim/nvidia/nemotron-asr-streaming:latest` + `cr.uneeq.io/uneeq/riva-ws-proxy:latest` | Yes | ~15 GiB | 8000 (WS proxy) |
+
+### VRAM Budget (RTX Pro 6000, 96 GiB)
+
+| Pod | VRAM |
+|-----|------|
+| renny ×4 (time-sliced) | ~48 GiB |
+| digitalhuman-asr (Nemotron NIM) | ~15 GiB |
+| vLLM/NIM (optional) | up to 30 GiB |
+| **Total worst-case** | ~93 GiB — fits within 96 GiB |
+
+### Browser Hostnames
+
+Added to `/etc/hosts` by the installer:
+
+```
+127.0.0.1 digitalhuman.miniprem
+127.0.0.1 digitalhuman-api.miniprem
+127.0.0.1 digitalhuman-asr.miniprem
+```
+
+### Required Secrets
+
+| Secret | How to provide |
+|--------|---------------|
+| `NGC_API_KEY` | Set env var `NGC_API_KEY` before running `deploy-local.sh` |
+| `DH_WS_API_KEY` | Optional – set env var; used as `HTTP_SERVICE_API_KEY` in the WS API pod |
+| Harbor credentials | Entered interactively (same as renny) |
+
+### Build Images
+
+```bash
+cd kubernetes/scripts
+./build-digitalhuman-images.sh          # builds and pushes :latest
+./build-digitalhuman-images.sh v1.2.3   # also tags :v1.2.3
+```
+
+Sources:
+- Interface → `../../dell-kiosk-application/interface/`
+- WS API → `../../../websocket-api/`
+- RIVA WS Proxy → `../digitalhuman-asr/ws-proxy-src/`
+
+### Verify After Deployment
+
+```bash
+kubectl get pods -n uneeq -l 'app in (digitalhuman-interface,digitalhuman-websocket-api,digitalhuman-asr)'
+kubectl get ingress -n uneeq
+curl -I http://digitalhuman.miniprem
+curl http://digitalhuman-api.miniprem/health
+# Browser: http://digitalhuman.miniprem → click avatar → speak → digital human responds
+```
+
+### Debug
+
+```bash
+# Interface
+kubectl logs -n uneeq -l app=digitalhuman-interface -f
+
+# WS API
+kubectl logs -n uneeq -l app=digitalhuman-websocket-api -f
+
+# Nemotron NIM (model download progress)
+kubectl logs -n uneeq -l app=digitalhuman-asr -c nemotron-asr -f
+
+# RIVA WS proxy
+kubectl logs -n uneeq -l app=digitalhuman-asr -c riva-ws-proxy -f
+
+# Port-forward proxy for local testing
+kubectl port-forward -n uneeq svc/digitalhuman-asr 8000:8000
+```

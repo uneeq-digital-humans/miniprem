@@ -1,0 +1,14 @@
+{
+  "name": "riva-ws-proxy",
+  "version": "1.0.0",
+  "description": "WebSocket-to-gRPC proxy for NVIDIA RIVA ASR streaming",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.10.0",
+    "@grpc/proto-loader": "^0.7.0",
+    "ws": "^8.16.0"
+  }
+}
