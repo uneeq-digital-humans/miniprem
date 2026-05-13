@@ -13,10 +13,12 @@ set -euo pipefail
 #     directly from download.nvidia.com (NVIDIA preserves these URLs as
 #     historical artifacts; the apt + PPA path drifts as the PPA refreshes).
 #   - Purges any pre-existing apt-managed nvidia-* packages first (clean slate).
+#   - Stops the display manager and unloads the running nvidia kernel modules
+#     before invoking the .run installer (the installer aborts in --silent mode
+#     when it detects loaded modules — purging the apt packages alone does NOT
+#     unload them from the running kernel).
 #   - Runs the installer with --silent --dkms so kernel updates automatically
 #     trigger module rebuilds without operator intervention.
-#   - Verifies post-install that nvidia-smi reports exactly TARGET_NVIDIA_VERSION
-#     (fatals otherwise).
 #   - Writes /etc/apt/preferences.d/nvidia-pin-runfile so future apt upgrades
 #     do not clobber the .run-managed install.
 #   - Disables Wayland in GDM (WaylandEnable=false) so the post-reboot session
@@ -55,6 +57,11 @@ set -euo pipefail
 # kernel surprises, apt-mark hold the kernel meta-packages outside this script
 # (e.g. in your provisioning manifest). That policy is intentionally out of
 # scope here.
+#
+# Note on running this on a live workstation: the unload step stops the
+# display manager (gdm3/lightdm/sddm) and unloads the nvidia kernel modules.
+# Any remote graphical session (AnyDesk, TeamViewer, x2go, VNC) will
+# disconnect at that point. Reconnect after the post-install reboot.
 
 # ---------------------------------------------------------------------------
 # Config
@@ -156,6 +163,58 @@ build_installer_url() {
     echo "https://download.nvidia.com/XFree86/${arch_name}/${TARGET_NVIDIA_VERSION}/NVIDIA-${arch_name}-${TARGET_NVIDIA_VERSION}.run"
 }
 
+# Stop the display manager and any nvidia services holding /dev/nvidia*
+# file handles, then unload the in-memory nvidia kernel modules so the
+# .run installer's sanity check passes. Purging the apt packages alone
+# does not unload modules already resident in the running kernel.
+#
+# Fatal on failure (something is holding the GPU open that we can't release).
+unload_nvidia_modules() {
+    # Stop any active display manager — X server holds /dev/nvidia* open.
+    local dms=(gdm3 gdm lightdm sddm display-manager)
+    for dm in "${dms[@]}"; do
+        if systemctl is-active --quiet "$dm" 2>/dev/null; then
+            info "Stopping display manager: $dm"
+            systemctl stop "$dm" >>"$LOG_FILE" 2>&1 || true
+        fi
+    done
+
+    # nvidia-persistenced keeps /dev/nvidia* open across user sessions.
+    if systemctl is-active --quiet nvidia-persistenced 2>/dev/null; then
+        info "Stopping nvidia-persistenced"
+        systemctl stop nvidia-persistenced >>"$LOG_FILE" 2>&1 || true
+    fi
+
+    # Drain udev so device-file release events finish processing.
+    udevadm settle 2>/dev/null || true
+
+    # Unload in dependency order (top-down). modprobe -r resolves transitive
+    # deps automatically, but listing each module explicitly keeps the log
+    # readable and lets us pinpoint which one wouldn't unload.
+    local modules=(nvidia_drm nvidia_modeset nvidia_uvm nvidia)
+    for m in "${modules[@]}"; do
+        if lsmod | awk '{print $1}' | grep -qx "$m"; then
+            info "Unloading kernel module: $m"
+            if ! modprobe -r "$m" >>"$LOG_FILE" 2>&1; then
+                err "Could not unload $m — something is still using the GPU."
+                err "Common causes:"
+                err "  - A CUDA process or container with /dev/nvidia* open"
+                err "  - nvidia-persistenced started outside systemd"
+                err "  - A second display manager we didn't detect"
+                err "Check with: sudo lsof /dev/nvidia*"
+                err "Or reboot the box and re-run the script."
+                fatal "Aborting before installer to avoid corrupting the live driver."
+            fi
+        fi
+    done
+
+    if lsmod | awk '{print $1}' | grep -qE '^nvidia'; then
+        fatal "nvidia modules still loaded after modprobe -r. Reboot and re-run."
+    fi
+
+    success "All nvidia kernel modules unloaded."
+}
+
 # Idempotently set WaylandEnable=false in /etc/gdm3/custom.conf so the system
 # logs into an Xorg session after reboot. Backs up the file with a timestamp
 # before editing. Skipped when ALLOW_WAYLAND=yes or when GDM isn't installed
@@ -235,7 +294,7 @@ parse_args() {
             -y|--yes)         ASSUME_YES="yes"; shift ;;
             --no-reboot)      NO_REBOOT="yes"; shift ;;
             -h|--help)
-                sed -n '1,/^# ---/p' "$0" | sed 's/^# \{0,1\}//' | head -n 60
+                sed -n '1,/^# ---/p' "$0" | sed 's/^# \{0,1\}//' | head -n 70
                 exit 0
                 ;;
             *)  err "Unknown argument: $1"; exit 1 ;;
@@ -268,7 +327,7 @@ main() {
         exit 0
     fi
 
-    if ! confirm "Proceed with upgrade to NVIDIA $TARGET_NVIDIA_VERSION?"; then
+    if ! confirm "Proceed with upgrade to NVIDIA $TARGET_NVIDIA_VERSION? (this will stop the display manager — remote graphical sessions will disconnect)"; then
         info "Aborted."
         exit 0
     fi
@@ -294,8 +353,8 @@ main() {
         fi
     fi
 
-    # ---- Step 1: ensure kernel headers + curl (no PPA needed for .run path) ----
-    info "Step 1/9: ensure prerequisites (kernel headers, curl)"
+    # ---- Step 1/10: ensure kernel headers + curl (no PPA needed for .run path) ----
+    info "Step 1/10: ensure prerequisites (kernel headers, curl)"
     quietly apt-get update
     quietly apt-get install -y \
         "linux-headers-$(uname -r)" \
@@ -303,26 +362,26 @@ main() {
         ca-certificates \
         || fatal "Failed to install build prerequisites"
 
-    # ---- Step 2: pre-flight CDN check so we fail fast on bad version ----
+    # ---- Step 2/10: pre-flight CDN check so we fail fast on bad version ----
     local url
     url="$(build_installer_url)"
-    info "Step 2/9: verify NVIDIA CDN has $TARGET_NVIDIA_VERSION available"
+    info "Step 2/10: verify NVIDIA CDN has $TARGET_NVIDIA_VERSION available"
     info "  URL: $url"
     if ! curl -sSf -I --max-time 10 "$url" >/dev/null 2>>"$LOG_FILE"; then
         fatal "NVIDIA CDN URL not reachable or version not published: $url"
     fi
     success "CDN URL reachable."
 
-    # ---- Step 3: purge any apt-managed nvidia packages (clean slate) ----
-    info "Step 3/9: purge any existing nvidia-* apt packages"
+    # ---- Step 3/10: purge any apt-managed nvidia packages (clean slate) ----
+    info "Step 3/10: purge any existing nvidia-* apt packages"
     # Glob may match nothing; tolerate that. Output goes to log.
     quietly bash -c "apt-get purge -y 'nvidia-*' 'libnvidia-*' || true"
     quietly apt-get autoremove -y || true
     success "Existing nvidia packages removed."
 
-    # ---- Step 4: download the .run installer ----
+    # ---- Step 4/10: download the .run installer ----
     local runfile="/tmp/NVIDIA-Linux-$(uname -m)-${TARGET_NVIDIA_VERSION}.run"
-    info "Step 4/9: download .run installer to $runfile"
+    info "Step 4/10: download .run installer to $runfile"
     # curl with progress bar visible (not in log) so operator sees download advance
     if ! curl -fL --retry 3 --retry-delay 5 -# -o "$runfile" "$url"; then
         fatal "Failed to download $url"
@@ -330,8 +389,15 @@ main() {
     chmod +x "$runfile"
     success "Downloaded $(du -h "$runfile" | cut -f1) installer."
 
-    # ---- Step 5: run the silent installer ----
-    info "Step 5/9: run NVIDIA installer (--silent --dkms)"
+    # ---- Step 5/10: stop display manager + unload nvidia kernel modules ----
+    # Required because apt purge removes the .ko files from disk but the
+    # modules already loaded in the running kernel persist until unloaded.
+    # The .run installer aborts in --silent mode if it detects them.
+    info "Step 5/10: stop display manager and unload nvidia kernel modules"
+    unload_nvidia_modules
+
+    # ---- Step 6/10: run the silent installer ----
+    info "Step 6/10: run NVIDIA installer (--silent --dkms)"
     # --silent implies --no-questions and --accept-license.
     # --dkms registers the kernel module so future kernel upgrades rebuild it.
     # --disable-nouveau writes the modprobe.d blacklist for next boot.
@@ -346,19 +412,19 @@ main() {
     fi
     success "NVIDIA installer completed."
 
-    # ---- Step 6: cleanup the downloaded .run file ----
+    # ---- Step 7/10: cleanup the downloaded .run file ----
     rm -f "$runfile"
 
-    # ---- Step 7: write apt preferences pin ----
-    info "Step 7/9: write apt preferences pin to protect the install"
+    # ---- Step 8/10: write apt preferences pin ----
+    info "Step 8/10: write apt preferences pin to protect the install"
     write_apt_pin
 
-    # ---- Step 8: enforce X11 (disable Wayland) ----
-    info "Step 8/9: enforce X11 session (set WaylandEnable=false in GDM config)"
+    # ---- Step 9/10: enforce X11 (disable Wayland) ----
+    info "Step 9/10: enforce X11 session (set WaylandEnable=false in GDM config)"
     disable_wayland_in_gdm
 
-    # ---- Step 9: reboot (or skip) ----
-    info "Step 9/9: reboot to load the new kernel modules"
+    # ---- Step 10/10: reboot (or skip) ----
+    info "Step 10/10: reboot to load the new kernel modules"
     echo
 
     # Note: nvidia-smi will still report the OLD driver until reboot because
