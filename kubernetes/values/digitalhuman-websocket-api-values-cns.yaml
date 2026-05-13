@@ -1,0 +1,8 @@
+# CNS overrides for digitalhuman-websocket-api
+# Set secrets.httpServiceApiKey at deploy time via --set secrets.httpServiceApiKey=<secret>
+replicas: 1
+env:
+  HTTP_PORT: "3000"
+  WEBSOCKET_PORT: "3001"
+  CORS_ORIGIN: "*"
+  LOG_LEVEL: "info"

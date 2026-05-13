@@ -1,0 +1,56 @@
+nemotron:
+  image: "nvcr.io/nim/nvidia/nemotron-asr-streaming:latest"
+  httpPort: 9000
+  grpcPort: 50051
+  resources:
+    requests:
+      cpu: "2000m"
+      memory: "8Gi"
+      nvidia.com/gpu: 1
+    limits:
+      cpu: "4000m"
+      memory: "16Gi"
+      nvidia.com/gpu: 1
+  shmSize: "8Gi"
+  modelCacheSize: "50Gi"
+
+proxy:
+  image: "cr.uneeq.io/uneeq/riva-ws-proxy:latest"
+  port: 8000
+  resources:
+    requests:
+      cpu: "200m"
+      memory: "256Mi"
+    limits:
+      cpu: "500m"
+      memory: "512Mi"
+
+imagePullSecrets:
+  - name: harbor-credentials
+  - name: ngc-registry-credentials
+
+# Secret name that holds NGC_API_KEY
+nimCredentialsSecret: nim-credentials
+
+replicas: 1
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: true
+  host: "digitalhuman-asr.miniprem"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+
+# Node selector – place on GPU node
+nodeSelector:
+  uneeq.io/node-type: renderer
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule

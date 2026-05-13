@@ -1,0 +1,12 @@
+# CNS overrides for digitalhuman-interface
+# Set backend.key at deploy time via --set backend.key=<secret>
+replicas: 1
+backend:
+  wsUrl: "ws://digitalhuman-api.miniprem/ws"
+  httpUrl: "http://digitalhuman-api.miniprem"
+  key: ""
+stt:
+  provider: "riva"
+  rivaUrl: "http://digitalhuman-asr.miniprem"
+  language: "en-US"
+standalone: true

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: digitalhuman-websocket-api
+description: Dell Digital Human – WebSocket + HTTP API (Express + ws)
+type: application
+version: "1.0.0"

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: digitalhuman-interface
+description: Dell Digital Human – React/nginx frontend
+type: application
+version: "1.0.0"
