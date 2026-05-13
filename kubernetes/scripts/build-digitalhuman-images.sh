@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MINIPREM_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 INTERFACE_SRC="$MINIPREM_DIR/../../dell-kiosk-application/interface"
-WSAPI_SRC="$MINIPREM_DIR/../../../websocket-api"
+WSAPI_SRC="$MINIPREM_DIR/../../../dell-kiosk-websocket-api"
 PROXY_SRC="$MINIPREM_DIR/kubernetes/digitalhuman-asr/ws-proxy-src"
 
 info()    { echo "ℹ️  $*"; }
