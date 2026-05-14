@@ -50,16 +50,15 @@ set -euo pipefail
 #   sudo TARGET_NVIDIA_VERSION=580.95.05 -E ./docker/scripts/upgrade_nvidia_driver.sh --yes
 #
 # Assumed operating context:
-#   This script runs in a state where no NVIDIA kernel modules are loaded into
-#   the running kernel — typically Ubuntu autoinstall late-commands (running
-#   under the live ISO kernel, not the target kernel), or first-boot
-#   provisioning before any nvidia driver has been activated. If invoked on a
-#   system with nvidia.ko already loaded into the running kernel, the .run
-#   installer will abort at its sanity check ("nvidia-drm appears to be
-#   already loaded") and the script will exit non-zero with a clear message.
-#   The script does not attempt to remediate that case — the operator must
-#   either run it from a context with no loaded modules, or reboot first
-#   with the nvidia driver uninstalled.
+#   Designed to run idempotently on a system where the stock Ubuntu nvidia
+#   driver may already be loaded (Ubuntu 24.04 autoinstall activates 535.x
+#   on boxes with an NVIDIA GPU by default). The .run installer is invoked
+#   with --allow-installation-with-running-driver, which copies the new
+#   driver to disk and registers DKMS modules without unloading the live
+#   driver — there is no need to stop gdm3 or reboot before invocation.
+#   The reboot at Step 9 activates the new modules. Verified against
+#   nvidia-installer/kernel.c:1733 (the CONTINUE branch at the loaded-
+#   modules prompt) on the upstream main branch.
 #
 # Note on kernel pinning: a .run-installed driver relies on DKMS to rebuild
 # its kernel modules when the kernel updates. If you need maximum stability
@@ -361,30 +360,29 @@ main() {
 
     # ---- Step 5/9: run the silent installer ----
     info "Step 5/9: run NVIDIA installer (--silent --dkms)"
-    # --silent implies --no-questions and --accept-license.
+    # --silent implies --no-questions, --ui=none, and --accept-license.
     # --dkms registers the kernel module so future kernel upgrades rebuild it.
     # --disable-nouveau writes the modprobe.d blacklist for next boot.
     # --no-nouveau-check lets us proceed even though nouveau is currently
     #   bound to the GPU (it can't unload while bound; reboot will switch).
     # --no-x-check bypasses the abort that fires when X is running on a
-    #   different driver (e.g. nouveau after a pre-purge + reboot during
-    #   interactive testing). Production path (autoinstall late-commands)
-    #   has no X server running, so this flag is a no-op there; it exists
-    #   solely to unblock interactive testing. Safe because we always
-    #   reboot after install — any half-applied X-side state is wiped by
-    #   the reboot.
-    # --skip-module-load tells the installer to compile and install the
-    #   kernel modules but NOT attempt the post-install modprobe. Without
-    #   this, the installer would try to load the freshly-built nvidia.ko
-    #   and fail because the GPU is currently bound to nouveau (or to an
-    #   older nvidia driver). With --skip-module-load, files land in
-    #   /lib/modules/.../updates/dkms/, --disable-nouveau writes the
-    #   blacklist for next boot, and the reboot at Step 8 activates the
-    #   new driver cleanly. Flag names verified against NVIDIA/nvidia-
-    #   installer option_table.h on GitHub.
+    #   different driver. Production path has no X server running so this
+    #   flag is a no-op there; it exists solely to unblock interactive
+    #   testing. Safe because we always reboot after install.
+    # --allow-installation-with-running-driver is the load-bearing flag.
+    #   Ubuntu 24.04 autoinstall activates nvidia-driver-535 (or -595-open
+    #   on newer images) on boxes with an NVIDIA GPU. Without this flag,
+    #   the installer hits its "nvidia-drm appears to be already loaded"
+    #   sanity check and aborts non-interactively because --silent picks
+    #   the default answer (ABORT). With this flag, the CONTINUE branch
+    #   is taken (nvidia-installer/kernel.c:1733), which also internally
+    #   sets skip_module_load=TRUE — so the installer compiles + installs
+    #   modules into /lib/modules/.../updates/dkms/ but does NOT attempt
+    #   to load them over the live driver. The reboot at Step 9
+    #   activates the new 580.82.09 modules cleanly.
     # Installer also writes its own log at /var/log/nvidia-installer.log.
     if ! "$runfile" --silent --dkms --disable-nouveau --no-nouveau-check \
-            --no-x-check --skip-module-load \
+            --no-x-check --allow-installation-with-running-driver \
             >>"$LOG_FILE" 2>&1; then
         err "NVIDIA installer failed. Last 30 lines of /var/log/nvidia-installer.log:"
         tail -n 30 /var/log/nvidia-installer.log 2>/dev/null || true
