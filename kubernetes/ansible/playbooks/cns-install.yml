@@ -63,6 +63,7 @@
               - software-properties-common
               - jq
               - git
+              - conntrack
             state: present
 
         - name: Install snapd (required for MicroK8s)
@@ -221,6 +222,20 @@
     ##########################################################################
     - name: Install Kubernetes via kubeadm (NVIDIA Cloud Native Stack)
       block:
+        - name: Check for conflicting Kubernetes installations
+          shell: snap list microk8s 2>/dev/null && echo "FOUND" || echo "NOT_FOUND"
+          register: microk8s_check
+          changed_when: false
+
+        - name: Fail if MicroK8s is installed
+          fail:
+            msg: |
+              MicroK8s is installed and will conflict with kubeadm (ports 10250, 10257, 10259).
+              Remove it before proceeding:
+                sudo snap remove microk8s --purge
+              Then re-run this playbook.
+          when: "'FOUND' in microk8s_check.stdout"
+
         - name: Disable swap
           command: swapoff -a
           changed_when: false
@@ -277,8 +292,6 @@
 
         - name: Generate default containerd config
           shell: containerd config default > /etc/containerd/config.toml
-          args:
-            creates: /etc/containerd/config.toml
 
         - name: Enable SystemdCgroup in containerd (required for kubeadm)
           replace:
