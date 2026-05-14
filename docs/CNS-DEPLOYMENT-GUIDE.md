@@ -426,6 +426,32 @@ gpuTimeSlicing:
   replicasPerGpu: 5  # Should match or exceed totalReplicas / GPU count
 ```
 
+### Sizer Tool: Plan vs. Apply
+
+`kubernetes/scripts/cns/sizer.sh` has two modes: it can either *show you what a configuration would look like*, or it can *apply that configuration directly to the cluster* (ConfigMap + deployment scale in one shot).
+
+```bash
+# Plan-only modes (no cluster changes)
+sudo ./miniprem.sh sizer                       # Interactive calculator
+sudo ./kubernetes/scripts/cns/sizer.sh --detect           # Auto-detect GPU, print capacity table
+sudo ./kubernetes/scripts/cns/sizer.sh --gpu "A100 80GB"  # Show capacity for a specific GPU
+
+# Apply modes (mutate the cluster — both require kubectl access)
+sudo ./kubernetes/scripts/cns/sizer.sh --apply            # Interactive, then apply after confirmation
+sudo ./kubernetes/scripts/cns/sizer.sh --apply-quick      # Auto-detect GPU and apply recommended config
+```
+
+**What `--apply` / `--apply-quick` actually do** (in order, with a confirmation prompt before step 1 in `--apply` mode):
+
+1. **Update the GPU time-slicing ConfigMap** in the GPU operator namespace (`gpu-operator` or `gpu-operator-resources` on MicroK8s) with `replicasPerGpu` from your choice.
+2. **Patch the `ClusterPolicy`** to point the device plugin at the updated ConfigMap — skipped on MicroK8s where the nvidia addon doesn't use a ClusterPolicy.
+3. **Scale the Renny deployment** in the `uneeq` namespace to the chosen replica count.
+
+Use `--apply-quick` when you trust the GPU autodetection and just want the recommended config. Use `--apply` when you want to pick GPU model, quality mode, and replica count yourself before changes land.
+
+> **Note**: `scale-quick N` (via `./miniprem.sh scale-quick N`) only changes the replica count. `sizer --apply` is the right choice when you also need to change GPU time-slicing (e.g. moving from 2 to 4 pods per GPU).
+
+
 ---
 
 ## Monitoring & Troubleshooting

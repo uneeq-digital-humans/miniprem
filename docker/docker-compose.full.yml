@@ -41,9 +41,7 @@ services:
 
   # === SECOND TIER: Other Services ===
   miniprem-monitor:
-    build:
-      context: ../miniprem-monitor
-      dockerfile: Dockerfile
+    image: "cr.uneeq.io/public/miniprem-monitor@sha256:dcad83fb9c7d21ce0d6badb1973b1df5b7cbc053341254b4bd96a5b3c1c456da"
     container_name: miniprem-monitor
     runtime: nvidia  # GPU access for machine_id generation via nvidia-smi
     network_mode: host  # Direct access to Docker daemon and localhost services
@@ -316,6 +314,7 @@ services:
       - docker-compose.env
     environment:
       - NEW_SPEECH_OVERRIDE=1
+      - RENNY_TTS_USE_PROTO_API_KEY=1
       - MINIPREM_TELEMETRY_DISABLED=${MINIPREM_TELEMETRY_DISABLED:-0}
       - TELEMETRY_BACKEND_URL=https://renny.services.uneeq.io
       - HEARTBEAT_INTERVAL_SECONDS=900

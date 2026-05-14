@@ -23,7 +23,9 @@
 - [Scaling with Multiple Renny Instances](#scaling-with-multiple-renny-instances)
 - [Internal Speech Processing (NEW_SPEECH_OVERRIDE)](#internal-speech-processing-new_speech_override)
 - [Docker Configuration](#docker-configuration)
-- [Kubernetes/EKS Deployment](#kuberneteseks-deployment)
+- [Multi-Cloud Kubernetes Deployment](#multi-cloud-kubernetes-deployment) (AWS EKS / Azure AKS)
+- [On-Premises Deployment (NVIDIA CNS)](#on-premises-deployment-nvidia-cns)
+- [LLM Observability (Phoenix)](#llm-observability-phoenix)
 - [Additional Documentation](#additional-documentation)
 - [License](#license)
 - [Copyright](#copyright)
@@ -636,10 +638,71 @@ For detailed Kubernetes deployment instructions, troubleshooting, and advanced c
 - Known issues and solutions
 - Production monitoring integration
 
+## On-Premises Deployment (NVIDIA CNS)
+
+### 🏢 Single-Node GPU Deployment on Your Own Hardware
+
+For on-premises, edge, or Dell ISG partner deployments, MiniPrem ships with a **NVIDIA Cloud Native Stack (CNS)** installer built on MicroK8s. This path is designed for a single GPU server (or GPU workstation) that you own — no cloud account required.
+
+| | CNS (On-Premises) | AWS EKS / Azure AKS |
+|---|---|---|
+| **Where it runs** | Your hardware (Dell / custom server) | Cloud provider |
+| **Kubernetes flavor** | MicroK8s (snap) | Managed (EKS / AKS) |
+| **Scale model** | Single node, multi-pod (GPU time-slicing) | Multi-node auto-scaling |
+| **Deployment time** | ~20–30 min | ~30–50 min |
+| **Target GPUs** | A100, L4, T4, RTX 6000 (incl. Blackwell) | A10G (EKS), T4 (AKS) |
+| **Who it's for** | Dell technicians, on-prem customers, edge kiosks | Cloud-first production teams |
+
+### Requirements
+
+- Ubuntu 24.04 LTS (other distros are not supported)
+- NVIDIA GPU with driver **580.82.x** (580.126.x is known-broken for NVENC — see [NVIDIA Driver Setup](docs/NVIDIA-DRIVER-SETUP.md))
+- Root/sudo access
+- Network access to `cr.uneeq.io` for the Renny image
+
+### Quick Start
+
+```bash
+# From the repo root on the target machine
+sudo ./miniprem.sh deploy     # Full CNS install + Renny deployment
+sudo ./miniprem.sh status     # Check pod status
+sudo ./miniprem.sh logs       # Tail Renny logs
+sudo ./miniprem.sh sizer      # GPU capacity calculator (interactive)
+sudo ./miniprem.sh scale      # Interactive replica configuration
+sudo ./miniprem.sh upgrade    # Git pull + Helm upgrade + image refresh
+sudo ./miniprem.sh destroy    # Tear down the CNS install
+```
+
+Run `sudo ./miniprem.sh --help` for the full CNS subcommand list.
+
+### 📖 Complete CNS Documentation
+
+- **➡️ [CNS Deployment Guide](docs/CNS-DEPLOYMENT-GUIDE.md)** — full walkthrough, configuration reference, scaling, troubleshooting
+- **➡️ [Dell ISG Partner Guide](docs/DELL-ISG-CNS-DEPLOYMENT.md)** — Dell technician-focused deployment runbook
+- **➡️ [NVIDIA Driver Setup](docs/NVIDIA-DRIVER-SETUP.md)** — driver version requirements, install steps per GPU family
+- **➡️ [CNS Scripts README](kubernetes/scripts/cns/README.md)** — what each `scripts/cns/*.sh` script does
+
+## LLM Observability (Phoenix)
+
+MiniPrem includes optional [Arize Phoenix](https://docs.arize.com/phoenix/) integration for tracing LLM requests, measuring latency, and exporting Prometheus metrics. Phoenix is disabled by default — enable it with the `phoenix` Compose profile (Docker) or via Ansible / Helm on CNS deployments.
+
+```bash
+# Docker: enable Phoenix profile
+cd docker
+docker compose -f docker-compose.full.yml --profile phoenix up -d
+# Phoenix UI: http://localhost:6006
+```
+
+See the **[Phoenix Observability Guide](docs/PHOENIX_SETUP.md)** for configuration, instrumentation examples (Python / Flowise / vLLM), and CNS deployment.
+
 ## Additional Documentation
 
 For more detailed information, refer to the following guides:
 
+- [CNS Deployment Guide](docs/CNS-DEPLOYMENT-GUIDE.md)
+- [Dell ISG Partner Guide](docs/DELL-ISG-CNS-DEPLOYMENT.md)
+- [NVIDIA Driver Setup](docs/NVIDIA-DRIVER-SETUP.md)
+- [Phoenix Observability Guide](docs/PHOENIX_SETUP.md)
 - [Flowise Configuration](docs/guides/flowise.md)
 - [Monitoring with Prometheus and Grafana](docs/guides/monitoring.md)
 - [Renny Integration](docs/guides/renny.md)

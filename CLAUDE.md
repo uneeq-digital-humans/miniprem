@@ -778,3 +778,17 @@ When user says `/build-mode` or "let's build this", switch to build mode:
 **See**: `.claude/agents/shared/gemini-cli-reference.md` for complete Gemini CLI usage patterns and examples.
 
 All agents must use Gemini CLI proactively for large research tasks that exceed context limits or involve analyzing entire codebases.
+## Codebase Navigation
+
+This repository has **codesight** installed. When investigating code, always start with the codesight index:
+
+- **Overview:** `.codesight/CODESIGHT.md` — structure, entry points, key files
+- **Components:** `.codesight/components.md`
+- **Routes/APIs:** `.codesight/routes.md` (if present)
+- **Dependencies:** `.codesight/libs.md`
+- **Config:** `.codesight/config.md`
+
+To refresh the index after significant changes:
+```bash
+npx codesight .
+```
