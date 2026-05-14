@@ -13,10 +13,6 @@ set -euo pipefail
 #     directly from download.nvidia.com (NVIDIA preserves these URLs as
 #     historical artifacts; the apt + PPA path drifts as the PPA refreshes).
 #   - Purges any pre-existing apt-managed nvidia-* packages first (clean slate).
-#   - Stops the display manager and unloads the running nvidia kernel modules
-#     before invoking the .run installer (the installer aborts in --silent mode
-#     when it detects loaded modules — purging the apt packages alone does NOT
-#     unload them from the running kernel).
 #   - Runs the installer with --silent --dkms so kernel updates automatically
 #     trigger module rebuilds without operator intervention.
 #   - Writes /etc/apt/preferences.d/nvidia-pin-runfile so future apt upgrades
@@ -30,7 +26,7 @@ set -euo pipefail
 #                                   Implies auto-reboot at the end unless --no-reboot
 #                                   is also set.
 #   --no-reboot                     Skip the final reboot. Use this when the script
-#                                   runs as a step inside Ubuntu auto-install
+#                                   runs as a step inside Ubuntu autoinstall
 #                                   (late-commands), so the provisioning runner can
 #                                   handle the single end-of-install reboot.
 #                                   Equivalent to MINIPREM_NO_REBOOT=yes.
@@ -38,40 +34,38 @@ set -euo pipefail
 # Config env vars (set before invocation, or pass via sudo -E):
 #   TARGET_NVIDIA_VERSION=580.82.09 (default)  Exact pinned version.
 #   ALLOW_WAYLAND=no                (default)  Set to yes to leave Wayland on.
-#   FORCE_GRAPHICAL=no              (default)  Set to yes to bypass the
-#                                   safety check that refuses to run inside
-#                                   a graphical session. Only use if you have
-#                                   wrapped the invocation in setsid or
-#                                   systemd-run so the script survives the
-#                                   display manager going down.
 #
 # Examples:
-#   # Interactive run (prompts to confirm + reboot):
-#   sudo ./docker/scripts/upgrade_nvidia_driver.sh
+#   # Inside Ubuntu autoinstall (no in-script reboot — let subiquity reboot):
+#   sudo ./docker/scripts/upgrade_nvidia_driver.sh --yes --no-reboot
 #
-#   # Fully unattended, manual run (reboots automatically):
+#   # Manual unattended run on a system where no nvidia module is loaded
+#   # (reboots automatically):
 #   sudo ./docker/scripts/upgrade_nvidia_driver.sh --yes
 #
-#   # Inside Ubuntu auto-install (no in-script reboot — let subiquity reboot):
-#   sudo ./docker/scripts/upgrade_nvidia_driver.sh --yes --no-reboot
+#   # Interactive run (prompts to confirm + reboot):
+#   sudo ./docker/scripts/upgrade_nvidia_driver.sh
 #
 #   # Pin a different version:
 #   sudo TARGET_NVIDIA_VERSION=580.95.05 -E ./docker/scripts/upgrade_nvidia_driver.sh --yes
 #
-# Note on kernel pinning: a .run-installed driver relies on DKMS to rebuild its
-# kernel modules when the kernel updates. If you need maximum stability against
-# kernel surprises, apt-mark hold the kernel meta-packages outside this script
-# (e.g. in your provisioning manifest). That policy is intentionally out of
-# scope here.
+# Assumed operating context:
+#   This script runs in a state where no NVIDIA kernel modules are loaded into
+#   the running kernel — typically Ubuntu autoinstall late-commands (running
+#   under the live ISO kernel, not the target kernel), or first-boot
+#   provisioning before any nvidia driver has been activated. If invoked on a
+#   system with nvidia.ko already loaded into the running kernel, the .run
+#   installer will abort at its sanity check ("nvidia-drm appears to be
+#   already loaded") and the script will exit non-zero with a clear message.
+#   The script does not attempt to remediate that case — the operator must
+#   either run it from a context with no loaded modules, or reboot first
+#   with the nvidia driver uninstalled.
 #
-# Note on running this on a live workstation: the script REFUSES to run
-# from inside a graphical session, because Step 5/10 stops the display
-# manager and would kill its own terminal (and any AnyDesk / TeamViewer /
-# x2go / VNC connection that depends on the X server). To test interactively
-# on a workstation, either SSH in from another machine (or `ssh $USER@localhost`
-# from the workstation itself) or switch to a virtual console with Ctrl+Alt+F3.
-# For Ubuntu autoinstall (late-commands) this check passes silently because
-# no graphical session is running during install.
+# Note on kernel pinning: a .run-installed driver relies on DKMS to rebuild
+# its kernel modules when the kernel updates. If you need maximum stability
+# against kernel surprises, apt-mark hold the kernel meta-packages outside
+# this script (e.g. in your provisioning manifest). That policy is
+# intentionally out of scope here.
 
 # ---------------------------------------------------------------------------
 # Config
@@ -82,12 +76,6 @@ TARGET_NVIDIA_MAJOR="580"
 ALLOW_WAYLAND="${ALLOW_WAYLAND:-no}"
 ASSUME_YES="${MINIPREM_ASSUME_YES:-no}"
 NO_REBOOT="${MINIPREM_NO_REBOOT:-no}"
-
-# Escape hatch for the graphical-session safety check (see
-# check_not_graphical_session). Default no. Only set yes if you have
-# arranged for this script to survive the display manager going down
-# (e.g. wrapped in setsid or systemd-run --unit=...).
-FORCE_GRAPHICAL="${FORCE_GRAPHICAL:-no}"
 
 # Per-run log file for verbose apt/installer output. The script prints the
 # path at startup so operators know where to look on failure.
@@ -114,8 +102,7 @@ success() { echo "${C_GREEN}OK:${C_OFF}      $*"; }
 fatal()   { err "$*"; err "Full apt/installer output: $LOG_FILE"; exit 1; }
 
 # Run a noisy command, redirect its stdout+stderr to the log file. The
-# script's own info/success/warn messages remain on the terminal. Operator
-# pipes the log file separately if they need detail.
+# script's own info/success/warn messages remain on the terminal.
 quietly() {
     if ! "$@" >>"$LOG_FILE" 2>&1; then
         err "Command failed: $*"
@@ -142,54 +129,6 @@ require_ubuntu() {
         exit 1
     fi
     info "Detected Ubuntu ${VERSION_ID:-?} (${VERSION_CODENAME:-?})"
-}
-
-# Refuse to run inside a graphical session. Step 5/10 stops the display
-# manager, which would kill any terminal that's a descendant of the X
-# server (gnome-terminal, AnyDesk, etc.), taking this bash process with
-# it. Autoinstall late-commands has no graphical session, so this check
-# passes silently for the production path. Bypass with FORCE_GRAPHICAL=yes
-# only if the caller has arranged for the script to survive (setsid /
-# systemd-run --unit=... / nohup).
-check_not_graphical_session() {
-    if [ "${FORCE_GRAPHICAL:-no}" = "yes" ]; then
-        warn "FORCE_GRAPHICAL=yes — proceeding inside graphical session."
-        warn "If the display manager goes down, expect this script to be killed."
-        return 0
-    fi
-
-    local sig=""
-    if [ -n "${DISPLAY:-}" ];          then sig="DISPLAY=$DISPLAY"; fi
-    if [ -n "${WAYLAND_DISPLAY:-}" ];  then sig="${sig:+$sig, }WAYLAND_DISPLAY=$WAYLAND_DISPLAY"; fi
-    case "${XDG_SESSION_TYPE:-}" in
-        x11|wayland) sig="${sig:+$sig, }XDG_SESSION_TYPE=$XDG_SESSION_TYPE" ;;
-    esac
-
-    if [ -z "$sig" ]; then
-        return 0
-    fi
-
-    err "You are running this script inside a graphical session ($sig)."
-    err "Step 5/10 stops the display manager, which would kill this script's"
-    err "terminal and abort the install mid-way."
-    err ""
-    err "To run this script safely, do ONE of the following:"
-    err ""
-    err "  (a) SSH into this machine from another machine and run from there."
-    err "      If you don't have another machine, SSH from this one to itself:"
-    err "          ssh \$USER@localhost"
-    err "      Then re-run the script from that SSH session."
-    err ""
-    err "  (b) Switch to a virtual console (physical keyboard at the box):"
-    err "      Press Ctrl+Alt+F3, log in, then re-run the script."
-    err ""
-    err "  (c) For Ubuntu autoinstall (late-commands), no action needed —"
-    err "      this check passes silently because no graphical session is running."
-    err ""
-    err "Advanced override (only if you have wrapped this invocation in setsid"
-    err "or systemd-run so it survives session death):"
-    err "    FORCE_GRAPHICAL=yes sudo -E $0 --yes"
-    exit 1
 }
 
 current_driver_version() {
@@ -225,58 +164,6 @@ build_installer_url() {
         *) fatal "Unsupported architecture: $(uname -m)" ;;
     esac
     echo "https://download.nvidia.com/XFree86/${arch_name}/${TARGET_NVIDIA_VERSION}/NVIDIA-${arch_name}-${TARGET_NVIDIA_VERSION}.run"
-}
-
-# Stop the display manager and any nvidia services holding /dev/nvidia*
-# file handles, then unload the in-memory nvidia kernel modules so the
-# .run installer's sanity check passes. Purging the apt packages alone
-# does not unload modules already resident in the running kernel.
-#
-# Fatal on failure (something is holding the GPU open that we can't release).
-unload_nvidia_modules() {
-    # Stop any active display manager — X server holds /dev/nvidia* open.
-    local dms=(gdm3 gdm lightdm sddm display-manager)
-    for dm in "${dms[@]}"; do
-        if systemctl is-active --quiet "$dm" 2>/dev/null; then
-            info "Stopping display manager: $dm"
-            systemctl stop "$dm" >>"$LOG_FILE" 2>&1 || true
-        fi
-    done
-
-    # nvidia-persistenced keeps /dev/nvidia* open across user sessions.
-    if systemctl is-active --quiet nvidia-persistenced 2>/dev/null; then
-        info "Stopping nvidia-persistenced"
-        systemctl stop nvidia-persistenced >>"$LOG_FILE" 2>&1 || true
-    fi
-
-    # Drain udev so device-file release events finish processing.
-    udevadm settle 2>/dev/null || true
-
-    # Unload in dependency order (top-down). modprobe -r resolves transitive
-    # deps automatically, but listing each module explicitly keeps the log
-    # readable and lets us pinpoint which one wouldn't unload.
-    local modules=(nvidia_drm nvidia_modeset nvidia_uvm nvidia)
-    for m in "${modules[@]}"; do
-        if lsmod | awk '{print $1}' | grep -qx "$m"; then
-            info "Unloading kernel module: $m"
-            if ! modprobe -r "$m" >>"$LOG_FILE" 2>&1; then
-                err "Could not unload $m — something is still using the GPU."
-                err "Common causes:"
-                err "  - A CUDA process or container with /dev/nvidia* open"
-                err "  - nvidia-persistenced started outside systemd"
-                err "  - A second display manager we didn't detect"
-                err "Check with: sudo lsof /dev/nvidia*"
-                err "Or reboot the box and re-run the script."
-                fatal "Aborting before installer to avoid corrupting the live driver."
-            fi
-        fi
-    done
-
-    if lsmod | awk '{print $1}' | grep -qE '^nvidia'; then
-        fatal "nvidia modules still loaded after modprobe -r. Reboot and re-run."
-    fi
-
-    success "All nvidia kernel modules unloaded."
 }
 
 # Idempotently set WaylandEnable=false in /etc/gdm3/custom.conf so the system
@@ -371,7 +258,6 @@ main() {
 
     require_root
     require_ubuntu
-    check_not_graphical_session
 
     # Open the log file early so all subsequent quietly() calls can append.
     : > "$LOG_FILE"
@@ -392,7 +278,7 @@ main() {
         exit 0
     fi
 
-    if ! confirm "Proceed with upgrade to NVIDIA $TARGET_NVIDIA_VERSION? (this will stop the display manager — remote graphical sessions will disconnect)"; then
+    if ! confirm "Proceed with upgrade to NVIDIA $TARGET_NVIDIA_VERSION?"; then
         info "Aborted."
         exit 0
     fi
@@ -418,8 +304,8 @@ main() {
         fi
     fi
 
-    # ---- Step 1/10: ensure kernel headers + curl (no PPA needed for .run path) ----
-    info "Step 1/10: ensure prerequisites (kernel headers, curl)"
+    # ---- Step 1/8: ensure kernel headers + curl ----
+    info "Step 1/8: ensure prerequisites (kernel headers, curl)"
     quietly apt-get update
     quietly apt-get install -y \
         "linux-headers-$(uname -r)" \
@@ -427,26 +313,26 @@ main() {
         ca-certificates \
         || fatal "Failed to install build prerequisites"
 
-    # ---- Step 2/10: pre-flight CDN check so we fail fast on bad version ----
+    # ---- Step 2/8: pre-flight CDN check so we fail fast on bad version ----
     local url
     url="$(build_installer_url)"
-    info "Step 2/10: verify NVIDIA CDN has $TARGET_NVIDIA_VERSION available"
+    info "Step 2/8: verify NVIDIA CDN has $TARGET_NVIDIA_VERSION available"
     info "  URL: $url"
     if ! curl -sSf -I --max-time 10 "$url" >/dev/null 2>>"$LOG_FILE"; then
         fatal "NVIDIA CDN URL not reachable or version not published: $url"
     fi
     success "CDN URL reachable."
 
-    # ---- Step 3/10: purge any apt-managed nvidia packages (clean slate) ----
-    info "Step 3/10: purge any existing nvidia-* apt packages"
+    # ---- Step 3/8: purge any apt-managed nvidia packages (clean slate) ----
+    info "Step 3/8: purge any existing nvidia-* apt packages"
     # Glob may match nothing; tolerate that. Output goes to log.
     quietly bash -c "apt-get purge -y 'nvidia-*' 'libnvidia-*' || true"
     quietly apt-get autoremove -y || true
     success "Existing nvidia packages removed."
 
-    # ---- Step 4/10: download the .run installer ----
+    # ---- Step 4/8: download the .run installer ----
     local runfile="/tmp/NVIDIA-Linux-$(uname -m)-${TARGET_NVIDIA_VERSION}.run"
-    info "Step 4/10: download .run installer to $runfile"
+    info "Step 4/8: download .run installer to $runfile"
     # curl with progress bar visible (not in log) so operator sees download advance
     if ! curl -fL --retry 3 --retry-delay 5 -# -o "$runfile" "$url"; then
         fatal "Failed to download $url"
@@ -454,15 +340,8 @@ main() {
     chmod +x "$runfile"
     success "Downloaded $(du -h "$runfile" | cut -f1) installer."
 
-    # ---- Step 5/10: stop display manager + unload nvidia kernel modules ----
-    # Required because apt purge removes the .ko files from disk but the
-    # modules already loaded in the running kernel persist until unloaded.
-    # The .run installer aborts in --silent mode if it detects them.
-    info "Step 5/10: stop display manager and unload nvidia kernel modules"
-    unload_nvidia_modules
-
-    # ---- Step 6/10: run the silent installer ----
-    info "Step 6/10: run NVIDIA installer (--silent --dkms)"
+    # ---- Step 5/8: run the silent installer ----
+    info "Step 5/8: run NVIDIA installer (--silent --dkms)"
     # --silent implies --no-questions and --accept-license.
     # --dkms registers the kernel module so future kernel upgrades rebuild it.
     # --disable-nouveau writes the modprobe.d blacklist for next boot.
@@ -477,31 +356,32 @@ main() {
     fi
     success "NVIDIA installer completed."
 
-    # ---- Step 7/10: cleanup the downloaded .run file ----
+    # Cleanup the downloaded .run file
     rm -f "$runfile"
 
-    # ---- Step 8/10: write apt preferences pin ----
-    info "Step 8/10: write apt preferences pin to protect the install"
+    # ---- Step 6/8: write apt preferences pin ----
+    info "Step 6/8: write apt preferences pin to protect the install"
     write_apt_pin
 
-    # ---- Step 9/10: enforce X11 (disable Wayland) ----
-    info "Step 9/10: enforce X11 session (set WaylandEnable=false in GDM config)"
+    # ---- Step 7/8: enforce X11 (disable Wayland) ----
+    info "Step 7/8: enforce X11 session (set WaylandEnable=false in GDM config)"
     disable_wayland_in_gdm
 
-    # ---- Step 10/10: reboot (or skip) ----
-    info "Step 10/10: reboot to load the new kernel modules"
+    # ---- Step 8/8: reboot (or skip) ----
+    info "Step 8/8: reboot to load the new kernel modules"
     echo
 
     # Note: nvidia-smi will still report the OLD driver until reboot because
-    # nouveau is still bound. Skip the post-install version check here; the
-    # operator (or the auto-install runner) verifies after reboot.
+    # the old modules are still loaded in the running kernel. Skip the post-
+    # install version check here; the operator (or the autoinstall runner)
+    # verifies after reboot.
     success "Driver install complete. The new driver is NOT active until reboot."
     success "After reboot, verify with: nvidia-smi --query-gpu=driver_version --format=csv,noheader"
     success "Expected: $TARGET_NVIDIA_VERSION"
     echo
 
     if [ "$NO_REBOOT" = "yes" ]; then
-        info "[--no-reboot] Skipping reboot — caller (e.g. auto-install runner) will handle it."
+        info "[--no-reboot] Skipping reboot — caller (e.g. autoinstall runner) will handle it."
         exit 0
     fi
 
