@@ -1118,7 +1118,7 @@ spec:
   serviceAccountName: renny-sa  # Links to GCP SA via Workload Identity
   containers:
   - name: renny
-    image: facemeproduction/renny:0.758-f9e3f
+    image: cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7
 ```
 
 ### 5.2 Node Service Accounts
@@ -1714,7 +1714,7 @@ binary_authorization {
 **Policy Example:**
 ```yaml
 admissionWhitelistPatterns:
-- namePattern: docker.io/facemeproduction/*
+- namePattern: cr.uneeq.io/uneeq/*
 - namePattern: gcr.io/PROJECT_ID/*
 ```
 

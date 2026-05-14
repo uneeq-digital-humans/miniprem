@@ -515,8 +515,8 @@ upgrade_services() {
     DOCKER_CMD=$(get_docker_command)
 
     # Pull Renny image
-    info "Pulling cr.uneeq.io/uneeq/renny-renderer:enterprise-latest..."
-    if $DOCKER_CMD pull cr.uneeq.io/uneeq/renny-renderer:enterprise-latest; then
+    info "Pulling cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7..."
+    if $DOCKER_CMD pull cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7; then
         success "$CHECKMARK Renny image updated"
     else
         warning "Failed to pull Renny image. Check Harbor credentials."

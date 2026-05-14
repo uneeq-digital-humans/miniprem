@@ -23,7 +23,7 @@
 # Renny container image
 # Image is pulled from UneeQ's Harbor registry (cr.uneeq.io)
 # Contact help@uneeq.com for Harbor robot account credentials
-image: cr.uneeq.io/uneeq/renny-renderer:latest
+image: cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7
 
 # GPU time-slicing configuration for AKS NC16as_T4_v3
 # T4 has 16GB VRAM - can handle 2 Renny instances with 7-8GB each

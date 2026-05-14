@@ -400,7 +400,7 @@ pull_required_images() {
     else
         # Only pull images for Renny with internal speech processing
         info "Pulling Renny images..."
-        if ! pull_images_parallel "facemeproduction/renny:0.713-37d59"; then
+        if ! pull_images_parallel "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"; then
             fatal "Failed to pull Renny image"
         fi
         

@@ -11,7 +11,7 @@
 # UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
 # from DHOP based on persona configuration.
 
-image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
 
 # Image pull secret for Harbor registry authentication
 imagePullSecrets:
