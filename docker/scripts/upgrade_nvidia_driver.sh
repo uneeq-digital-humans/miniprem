@@ -330,10 +330,15 @@ main() {
     success "CDN URL reachable."
 
     # ---- Step 3/8: purge any apt-managed nvidia packages (clean slate) ----
+    # No apt-get autoremove here. autoremove is more cleanup than necessity
+    # — the nvidia purge does the actual work of clearing conflicting
+    # packages. autoremove is well-meaning but can quietly yank packages
+    # we want (we narrowly avoided losing build-essential's transitive
+    # dependencies that way during testing). The disk-space saving is
+    # negligible vs the risk of pulling out something we need.
     info "Step 3/8: purge any existing nvidia-* apt packages"
     # Glob may match nothing; tolerate that. Output goes to log.
     quietly bash -c "apt-get purge -y 'nvidia-*' 'libnvidia-*' || true"
-    quietly apt-get autoremove -y || true
     success "Existing nvidia packages removed."
 
     # ---- Step 4/8: download the .run installer ----
@@ -359,11 +364,19 @@ main() {
     #   has no X server running, so this flag is a no-op there; it exists
     #   solely to unblock interactive testing. Safe because we always
     #   reboot after install — any half-applied X-side state is wiped by
-    #   the reboot. Flag name verified against NVIDIA/nvidia-installer
-    #   option_table.h on GitHub.
+    #   the reboot.
+    # --skip-module-load tells the installer to compile and install the
+    #   kernel modules but NOT attempt the post-install modprobe. Without
+    #   this, the installer would try to load the freshly-built nvidia.ko
+    #   and fail because the GPU is currently bound to nouveau (or to an
+    #   older nvidia driver). With --skip-module-load, files land in
+    #   /lib/modules/.../updates/dkms/, --disable-nouveau writes the
+    #   blacklist for next boot, and the reboot at Step 8 activates the
+    #   new driver cleanly. Flag names verified against NVIDIA/nvidia-
+    #   installer option_table.h on GitHub.
     # Installer also writes its own log at /var/log/nvidia-installer.log.
     if ! "$runfile" --silent --dkms --disable-nouveau --no-nouveau-check \
-            --no-x-check \
+            --no-x-check --skip-module-load \
             >>"$LOG_FILE" 2>&1; then
         err "NVIDIA installer failed. Last 30 lines of /var/log/nvidia-installer.log:"
         tail -n 30 /var/log/nvidia-installer.log 2>/dev/null || true
