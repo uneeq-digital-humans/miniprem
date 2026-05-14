@@ -299,6 +299,12 @@
             regexp: 'SystemdCgroup = false'
             replace: 'SystemdCgroup = true'
 
+        - name: Ensure CRI plugin is not disabled (Docker ships containerd.io with CRI disabled)
+          replace:
+            path: /etc/containerd/config.toml
+            regexp: '^disabled_plugins\s*=\s*\["cri"\].*$'
+            replace: 'disabled_plugins = []'
+
         - name: Restart and enable containerd
           systemd:
             name: containerd
