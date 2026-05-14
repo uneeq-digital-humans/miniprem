@@ -285,10 +285,18 @@
             filename: docker
           when: ansible_os_family == "Debian"
 
-        - name: Install containerd.io from Docker (not Ubuntu's containerd package)
-          package:
-            name: containerd.io
+        - name: Install containerd.io 1.7.x from Docker (v2.x is incompatible with kubeadm 1.31 CRI v1)
+          apt:
+            name: "containerd.io=1.7.*"
             state: present
+            allow_downgrade: yes
+          when: ansible_os_family == "Debian"
+
+        - name: Hold containerd.io at 1.7.x to prevent auto-upgrade to v2.x
+          dpkg_selections:
+            name: containerd.io
+            selection: hold
+          when: ansible_os_family == "Debian"
 
         - name: Generate default containerd config
           shell: containerd config default > /etc/containerd/config.toml
