@@ -14,6 +14,7 @@
 ## Table of Contents
 
 - [General Troubleshooting Steps](#general-troubleshooting-steps)
+- [NVIDIA Driver Issues](#nvidia-driver-issues)
 - [vLLM Issues](#vllm-issues)
 - [Flowise Issues](#flowise-issues)
 - [Renny Issues](#renny-issues)
@@ -46,6 +47,55 @@
    ```bash
    docker stats
    ```
+
+## NVIDIA Driver Issues
+
+### Symptoms
+
+- NVENC shows 0% utilization during an active session
+- Pixel Streaming fails — session connects briefly then disconnects
+- Renny logs show: "Session failed to start. HasActivePixelStreaming: false"
+
+### Check Your Current Driver
+
+```bash
+nvidia-smi | head -3
+```
+
+Look for the `Driver Version` in the output. The version number determines compatibility.
+
+### Known Bad Versions
+
+!> **580.126.x** (all variants) — breaks NVENC hardware encoding on **all** GPU types (L4, A10G, T4, RTX). Sessions will connect but immediately fail because Pixel Streaming cannot encode video frames.
+
+### Known Good Versions
+
+| Version | Install Method | Verified On |
+|---------|---------------|-------------|
+| 580.82.07 | apt (Ubuntu package manager) | L4 (AWS g6), A10G (AWS g5) |
+| 580.82.09 | .run installer (NVIDIA direct) | L4, RTX PRO 6000 |
+
+### Quick Fix
+
+If you are running a bad driver version, install the known good version:
+
+```bash
+# Check current version
+nvidia-smi | head -3
+
+# If version is 580.126.x, downgrade to 580.82:
+sudo apt install nvidia-driver-580=580.82.07-0ubuntu1
+sudo reboot
+```
+
+### Monitor NVENC During a Session
+
+```bash
+# Watch encoder utilization (enc column should be >0% during active session)
+nvidia-smi dmon -s u
+```
+
+For full details on driver types, installation methods, and GPU compatibility, see the [NVIDIA Driver Guide](guides/nvidia-drivers.md).
 
 ## vLLM Issues
 

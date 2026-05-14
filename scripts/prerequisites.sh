@@ -21,8 +21,11 @@ validate_docker_daemon() {
 # Define required total GPU memory (in MB)
 MIN_GPU_MEMORY=6000
 
-# Define required minimum NVIDIA driver version
+# Required NVIDIA driver major version (install fails below this)
 MIN_NVIDIA_DRIVER_VERSION=580
+
+# Supported NVIDIA driver version (only this version is supported; warns on mismatch)
+SUPPORTED_NVIDIA_DRIVER_VERSION="580.82.09"
 
 # Define required minimum CUDA version
 MIN_CUDA_VERSION=12.0
@@ -81,6 +84,11 @@ check_driver_prerequisites() {
             fatal "$CROSS Nvidia driver version is less than $MIN_NVIDIA_DRIVER_VERSION. Please install Nvidia driver version $MIN_NVIDIA_DRIVER_VERSION or higher."
         else
             success "$CHECKMARK Nvidia driver version $driver_version is sufficient."
+        fi
+
+        # Warn if not on the supported driver version
+        if [[ "$driver_version" != "$SUPPORTED_NVIDIA_DRIVER_VERSION" ]]; then
+            log_warn "Nvidia driver $driver_version detected. MiniPrem only supports $SUPPORTED_NVIDIA_DRIVER_VERSION."
         fi
 
         # Check if CUDA version is at least the minimum required version

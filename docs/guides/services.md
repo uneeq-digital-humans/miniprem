@@ -30,8 +30,9 @@
 | Flowise | Workflow automation | 3000 | [Flowise Guide](flowise.md) |
 | Redis | Queue management | 6379 | - |
 | Prometheus | Metrics collection | 9090 | [Monitoring Guide](monitoring.md) |
-| Grafana | Metrics visualization | 3001 | [Monitoring Guide](monitoring.md) |
+| Grafana | Metrics visualization | 3002 | [Monitoring Guide](monitoring.md) |
 | RIME | Text-to-speech API | 8100 | [RIME Guide](rime.md) |
+| RIVA | GPU-accelerated TTS (NVIDIA) | 50051 (gRPC) | [RIVA Guide](riva-tts.md) |
 | Whisper | Speech recognition | 9000 | [Whisper Guide](whisper.md) |
 
 ## Service Architecture
@@ -50,10 +51,10 @@
 └─────────────┬─────────────┬─────────────┬───────────┘
               │             │             │
               ▼             ▼             ▼
-    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-    │   vLLM      │ │    Redis    │ │ Prometheus  │
-    │  LLM Engine │ │   Queue     │ │   Metrics   │
-    └─────────────┘ └─────────────┘ └──────┬──────┘
+    ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+    │   vLLM      │ │    Redis    │ │ Prometheus  │ │    RIVA     │
+    │  LLM Engine │ │   Queue     │ │   Metrics   │ │  TTS (GPU)  │
+    └─────────────┘ └─────────────┘ └──────┬──────┘ └─────────────┘
                                            │
                                            ▼
                                     ┌─────────────┐
@@ -73,6 +74,11 @@
   - vLLM for language model capabilities
   - Redis for queue management
   - SQLite for database storage (embedded)
+
+- **RIVA** depends on:
+  - NVIDIA GPU with CUDA support
+  - NVIDIA Container Toolkit
+  - NGC API key for model downloads
 
 - **Monitoring** depends on:
   - Prometheus for metrics collection
