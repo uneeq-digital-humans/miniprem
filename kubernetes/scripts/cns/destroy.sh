@@ -25,7 +25,7 @@ error() { echo "❌ $*"; }
 # Configuration
 ################################################################################
 
-CNS_K8S_TYPE="${CNS_K8S_TYPE:-microk8s}"
+CNS_K8S_TYPE="${CNS_K8S_TYPE:-kubeadm}"
 CNS_REMOTE_HOST="${CNS_REMOTE_HOST:-}"
 CNS_REMOTE_USER="${CNS_REMOTE_USER:-ubuntu}"
 CNS_SSH_KEY="${CNS_SSH_KEY:-~/.ssh/id_rsa}"
@@ -93,9 +93,20 @@ destroy_local() {
                 sudo snap remove microk8s || true
                 ;;
             kubeadm)
-                info "Resetting kubeadm..."
-                sudo kubeadm reset -f || true
-                sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd
+                info "Resetting kubeadm cluster..."
+                sudo kubeadm reset -f --cri-socket /run/containerd/containerd.sock || true
+                info "Removing Kubernetes directories..."
+                sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /root/.kube
+                info "Cleaning up CNI configuration..."
+                sudo rm -rf /etc/cni/net.d /opt/cni/bin
+                info "Flushing iptables rules left by Kubernetes..."
+                sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sudo iptables -X || true
+                info "Stopping and disabling kubelet..."
+                sudo systemctl stop kubelet 2>/dev/null || true
+                sudo systemctl disable kubelet 2>/dev/null || true
+                info "Removing kubeadm/kubelet/kubectl packages..."
+                sudo apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
+                sudo apt-get remove -y kubelet kubeadm kubectl 2>/dev/null || true
                 ;;
         esac
 
@@ -158,7 +169,13 @@ if [[ "$PURGE_ALL" == "true" ]]; then
         sudo microk8s reset --destroy-storage || true
         sudo snap remove microk8s || true
     else
-        sudo kubeadm reset -f || true
+        sudo kubeadm reset -f --cri-socket /run/containerd/containerd.sock || true
+        sudo rm -rf /etc/kubernetes /var/lib/kubelet /var/lib/etcd /root/.kube
+        sudo rm -rf /etc/cni/net.d /opt/cni/bin
+        sudo iptables -F && sudo iptables -t nat -F && sudo iptables -t mangle -F && sudo iptables -X || true
+        sudo systemctl stop kubelet 2>/dev/null || true
+        sudo apt-mark unhold kubelet kubeadm kubectl 2>/dev/null || true
+        sudo apt-get remove -y kubelet kubeadm kubectl 2>/dev/null || true
     fi
 fi
 
