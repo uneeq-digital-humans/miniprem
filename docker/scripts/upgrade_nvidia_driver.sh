@@ -347,16 +347,17 @@ main() {
     # --disable-nouveau writes the modprobe.d blacklist for next boot.
     # --no-nouveau-check lets us proceed even though nouveau is currently
     #   bound to the GPU (it can't unload while bound; reboot will switch).
-    # --allow-installation-with-running-x-server bypasses the abort that
-    #   fires when X is running on a different driver (e.g. nouveau after
-    #   a pre-purge + reboot during interactive testing). Production path
-    #   (autoinstall late-commands) has no X server running, so this flag
-    #   is a no-op there; it exists solely to unblock interactive testing.
-    #   Safe because we always reboot after install — any half-applied
-    #   X-side state is wiped by the reboot.
+    # --no-x-check bypasses the abort that fires when X is running on a
+    #   different driver (e.g. nouveau after a pre-purge + reboot during
+    #   interactive testing). Production path (autoinstall late-commands)
+    #   has no X server running, so this flag is a no-op there; it exists
+    #   solely to unblock interactive testing. Safe because we always
+    #   reboot after install — any half-applied X-side state is wiped by
+    #   the reboot. Flag name verified against NVIDIA/nvidia-installer
+    #   option_table.h on GitHub.
     # Installer also writes its own log at /var/log/nvidia-installer.log.
     if ! "$runfile" --silent --dkms --disable-nouveau --no-nouveau-check \
-            --allow-installation-with-running-x-server \
+            --no-x-check \
             >>"$LOG_FILE" 2>&1; then
         err "NVIDIA installer failed. Last 30 lines of /var/log/nvidia-installer.log:"
         tail -n 30 /var/log/nvidia-installer.log 2>/dev/null || true
