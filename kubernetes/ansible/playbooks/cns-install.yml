@@ -223,7 +223,7 @@
     - name: Install Kubernetes via kubeadm (NVIDIA Cloud Native Stack)
       block:
         - name: Check for conflicting Kubernetes installations
-          shell: snap list microk8s 2>/dev/null && echo "FOUND" || echo "NOT_FOUND"
+          shell: snap list microk8s 2>/dev/null && echo "MICROK8S_PRESENT" || echo "MICROK8S_ABSENT"
           register: microk8s_check
           changed_when: false
 
@@ -234,7 +234,7 @@
               Remove it before proceeding:
                 sudo snap remove microk8s --purge
               Then re-run this playbook.
-          when: "'FOUND' in microk8s_check.stdout"
+          when: "'MICROK8S_PRESENT' in microk8s_check.stdout"
 
         - name: Disable swap
           command: swapoff -a

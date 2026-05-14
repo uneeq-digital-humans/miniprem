@@ -214,10 +214,10 @@ After successful setup, verify your instances:
 docker ps | grep renny
 
 # Expected output:
-# CONTAINER_ID  IMAGE                       STATUS
-# abc123...     facemeproduction/renny...   Up 2 minutes (healthy)
-# def456...     facemeproduction/renny...   Up 1 minute (healthy)
-# ghi789...     facemeproduction/renny...   Up 30 seconds (healthy)
+# CONTAINER_ID  IMAGE                            STATUS
+# abc123...     cr.uneeq.io/uneeq/renny-renderer Up 2 minutes (healthy)
+# def456...     cr.uneeq.io/uneeq/renny-renderer Up 1 minute (healthy)
+# ghi789...     cr.uneeq.io/uneeq/renny-renderer Up 30 seconds (healthy)
 
 # Test health endpoints
 curl http://localhost:8081/health  # First instance
@@ -671,7 +671,7 @@ Original docker-compose.full.yml (simplified):
 services:
   renny:
     container_name: renny
-    image: "facemeproduction/renny:0.713-37d59"
+    image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
     ports:
       - "8080:8080"
       - "8081:8081"
@@ -688,7 +688,7 @@ After adding second instance:
 services:
   renny:
     container_name: renny
-    image: "facemeproduction/renny:0.713-37d59"
+    image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
     ports:
       - "8080:8080"
       - "8081:8081"
@@ -700,7 +700,7 @@ services:
 
   renny-second:
     container_name: renny-second
-    image: "facemeproduction/renny:0.713-37d59"
+    image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
     ports:
       - "8090:8090"
       - "8091:8091"

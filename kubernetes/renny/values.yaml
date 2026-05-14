@@ -1,5 +1,5 @@
 # Default image - will be overridden by values file
-image: "facemeproduction/renny:latest"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
 
 deployment:
   # value for uneeq.io/node-type label used as a nodeSelector

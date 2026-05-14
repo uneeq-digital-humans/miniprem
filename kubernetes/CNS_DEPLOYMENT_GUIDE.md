@@ -213,7 +213,7 @@ kubectl get pods -A
 
 ```yaml
 # Core settings
-image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
 
 deployment:
   totalReplicas: 4        # Number of Renny pods

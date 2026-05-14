@@ -671,7 +671,7 @@ This generates the merged configuration for inspection.
 # docker-compose.yml
 services:
   renny:
-    image: facemeproduction/renny:latest
+    image: cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7
     ...
 
 # docker-compose.custom.yml
@@ -691,7 +691,7 @@ Properties are **merged** (arrays concatenated, scalars overridden):
 # docker-compose.yml
 services:
   renny:
-    image: facemeproduction/renny:latest
+    image: cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7
     ports:
       - "8081:8081"
     environment:
@@ -708,7 +708,7 @@ services:
 # Result:
 services:
   renny:
-    image: facemeproduction/renny:latest
+    image: cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7
     ports:
       - "8081:8081"
       - "8082:8082"  # Both ports
@@ -725,7 +725,7 @@ services:
 # docker-compose.yml
 services:
   renny:
-    image: facemeproduction/renny:0.758-f9e3f
+    image: cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7
     container_name: renny
 
 # docker-compose.custom.yml
