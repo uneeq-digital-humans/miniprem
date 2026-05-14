@@ -516,10 +516,9 @@ check_wss_service() {
 
     set +e
     local http_code
-    # curl with --max-time 30 to allow server time to respond (can take ~4s),
-    # then -w to capture HTTP status. 101 = WebSocket upgrade accepted.
+    # --max-time 20 so firewall timeouts don't stall the install indefinitely.
     http_code=$(curl -sk -o /dev/null -w "%{http_code}" \
-        --max-time 30 \
+        --max-time 20 \
         -H "Connection: Upgrade" \
         -H "Upgrade: websocket" \
         -H "Sec-WebSocket-Version: 13" \
@@ -530,13 +529,12 @@ check_wss_service() {
 
     info "  HTTP response code: $http_code"
 
-    if [[ "$http_code" == "101" || "$http_code" == "200" ]]; then
-        success "$CHECKMARK Service at $url is reachable."
+    # 101 = WebSocket upgrade, 200 = OK, 401/403 = reachable but requires auth
+    if [[ "$http_code" == "101" || "$http_code" == "200" || "$http_code" == "401" || "$http_code" == "403" ]]; then
+        success "$CHECKMARK Service at $url is reachable (HTTP $http_code)."
     else
-        error "$CROSS Service at $url is not reachable."
-        info "Expected HTTP 101 (WebSocket upgrade) but got: $http_code"
-        info "Tip: Verify network allows outbound WebSocket connections on port 443"
-        fatal "WebSocket connection test failed for $url"
+        warning "$CROSS Could not verify $url (HTTP ${http_code:-timeout/error})."
+        warning "Installation will continue — verify network allows port 443 outbound before starting Renny."
     fi
 }
 
