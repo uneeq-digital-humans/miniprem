@@ -80,6 +80,20 @@ CNS MiniPrem is an on-premises deployment option that installs the full MiniPrem
 | Network | Internet for initial setup |
 | Access | Root/sudo privileges |
 
+### Known Conflicts
+
+**MicroK8s** must not be installed when using the kubeadm path. Both use the same Kubernetes ports (10250, 10257, 10259) and the deployment will fail at cluster initialization with cryptic port-in-use errors.
+
+If MicroK8s is present, remove it before running the playbook:
+
+```bash
+sudo snap remove microk8s --purge
+```
+
+The playbook will detect MicroK8s and fail with a clear message if it finds it running.
+
+---
+
 ### Step 1: Get NGC API Key
 
 1. Visit https://ngc.nvidia.com/
