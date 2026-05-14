@@ -304,46 +304,54 @@ main() {
         fi
     fi
 
-    # ---- Step 1/8: ensure kernel headers, build toolchain, curl ----
+    # ---- Step 1/9: ensure kernel headers, build toolchain, dkms, curl ----
     # build-essential pulls in gcc/g++/make/libc6-dev/dpkg-dev — DKMS
     # compiles the nvidia kernel module from source and needs all of it.
     # On a fresh Ubuntu install gcc is not present by default; previously
     # the apt-managed nvidia packages pulled it in transitively. Going via
     # the .run installer, we own this dependency explicitly.
-    info "Step 1/8: ensure prerequisites (kernel headers, build toolchain, curl)"
+    #
+    # dkms itself is also required: the .run installer's --dkms flag
+    # silently falls back to non-DKMS install if the dkms package isn't
+    # present, which means modules land in /lib/modules/.../kernel/ rather
+    # than .../updates/dkms/, and future kernel upgrades will break the
+    # driver (no auto-rebuild). Installing dkms here guarantees --dkms
+    # actually registers the modules for auto-rebuild on kernel update.
+    info "Step 1/9: ensure prerequisites (kernel headers, build toolchain, dkms, curl)"
     quietly apt-get update
     quietly apt-get install -y \
         "linux-headers-$(uname -r)" \
         build-essential \
+        dkms \
         curl \
         ca-certificates \
         || fatal "Failed to install build prerequisites"
 
-    # ---- Step 2/8: pre-flight CDN check so we fail fast on bad version ----
+    # ---- Step 2/9: pre-flight CDN check so we fail fast on bad version ----
     local url
     url="$(build_installer_url)"
-    info "Step 2/8: verify NVIDIA CDN has $TARGET_NVIDIA_VERSION available"
+    info "Step 2/9: verify NVIDIA CDN has $TARGET_NVIDIA_VERSION available"
     info "  URL: $url"
     if ! curl -sSf -I --max-time 10 "$url" >/dev/null 2>>"$LOG_FILE"; then
         fatal "NVIDIA CDN URL not reachable or version not published: $url"
     fi
     success "CDN URL reachable."
 
-    # ---- Step 3/8: purge any apt-managed nvidia packages (clean slate) ----
+    # ---- Step 3/9: purge any apt-managed nvidia packages (clean slate) ----
     # No apt-get autoremove here. autoremove is more cleanup than necessity
     # — the nvidia purge does the actual work of clearing conflicting
     # packages. autoremove is well-meaning but can quietly yank packages
     # we want (we narrowly avoided losing build-essential's transitive
     # dependencies that way during testing). The disk-space saving is
     # negligible vs the risk of pulling out something we need.
-    info "Step 3/8: purge any existing nvidia-* apt packages"
+    info "Step 3/9: purge any existing nvidia-* apt packages"
     # Glob may match nothing; tolerate that. Output goes to log.
     quietly bash -c "apt-get purge -y 'nvidia-*' 'libnvidia-*' || true"
     success "Existing nvidia packages removed."
 
-    # ---- Step 4/8: download the .run installer ----
+    # ---- Step 4/9: download the .run installer ----
     local runfile="/tmp/NVIDIA-Linux-$(uname -m)-${TARGET_NVIDIA_VERSION}.run"
-    info "Step 4/8: download .run installer to $runfile"
+    info "Step 4/9: download .run installer to $runfile"
     # curl with progress bar visible (not in log) so operator sees download advance
     if ! curl -fL --retry 3 --retry-delay 5 -# -o "$runfile" "$url"; then
         fatal "Failed to download $url"
@@ -351,8 +359,8 @@ main() {
     chmod +x "$runfile"
     success "Downloaded $(du -h "$runfile" | cut -f1) installer."
 
-    # ---- Step 5/8: run the silent installer ----
-    info "Step 5/8: run NVIDIA installer (--silent --dkms)"
+    # ---- Step 5/9: run the silent installer ----
+    info "Step 5/9: run NVIDIA installer (--silent --dkms)"
     # --silent implies --no-questions and --accept-license.
     # --dkms registers the kernel module so future kernel upgrades rebuild it.
     # --disable-nouveau writes the modprobe.d blacklist for next boot.
@@ -387,16 +395,39 @@ main() {
     # Cleanup the downloaded .run file
     rm -f "$runfile"
 
-    # ---- Step 6/8: write apt preferences pin ----
-    info "Step 6/8: write apt preferences pin to protect the install"
+    # ---- Step 6/9: write apt preferences pin ----
+    info "Step 6/9: write apt preferences pin to protect the install"
     write_apt_pin
 
-    # ---- Step 7/8: enforce X11 (disable Wayland) ----
-    info "Step 7/8: enforce X11 session (set WaylandEnable=false in GDM config)"
+    # ---- Step 7/9: blacklist nouveau and rebuild initramfs ----
+    # The .run installer's --disable-nouveau is unreliable on Ubuntu 24.04 +
+    # kernel 6.17: the installer's internal update-initramfs invocation
+    # errors out with "requires a file path argument" on this combination,
+    # and the blacklist file doesn't end up where the running initramfs
+    # picks it up. After reboot, nouveau loads early, claims the GPU, and
+    # nvidia.ko can't bind (kernel messages: "GPU 0000:01:00.0 is already
+    # bound to nouveau" / "No NVIDIA devices probed"). Take ownership of
+    # nouveau blacklisting explicitly. Idempotent: re-running just
+    # overwrites the file with the same content.
+    info "Step 7/9: blacklist nouveau and rebuild initramfs"
+    cat > /etc/modprobe.d/blacklist-nouveau.conf <<'EOF'
+# Managed by upgrade_nvidia_driver.sh
+# Block nouveau so nvidia.ko can claim the GPU at boot.
+blacklist nouveau
+options nouveau modeset=0
+EOF
+    chmod 644 /etc/modprobe.d/blacklist-nouveau.conf
+    info "  Wrote /etc/modprobe.d/blacklist-nouveau.conf"
+    info "  Regenerating initramfs (this takes ~30 seconds)..."
+    quietly update-initramfs -u || fatal "Failed to regenerate initramfs"
+    success "nouveau blacklisted, initramfs regenerated."
+
+    # ---- Step 8/9: enforce X11 (disable Wayland) ----
+    info "Step 8/9: enforce X11 session (set WaylandEnable=false in GDM config)"
     disable_wayland_in_gdm
 
-    # ---- Step 8/8: reboot (or skip) ----
-    info "Step 8/8: reboot to load the new kernel modules"
+    # ---- Step 9/9: reboot (or skip) ----
+    info "Step 9/9: reboot to load the new kernel modules"
     echo
 
     # Note: nvidia-smi will still report the OLD driver until reboot because
