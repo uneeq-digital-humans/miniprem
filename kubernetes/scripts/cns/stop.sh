@@ -26,7 +26,7 @@ error() { echo "❌ $*"; }
 # Configuration
 ################################################################################
 
-CNS_K8S_TYPE="${CNS_K8S_TYPE:-microk8s}"
+CNS_K8S_TYPE="${CNS_K8S_TYPE:-kubeadm}"
 CNS_REMOTE_HOST="${CNS_REMOTE_HOST:-}"
 CNS_REMOTE_USER="${CNS_REMOTE_USER:-ubuntu}"
 CNS_SSH_KEY="${CNS_SSH_KEY:-~/.ssh/id_rsa}"
