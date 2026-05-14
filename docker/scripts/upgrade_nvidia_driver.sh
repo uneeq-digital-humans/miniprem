@@ -304,11 +304,17 @@ main() {
         fi
     fi
 
-    # ---- Step 1/8: ensure kernel headers + curl ----
-    info "Step 1/8: ensure prerequisites (kernel headers, curl)"
+    # ---- Step 1/8: ensure kernel headers, build toolchain, curl ----
+    # build-essential pulls in gcc/g++/make/libc6-dev/dpkg-dev — DKMS
+    # compiles the nvidia kernel module from source and needs all of it.
+    # On a fresh Ubuntu install gcc is not present by default; previously
+    # the apt-managed nvidia packages pulled it in transitively. Going via
+    # the .run installer, we own this dependency explicitly.
+    info "Step 1/8: ensure prerequisites (kernel headers, build toolchain, curl)"
     quietly apt-get update
     quietly apt-get install -y \
         "linux-headers-$(uname -r)" \
+        build-essential \
         curl \
         ca-certificates \
         || fatal "Failed to install build prerequisites"
