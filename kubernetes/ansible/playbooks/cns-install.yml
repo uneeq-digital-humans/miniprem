@@ -219,23 +219,126 @@
     ##########################################################################
     # kubeadm Installation (alternative)
     ##########################################################################
-    - name: Install Kubernetes via kubeadm
+    - name: Install Kubernetes via kubeadm (NVIDIA Cloud Native Stack)
       block:
-        - name: Install containerd
+        - name: Disable swap
+          command: swapoff -a
+          changed_when: false
+
+        - name: Remove swap from fstab
+          replace:
+            path: /etc/fstab
+            regexp: '^([^#].*?\bswap\b.*)$'
+            replace: '# \1'
+
+        - name: Load required kernel modules
+          modprobe:
+            name: "{{ item }}"
+            state: present
+          loop:
+            - overlay
+            - br_netfilter
+
+        - name: Persist kernel modules across reboots
+          copy:
+            dest: /etc/modules-load.d/containerd.conf
+            content: |
+              overlay
+              br_netfilter
+
+        - name: Set sysctl params required by Kubernetes networking
+          sysctl:
+            name: "{{ item.key }}"
+            value: "{{ item.value }}"
+            sysctl_file: /etc/sysctl.d/k8s.conf
+            reload: yes
+          loop:
+            - { key: 'net.bridge.bridge-nf-call-iptables',  value: '1' }
+            - { key: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+            - { key: 'net.ipv4.ip_forward',                 value: '1' }
+
+        - name: Add Docker apt signing key (for containerd.io)
+          get_url:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            dest: /etc/apt/keyrings/docker.asc
+            mode: '0644'
+
+        - name: Add Docker apt repository
+          apt_repository:
+            repo: "deb [arch={{ ansible_architecture | replace('x86_64', 'amd64') }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+            state: present
+            filename: docker
+          when: ansible_os_family == "Debian"
+
+        - name: Install containerd.io from Docker (not Ubuntu's containerd package)
           package:
-            name: containerd
+            name: containerd.io
             state: present
 
-        - name: Add Kubernetes apt key
-          apt_key:
-            url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
+        - name: Generate default containerd config
+          shell: containerd config default > /etc/containerd/config.toml
+          args:
+            creates: /etc/containerd/config.toml
+
+        - name: Enable SystemdCgroup in containerd (required for kubeadm)
+          replace:
+            path: /etc/containerd/config.toml
+            regexp: 'SystemdCgroup = false'
+            replace: 'SystemdCgroup = true'
+
+        - name: Restart and enable containerd
+          systemd:
+            name: containerd
+            state: restarted
+            enabled: yes
+
+        - name: Add NVIDIA Container Toolkit GPG key
+          get_url:
+            url: https://nvidia.github.io/libnvidia-container/gpgkey
+            dest: /tmp/nvidia-ctk.gpg
+          register: nvctk_gpg
+
+        - name: Dearmor NVIDIA Container Toolkit GPG key
+          shell: gpg --dearmor < /tmp/nvidia-ctk.gpg > /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+          when: nvctk_gpg.changed
+          changed_when: true
+
+        - name: Add NVIDIA Container Toolkit apt repository
+          shell: |
+            curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+              | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+              > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+          changed_when: false
+
+        - name: Install NVIDIA Container Toolkit
+          apt:
+            name: nvidia-container-toolkit
             state: present
-          when: ansible_os_family == "Debian"
+            update_cache: yes
+
+        - name: Configure NVIDIA runtime in containerd
+          command: nvidia-ctk runtime configure --runtime=containerd
+          changed_when: false
+
+        - name: Restart containerd after NVIDIA runtime configuration
+          systemd:
+            name: containerd
+            state: restarted
+
+        - name: Add Kubernetes apt signing key
+          get_url:
+            url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
+            dest: /tmp/k8s-release.key
+
+        - name: Dearmor Kubernetes apt signing key
+          shell: gpg --dearmor < /tmp/k8s-release.key > /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+          changed_when: false
 
         - name: Add Kubernetes apt repository
           apt_repository:
-            repo: "deb https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+            repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
             state: present
+            filename: kubernetes
           when: ansible_os_family == "Debian"
 
         - name: Install kubeadm, kubelet, kubectl
@@ -246,18 +349,36 @@
               - kubectl
             state: present
 
+        - name: Hold kubeadm, kubelet, kubectl at current version
+          dpkg_selections:
+            name: "{{ item }}"
+            selection: hold
+          loop:
+            - kubelet
+            - kubeadm
+            - kubectl
+          when: ansible_os_family == "Debian"
+
+        - name: Enable kubelet
+          systemd:
+            name: kubelet
+            enabled: yes
+
         - name: Initialize Kubernetes cluster
-          command: kubeadm init --pod-network-cidr=10.244.0.0/16
+          command: >
+            kubeadm init
+            --cri-socket /run/containerd/containerd.sock
+            --pod-network-cidr=192.168.0.0/16
           args:
             creates: /etc/kubernetes/admin.conf
 
-        - name: Create .kube directory
+        - name: Create .kube directory for root
           file:
             path: /root/.kube
             state: directory
-            mode: '0755'
+            mode: '0700'
 
-        - name: Copy admin.conf
+        - name: Copy admin.conf for root
           copy:
             src: /etc/kubernetes/admin.conf
             dest: /root/.kube/config
@@ -268,9 +389,30 @@
           command: kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/calico.yaml
           changed_when: false
 
-        - name: Remove control-plane taint for single-node
+        - name: Wait for Calico to be available
+          command: kubectl wait --for=condition=available deployment/calico-kube-controllers -n kube-system --timeout=300s
+          changed_when: false
+          failed_when: false
+
+        - name: Remove control-plane taint for single-node scheduling
           command: kubectl taint nodes --all node-role.kubernetes.io/control-plane-
           failed_when: false
+          changed_when: false
+
+        - name: Install Helm 3
+          shell: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          args:
+            creates: /usr/local/bin/helm
+
+        - name: Wait for node to be Ready
+          command: kubectl wait --for=condition=Ready node --all --timeout=300s
+          changed_when: false
+
+        - name: Label nodes for Renny scheduling
+          shell: |
+            for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+              kubectl label node "$node" uneeq.io/node-type=renny --overwrite
+            done
           changed_when: false
 
       when: cns_k8s_type == 'kubeadm'
