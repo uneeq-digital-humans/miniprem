@@ -10,7 +10,7 @@ kubernetes_version: "1.31"
 
 # NVIDIA Components
 gpu_operator_version: "v24.9.0"
-nvidia_driver_version: "550.90.07"
+nvidia_driver_version: "580.82.09"
 cuda_version: "12.4"
 nvidia_container_toolkit_version: "1.16.0"
 
