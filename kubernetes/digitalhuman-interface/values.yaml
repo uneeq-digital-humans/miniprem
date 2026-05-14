@@ -1,0 +1,37 @@
+image: "cr.uneeq.io/uneeq/digitalhuman-interface:latest"
+
+imagePullSecrets:
+  - name: harbor-credentials
+
+replicas: 1
+
+# Backend URLs injected into config.yaml at deploy time
+backend:
+  wsUrl: "ws://digitalhuman-api.miniprem/ws"
+  httpUrl: "http://digitalhuman-api.miniprem"
+  key: ""
+
+stt:
+  provider: "riva"
+  rivaUrl: "http://digitalhuman-asr.miniprem"
+  language: "en-US"
+
+standalone: true
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  host: "digitalhuman.miniprem"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"

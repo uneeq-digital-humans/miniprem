@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digitalhuman-websocket-api
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: digitalhuman-websocket-api
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: digitalhuman-websocket-api
+  template:
+    metadata:
+      labels:
+        app: digitalhuman-websocket-api
+    spec:
+      imagePullSecrets:
+      {{- range .Values.imagePullSecrets }}
+      - name: {{ .name }}
+      {{- end }}
+      containers:
+      - name: api
+        image: {{ .Values.image }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.env.HTTP_PORT }}
+        - name: ws
+          containerPort: {{ .Values.env.WEBSOCKET_PORT }}
+        env:
+        - name: HTTP_PORT
+          value: {{ .Values.env.HTTP_PORT | quote }}
+        - name: WEBSOCKET_PORT
+          value: {{ .Values.env.WEBSOCKET_PORT | quote }}
+        - name: CORS_ORIGIN
+          value: {{ .Values.env.CORS_ORIGIN | quote }}
+        - name: LOG_LEVEL
+          value: {{ .Values.env.LOG_LEVEL | quote }}
+        {{- if .Values.secrets.httpServiceApiKey }}
+        - name: HTTP_SERVICE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: digitalhuman-websocket-api
+              key: HTTP_SERVICE_API_KEY
+        {{- end }}
+        {{- if .Values.secrets.deepgramApiKey }}
+        - name: DEEPGRAM_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: digitalhuman-websocket-api
+              key: DEEPGRAM_API_KEY
+        {{- end }}
+        resources:
+          requests:
+            cpu: {{ .Values.resources.requests.cpu }}
+            memory: {{ .Values.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.resources.limits.cpu }}
+            memory: {{ .Values.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.env.HTTP_PORT }}
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.env.HTTP_PORT }}
+          initialDelaySeconds: 5
+          periodSeconds: 10

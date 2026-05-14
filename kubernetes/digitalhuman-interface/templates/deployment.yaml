@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digitalhuman-interface
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: digitalhuman-interface
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: digitalhuman-interface
+  template:
+    metadata:
+      labels:
+        app: digitalhuman-interface
+    spec:
+      imagePullSecrets:
+      {{- range .Values.imagePullSecrets }}
+      - name: {{ .name }}
+      {{- end }}
+      containers:
+      - name: interface
+        image: {{ .Values.image }}
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: {{ .Values.resources.requests.cpu }}
+            memory: {{ .Values.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.resources.limits.cpu }}
+            memory: {{ .Values.resources.limits.memory }}
+        volumeMounts:
+        - name: config
+          mountPath: /usr/share/nginx/html/assets/config.yaml
+          subPath: config.yaml
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: digitalhuman-interface-config
