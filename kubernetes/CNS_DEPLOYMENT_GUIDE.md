@@ -26,15 +26,15 @@ CNS MiniPrem is an on-premises deployment option that installs the full MiniPrem
 │    └── Ubuntu 22.04+ or RHEL 8.7+                              │
 ├─────────────────────────────────────────────────────────────────┤
 │  Layer 2: Prerequisites (auto-installed)                        │
-│    ├── snapd (for MicroK8s)                                    │
+│    ├── curl, gpg (for apt key imports)                         │
 │    ├── Google Chrome (for kiosk interface)                     │
 │    └── curl, wget, jq, git                                     │
 ├─────────────────────────────────────────────────────────────────┤
 │  Layer 3: Kubernetes                                            │
-│    ├── MicroK8s (recommended for single-node)                  │
-│    │   └── Addons: dns, hostpath-storage, helm3, nvidia        │
-│    └── OR kubeadm (for multi-node clusters)                    │
-│        └── Calico CNI, containerd runtime                      │
+│    ├── kubeadm (default — NVIDIA Cloud Native Stack aligned)   │
+│    │   └── containerd.io, Calico CNI, NVIDIA CTK               │
+│    └── OR MicroK8s (legacy option, not recommended for prod)   │
+│        └── Addons: dns, hostpath-storage, helm3, nvidia        │
 ├─────────────────────────────────────────────────────────────────┤
 │  Layer 4: GPU Stack                                             │
 │    ├── NVIDIA GPU Operator                                      │
@@ -97,7 +97,7 @@ cd kubernetes/scripts
 
 # Select: 4) NVIDIA Cloud Native Stack (CNS)
 # Select: 1) Local Install (or 2 for Remote)
-# Select: 1) MicroK8s (recommended)
+# Select: 1) kubeadm (recommended)
 # Enter: NGC API Key when prompted
 ```
 
@@ -107,7 +107,7 @@ cd kubernetes/scripts/cns
 
 # Set environment variables
 export NGC_API_KEY='your-ngc-api-key'
-export CNS_K8S_TYPE=microk8s  # or kubeadm
+export CNS_K8S_TYPE=kubeadm  # default; use microk8s only for dev/test
 export RENNY_REPLICAS=4
 
 # Run
@@ -143,8 +143,8 @@ NGC_API_KEY='your-key' ansible-playbook -i inventory/hosts.yml playbooks/cns-ins
 ./cns/status.sh
 
 # Or manually:
-microk8s kubectl get nodes
-microk8s kubectl get pods -A
+kubectl get nodes
+kubectl get pods -A
 ```
 
 ---
@@ -156,7 +156,7 @@ microk8s kubectl get pods -A
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NGC_API_KEY` | (required) | NVIDIA NGC API key for model downloads |
-| `CNS_K8S_TYPE` | `microk8s` | Kubernetes distribution: `microk8s` or `kubeadm` |
+| `CNS_K8S_TYPE` | `kubeadm` | Kubernetes distribution: `kubeadm` (default) or `microk8s` (dev/test) |
 | `CNS_DEPLOY_TYPE` | `local` | Deployment type: `local` or `remote` |
 | `RENNY_REPLICAS` | `4` | Number of Renny instances to deploy |
 | `CNS_REMOTE_HOST` | - | Remote server IP/hostname (for remote deploy) |
@@ -428,7 +428,7 @@ vim kubernetes/values/renny-values-cns.yaml
 # Change: gpuTimeSlicing.replicasPerGpu: 18
 
 # Option 4: Helm upgrade (if already deployed)
-microk8s helm3 upgrade renny ./renny \
+helm upgrade renny ./renny \
   --namespace uneeq \
   --set deployment.totalReplicas=18
 ```
@@ -448,7 +448,7 @@ The sizer provides **estimates**. To validate on real hardware:
 RENNY_REPLICAS=1 ./deploy-local.sh
 
 # Wait for pod to be running
-microk8s kubectl get pods -n uneeq -w
+kubectl get pods -n uneeq -w
 
 # Record baseline GPU usage
 nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv -l 1
@@ -464,10 +464,10 @@ for count in 2 4 6 8 10; do
     echo "Testing with $count Rennys..."
 
     # Scale Rennys
-    microk8s kubectl scale deployment/renderer -n uneeq --replicas=$count
+    kubectl scale deployment/renderer -n uneeq --replicas=$count
 
     # Wait for all pods ready
-    microk8s kubectl wait --for=condition=ready pod -l app=renderer -n uneeq --timeout=300s
+    kubectl wait --for=condition=ready pod -l app=renderer -n uneeq --timeout=300s
 
     # Record metrics for 60 seconds
     echo "Recording metrics..."
@@ -477,7 +477,7 @@ for count in 2 4 6 8 10; do
     kill $PID
 
     # Check for OOM or failures
-    microk8s kubectl get pods -n uneeq | grep -E "Error|OOM|CrashLoop" && echo "FAILURE at $count" && break
+    kubectl get pods -n uneeq | grep -E "Error|OOM|CrashLoop" && echo "FAILURE at $count" && break
 
     echo "Success with $count Rennys"
     echo "---"
@@ -518,12 +518,12 @@ for resolution in "1920x1080" "3840x2160"; do
         echo "Testing: $resolution @ $quality"
 
         # Update deployment
-        microk8s kubectl set env deployment/renderer -n uneeq \
+        kubectl set env deployment/renderer -n uneeq \
             RENNY_QUALITY_LEVEL=$quality
 
         # Restart to apply (resolution requires pod restart with new args)
-        microk8s kubectl rollout restart deployment/renderer -n uneeq
-        microk8s kubectl rollout status deployment/renderer -n uneeq
+        kubectl rollout restart deployment/renderer -n uneeq
+        kubectl rollout status deployment/renderer -n uneeq
 
         # Record GPU metrics
         nvidia-smi --query-gpu=memory.used,utilization.gpu --format=csv -l 5 | \
@@ -556,13 +556,13 @@ grep "Success" actual_results.txt | tail -1
 watch -n 1 nvidia-smi
 
 # Terminal 2: Watch pods
-watch -n 2 'microk8s kubectl get pods -n uneeq'
+watch -n 2 'kubectl get pods -n uneeq'
 
 # Terminal 3: Watch events
-microk8s kubectl get events -n uneeq -w
+kubectl get events -n uneeq -w
 
 # Terminal 4: Pod logs
-microk8s kubectl logs -n uneeq -l app=renderer -f --tail=50
+kubectl logs -n uneeq -l app=renderer -f --tail=50
 ```
 
 ### Expected Results Matrix
@@ -593,14 +593,14 @@ lspci | grep -i nvidia  # Should show GPU device
 
 ### Pods Stuck Pending
 ```bash
-microk8s kubectl describe pod -n uneeq  # Check events
-microk8s kubectl get nodes -o jsonpath='{.items[*].status.allocatable}'  # Check GPU resources
+kubectl describe pod -n uneeq  # Check events
+kubectl get nodes -o jsonpath='{.items[*].status.allocatable}'  # Check GPU resources
 ```
 
 ### Out of Memory
 ```bash
 # Reduce replicas
-microk8s kubectl scale deployment/renderer -n uneeq --replicas=2
+kubectl scale deployment/renderer -n uneeq --replicas=2
 
 # Check which pods are using GPU memory
 nvidia-smi pmon -s m
@@ -609,10 +609,10 @@ nvidia-smi pmon -s m
 ### Time-Slicing Not Working
 ```bash
 # Verify configmap exists
-microk8s kubectl get configmap -n gpu-operator
+kubectl get configmap -n gpu-operator
 
 # Check cluster policy
-microk8s kubectl get clusterpolicy -n gpu-operator -o yaml
+kubectl get clusterpolicy -n gpu-operator -o yaml
 ```
 
 ---
@@ -629,10 +629,10 @@ microk8s kubectl get clusterpolicy -n gpu-operator -o yaml
 ./cns/scale.sh 8
 
 # View logs
-microk8s kubectl logs -n uneeq -l app=renderer -f
+kubectl logs -n uneeq -l app=renderer -f
 
 # Restart all Rennys
-microk8s kubectl rollout restart deployment/renderer -n uneeq
+kubectl rollout restart deployment/renderer -n uneeq
 
 # Destroy everything
 ./cns/destroy.sh

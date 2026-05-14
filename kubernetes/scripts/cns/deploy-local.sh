@@ -188,7 +188,7 @@ trap cleanup_on_failure EXIT
 # Configuration
 ################################################################################
 
-CNS_K8S_TYPE="${CNS_K8S_TYPE:-microk8s}"
+CNS_K8S_TYPE="${CNS_K8S_TYPE:-kubeadm}"
 NGC_API_KEY="${NGC_API_KEY:-}"
 NVIDIA_DIR="${NVIDIA_DIR:-$KUBERNETES_DIR/../nvidia}"
 RENNY_REPLICAS="${RENNY_REPLICAS:-4}"  # Number of Renny instances (adjust for GPU count)
@@ -1360,44 +1360,140 @@ install_microk8s() {
 ################################################################################
 
 install_kubeadm() {
-    info "Installing Kubernetes via kubeadm..."
+    info "Installing Kubernetes via kubeadm (NVIDIA Cloud Native Stack)..."
 
-    # This is a simplified kubeadm setup
-    # For production, more configuration is needed
+    local K8S_VERSION="1.31"
+    local CALICO_VERSION="v3.28.0"
 
-    # Install containerd
+    # Step 1: Disable swap (kubeadm requirement)
+    CLEANUP_STAGE="swap-disable"
+    swapoff -a
+    sed -i '/\bswap\b/d' /etc/fstab
+    success "Swap disabled"
+
+    # Step 2: Kernel modules required by Kubernetes networking
+    CLEANUP_STAGE="kernel-modules"
+    modprobe overlay
+    modprobe br_netfilter
+    cat > /etc/modules-load.d/containerd.conf <<'EOF'
+overlay
+br_netfilter
+EOF
+    cat > /etc/sysctl.d/k8s.conf <<'EOF'
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+EOF
+    sysctl --system > /dev/null
+    success "Kernel modules and sysctl params configured"
+
+    # Step 3: Install containerd.io from Docker (not Ubuntu's containerd package)
+    # Ubuntu's containerd lacks CDI and does not receive timely updates
+    CLEANUP_STAGE="containerd-install"
+    info "Installing containerd.io from Docker registry..."
+    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        > /etc/apt/sources.list.d/docker.list
     apt-get update
-    apt-get install -y containerd
+    apt-get install -y containerd.io
 
-    # Configure containerd for NVIDIA
+    # Configure containerd: SystemdCgroup=true is required when using kubeadm
     mkdir -p /etc/containerd
     containerd config default > /etc/containerd/config.toml
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+    systemctl restart containerd
+    systemctl enable containerd
+    success "containerd configured (SystemdCgroup=true)"
 
-    # Install kubeadm, kubelet, kubectl
-    apt-get install -y apt-transport-https ca-certificates curl
+    # Step 4: Install NVIDIA Container Toolkit and wire it into containerd
+    # This must happen before kubeadm init so the GPU runtime is available at cluster start
+    CLEANUP_STAGE="nvidia-ctk"
+    info "Installing NVIDIA Container Toolkit..."
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+        | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+        | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+        > /etc/apt/sources.list.d/nvidia-container-toolkit.list
+    apt-get update
+    apt-get install -y nvidia-container-toolkit
+    nvidia-ctk runtime configure --runtime=containerd
+    systemctl restart containerd
+    success "NVIDIA Container Toolkit configured for containerd"
 
-    # Add Kubernetes apt repository
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' > /etc/apt/sources.list.d/kubernetes.list
-
+    # Step 5: Install kubeadm, kubelet, kubectl
+    CLEANUP_STAGE="kubeadm-install"
+    info "Installing kubeadm, kubelet, kubectl v${K8S_VERSION}..."
+    mkdir -p /etc/apt/keyrings
+    curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key" \
+        | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
+https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/ /" \
+        > /etc/apt/sources.list.d/kubernetes.list
     apt-get update
     apt-get install -y kubelet kubeadm kubectl
     apt-mark hold kubelet kubeadm kubectl
+    systemctl enable kubelet
+    success "kubeadm, kubelet, kubectl installed and held at v${K8S_VERSION}"
 
-    # Initialize cluster
-    kubeadm init --pod-network-cidr=10.244.0.0/16
+    # Step 6: Initialize the cluster
+    # Use Calico's pod CIDR (192.168.0.0/16), not Flannel's — must match CNI
+    CLEANUP_STAGE="kubeadm-init"
+    info "Initializing Kubernetes cluster with kubeadm..."
+    kubeadm init \
+        --cri-socket /run/containerd/containerd.sock \
+        --pod-network-cidr=192.168.0.0/16
+    success "Cluster initialized"
 
-    # Setup kubectl for root user
+    # Step 7: kubeconfig for root and invoking user
+    CLEANUP_STAGE="kubeconfig"
     mkdir -p /root/.kube
-    cp -i /etc/kubernetes/admin.conf /root/.kube/config
+    cp /etc/kubernetes/admin.conf /root/.kube/config
+    chmod 600 /root/.kube/config
+    if [[ -n "${SUDO_USER:-}" ]]; then
+        local user_home
+        user_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
+        mkdir -p "$user_home/.kube"
+        cp /etc/kubernetes/admin.conf "$user_home/.kube/config"
+        chown -R "${SUDO_USER}:${SUDO_USER}" "$user_home/.kube"
+        info "kubeconfig installed for user: $SUDO_USER"
+    fi
 
-    # Install Calico CNI
-    kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.0/manifests/calico.yaml
+    # Step 8: Install Calico CNI
+    CLEANUP_STAGE="calico-cni"
+    info "Installing Calico CNI ${CALICO_VERSION}..."
+    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/${CALICO_VERSION}/manifests/calico.yaml"
+    info "Waiting for Calico to be ready..."
+    kubectl wait --for=condition=available deployment/calico-kube-controllers \
+        -n kube-system --timeout=300s || true
+    success "Calico CNI installed"
 
-    # Remove taint to allow scheduling on control plane (single node)
-    kubectl taint nodes --all node-role.kubernetes.io/control-plane- || true
+    # Step 9: Remove control-plane taint (single-node: allow pod scheduling here)
+    kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
+    success "Control-plane taint removed (single-node mode)"
 
-    success "Kubernetes cluster initialized via kubeadm"
+    # Step 10: Install Helm 3
+    CLEANUP_STAGE="helm-install"
+    info "Installing Helm 3..."
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    success "Helm 3 installed"
+
+    # Step 11: Wait for node Ready before proceeding to GPU Operator
+    CLEANUP_STAGE="node-ready"
+    info "Waiting for node to reach Ready state..."
+    kubectl wait --for=condition=Ready node --all --timeout=300s
+
+    # Step 12: Label node for Renny pod scheduling
+    local nodes
+    nodes=$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}')
+    for node in $nodes; do
+        kubectl label node "$node" uneeq.io/node-type=renny --overwrite
+    done
+
+    success "Kubernetes cluster ready (kubeadm + Calico)"
 }
 
 ################################################################################
@@ -1422,17 +1518,35 @@ install_gpu_operator() {
     # Create namespace
     $KUBECTL create namespace gpu-operator --dry-run=client -o yaml | $KUBECTL apply -f -
 
+    # Detect whether NVIDIA drivers are pre-installed on the host.
+    # On CNS hardware (NVIDIA-sold servers, Dell ISG, etc.) drivers are typically
+    # already installed. If nvidia-smi works, tell GPU Operator to skip driver install.
+    local driver_enabled="true"
+    if nvidia-smi &>/dev/null; then
+        info "NVIDIA drivers detected on host — GPU Operator will skip driver installation"
+        driver_enabled="false"
+    else
+        info "No NVIDIA drivers detected — GPU Operator will install drivers"
+    fi
+
+    # For the kubeadm path, NVIDIA Container Toolkit was already installed and wired
+    # into containerd by install_kubeadm(). Tell GPU Operator not to reinstall it.
+    local toolkit_enabled="true"
+    if [[ "$CNS_K8S_TYPE" == "kubeadm" ]]; then
+        toolkit_enabled="false"
+    fi
+
     # Install GPU Operator
     $HELM upgrade --install gpu-operator nvidia/gpu-operator \
         --namespace gpu-operator \
         --version "$GPU_OPERATOR_VERSION" \
-        --set driver.enabled=true \
-        --set toolkit.enabled=true \
+        --set driver.enabled="${driver_enabled}" \
+        --set toolkit.enabled="${toolkit_enabled}" \
         --set devicePlugin.enabled=true \
         --set dcgmExporter.enabled=true \
         --wait --timeout 10m
 
-    success "GPU Operator installed"
+    success "GPU Operator installed (driver.enabled=${driver_enabled}, toolkit.enabled=${toolkit_enabled})"
 
     # Wait for GPU to be available
     info "Waiting for GPU resources to be available..."

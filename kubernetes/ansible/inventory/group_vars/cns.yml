@@ -2,7 +2,7 @@
 # CNS-specific variables
 
 # Kubernetes distribution: 'microk8s' or 'kubeadm'
-cns_k8s_type: microk8s
+cns_k8s_type: kubeadm
 
 # NVIDIA NGC API key for model downloads
 ngc_api_key: "{{ lookup('env', 'NGC_API_KEY') }}"
