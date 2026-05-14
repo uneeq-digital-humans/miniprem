@@ -38,6 +38,12 @@ set -euo pipefail
 # Config env vars (set before invocation, or pass via sudo -E):
 #   TARGET_NVIDIA_VERSION=580.82.09 (default)  Exact pinned version.
 #   ALLOW_WAYLAND=no                (default)  Set to yes to leave Wayland on.
+#   FORCE_GRAPHICAL=no              (default)  Set to yes to bypass the
+#                                   safety check that refuses to run inside
+#                                   a graphical session. Only use if you have
+#                                   wrapped the invocation in setsid or
+#                                   systemd-run so the script survives the
+#                                   display manager going down.
 #
 # Examples:
 #   # Interactive run (prompts to confirm + reboot):
@@ -58,10 +64,14 @@ set -euo pipefail
 # (e.g. in your provisioning manifest). That policy is intentionally out of
 # scope here.
 #
-# Note on running this on a live workstation: the unload step stops the
-# display manager (gdm3/lightdm/sddm) and unloads the nvidia kernel modules.
-# Any remote graphical session (AnyDesk, TeamViewer, x2go, VNC) will
-# disconnect at that point. Reconnect after the post-install reboot.
+# Note on running this on a live workstation: the script REFUSES to run
+# from inside a graphical session, because Step 5/10 stops the display
+# manager and would kill its own terminal (and any AnyDesk / TeamViewer /
+# x2go / VNC connection that depends on the X server). To test interactively
+# on a workstation, either SSH in from another machine (or `ssh $USER@localhost`
+# from the workstation itself) or switch to a virtual console with Ctrl+Alt+F3.
+# For Ubuntu autoinstall (late-commands) this check passes silently because
+# no graphical session is running during install.
 
 # ---------------------------------------------------------------------------
 # Config
@@ -72,6 +82,12 @@ TARGET_NVIDIA_MAJOR="580"
 ALLOW_WAYLAND="${ALLOW_WAYLAND:-no}"
 ASSUME_YES="${MINIPREM_ASSUME_YES:-no}"
 NO_REBOOT="${MINIPREM_NO_REBOOT:-no}"
+
+# Escape hatch for the graphical-session safety check (see
+# check_not_graphical_session). Default no. Only set yes if you have
+# arranged for this script to survive the display manager going down
+# (e.g. wrapped in setsid or systemd-run --unit=...).
+FORCE_GRAPHICAL="${FORCE_GRAPHICAL:-no}"
 
 # Per-run log file for verbose apt/installer output. The script prints the
 # path at startup so operators know where to look on failure.
@@ -126,6 +142,54 @@ require_ubuntu() {
         exit 1
     fi
     info "Detected Ubuntu ${VERSION_ID:-?} (${VERSION_CODENAME:-?})"
+}
+
+# Refuse to run inside a graphical session. Step 5/10 stops the display
+# manager, which would kill any terminal that's a descendant of the X
+# server (gnome-terminal, AnyDesk, etc.), taking this bash process with
+# it. Autoinstall late-commands has no graphical session, so this check
+# passes silently for the production path. Bypass with FORCE_GRAPHICAL=yes
+# only if the caller has arranged for the script to survive (setsid /
+# systemd-run --unit=... / nohup).
+check_not_graphical_session() {
+    if [ "${FORCE_GRAPHICAL:-no}" = "yes" ]; then
+        warn "FORCE_GRAPHICAL=yes — proceeding inside graphical session."
+        warn "If the display manager goes down, expect this script to be killed."
+        return 0
+    fi
+
+    local sig=""
+    if [ -n "${DISPLAY:-}" ];          then sig="DISPLAY=$DISPLAY"; fi
+    if [ -n "${WAYLAND_DISPLAY:-}" ];  then sig="${sig:+$sig, }WAYLAND_DISPLAY=$WAYLAND_DISPLAY"; fi
+    case "${XDG_SESSION_TYPE:-}" in
+        x11|wayland) sig="${sig:+$sig, }XDG_SESSION_TYPE=$XDG_SESSION_TYPE" ;;
+    esac
+
+    if [ -z "$sig" ]; then
+        return 0
+    fi
+
+    err "You are running this script inside a graphical session ($sig)."
+    err "Step 5/10 stops the display manager, which would kill this script's"
+    err "terminal and abort the install mid-way."
+    err ""
+    err "To run this script safely, do ONE of the following:"
+    err ""
+    err "  (a) SSH into this machine from another machine and run from there."
+    err "      If you don't have another machine, SSH from this one to itself:"
+    err "          ssh \$USER@localhost"
+    err "      Then re-run the script from that SSH session."
+    err ""
+    err "  (b) Switch to a virtual console (physical keyboard at the box):"
+    err "      Press Ctrl+Alt+F3, log in, then re-run the script."
+    err ""
+    err "  (c) For Ubuntu autoinstall (late-commands), no action needed —"
+    err "      this check passes silently because no graphical session is running."
+    err ""
+    err "Advanced override (only if you have wrapped this invocation in setsid"
+    err "or systemd-run so it survives session death):"
+    err "    FORCE_GRAPHICAL=yes sudo -E $0 --yes"
+    exit 1
 }
 
 current_driver_version() {
@@ -307,6 +371,7 @@ main() {
 
     require_root
     require_ubuntu
+    check_not_graphical_session
 
     # Open the log file early so all subsequent quietly() calls can append.
     : > "$LOG_FILE"
