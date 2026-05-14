@@ -59,6 +59,61 @@ MINIPREM_SEED_KNOWN_KEYS=(
 # Loading the seed file
 # ---------------------------------------------------------------------------
 
+# Scan a seed file for MINIPREM_SEED_* lines whose value contains an unquoted
+# $ followed by an identifier character — the shell would expand it on
+# source, silently corrupting the value. Fatals with a precise diagnostic
+# pointing at the offending key. Single-quoted values are exempt (their $
+# is literal); double-quoted values are NOT exempt (the shell still
+# expands $vars inside double quotes).
+seed_check_unquoted_dollar() {
+    local file="$1"
+    local issues=()
+    local lineno=0
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+        lineno=$((lineno + 1))
+        # Skip comments and blank lines
+        case "$line" in
+            ''|\#*|[[:space:]]*\#*) continue ;;
+        esac
+        # Only MINIPREM_SEED_* assignments
+        case "$line" in
+            MINIPREM_SEED_*=*) ;;
+            *) continue ;;
+        esac
+
+        local key="${line%%=*}"
+        local value="${line#*=}"
+        # Strip trailing comment (best-effort: a # preceded by whitespace)
+        value="${value%%[[:space:]]#*}"
+
+        # Single-quoted values are safe — $ inside '...' is literal
+        case "$value" in
+            \'*\') continue ;;
+        esac
+
+        # Look for $ followed by an identifier char (var expansion), a digit
+        # (positional parameter), or { (braced expansion).
+        if [[ "$value" =~ \$[A-Za-z_0-9{] ]]; then
+            issues+=("$lineno:$key")
+        fi
+    done < "$file"
+
+    if [ ${#issues[@]} -gt 0 ]; then
+        error "Seed file $file contains unquoted \$ in value(s):"
+        local entry
+        for entry in "${issues[@]}"; do
+            error "  line ${entry%%:*}: ${entry#*:}"
+        done
+        error ""
+        error "Bash will expand \$identifier as a variable reference when the value"
+        error "is unquoted (or double-quoted), usually replacing it with an empty"
+        error "string. Wrap the value in SINGLE quotes to keep \$ literal:"
+        error "  MINIPREM_SEED_HARBOR_USERNAME='robot\$customer-name'"
+        fatal "Refusing to load a seed with malformed values."
+    fi
+}
+
 # Source a seed file (KEY=value lines). Variables are exported so they remain
 # visible after the function returns. Implies --non-interactive.
 seed_load_file() {
@@ -74,6 +129,15 @@ seed_load_file() {
     fi
 
     info "Loading seed file: $file"
+
+    # Pre-flight: catch unquoted $ in MINIPREM_SEED_* values BEFORE sourcing.
+    # Harbor robot usernames contain $ (e.g. robot$customer+project), and
+    # without single quotes the shell expands $customer as a variable
+    # (usually empty), silently corrupting the value — the install fails
+    # later with an opaque "unauthorized" from Harbor. Fail fast with a
+    # clear message so the operator fixes the seed instead of chasing
+    # a phantom credential issue.
+    seed_check_unquoted_dollar "$file"
 
     # Seed files are config, not scripts. Disable -u and -e during sourcing so
     # that values containing literal $ (e.g. Harbor robot usernames like
