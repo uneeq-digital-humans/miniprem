@@ -123,6 +123,22 @@ sudo reboot
 
 !> **Important:** Use `--kernel-module-type=open` with the .run installer. This selects the open kernel module which is required for newer GPU architectures.
 
+#### Secure Boot Systems
+
+If UEFI Secure Boot is enabled (Dell workstations, most enterprise laptops), the `.run` installer will fail to load the kernel module on reboot — Secure Boot rejects unsigned modules. Use the provided scripts instead, which handle MOK key enrollment and module signing automatically:
+
+```bash
+# Step 1: Enroll signing key (triggers one reboot into UEFI MokManager)
+sudo bash scripts/nvidia/enroll-mok.sh
+
+# Step 2: Install driver with signed module (after confirming MOK enrollment on reboot)
+sudo bash scripts/nvidia/install-nvidia-580.sh
+```
+
+On encrypted drives (LUKS), the MokManager screen appears **before** the drive unlock prompt — this is expected.
+
+See [NVIDIA Driver Setup — Secure Boot](../NVIDIA-DRIVER-SETUP.md#method-2a-run-installer-on-secure-boot-systems) for the full walkthrough.
+
 ### Method 3: CUDA Toolkit (Includes Driver)
 
 The CUDA toolkit installer bundles a compatible NVIDIA driver:

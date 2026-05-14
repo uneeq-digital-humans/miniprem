@@ -105,6 +105,45 @@ sudo reboot
 | `--no-questions` | Accept defaults without prompts |
 | `--disable-nouveau` | Automatically blacklist nouveau driver |
 
+### Method 2a: .run Installer on Secure Boot Systems
+
+If your system has **UEFI Secure Boot enabled** (common on Dell workstations, laptops, and enterprise hardware), the `.run` installer will build and load a kernel module. Secure Boot will **reject unsigned kernel modules**, causing the installation to fail at the last step with:
+
+```
+Loading of unsigned module is rejected
+Key was rejected by service
+```
+
+This requires enrolling a Machine Owner Key (MOK) to sign the module before installing. The process requires **two reboots** — one to enroll the key, one after installation. On encrypted drives (LUKS/BitLocker), the LUKS unlock prompt appears *after* the MOK enrollment screen on each reboot.
+
+Use the provided scripts (located in `scripts/nvidia/`):
+
+```bash
+# Phase 1: Generate and enroll signing key (requires one reboot)
+sudo bash scripts/nvidia/enroll-mok.sh
+```
+
+On the next boot you will see a blue **MokManager** screen before your OS loads:
+1. Select **Enroll MOK**
+2. Select **Continue**
+3. Enter the password you set during enrollment
+4. Select **Yes** → **Reboot**
+
+```bash
+# Phase 2: Install the driver (signed with enrolled key)
+sudo bash scripts/nvidia/install-nvidia-580.sh
+```
+
+The install script will:
+- Auto-download the 580.82.09 `.run` file if not present locally
+- Kill any remaining X/display server processes
+- Remove existing apt-managed NVIDIA drivers
+- Build and sign the kernel module with your enrolled MOK key
+- Pin apt to prevent auto-upgrade to incompatible versions
+- Reboot automatically
+
+> **Note:** If Secure Boot is not enabled on your system, `install-nvidia-580.sh` still works — it simply skips the signing step.
+
 ### Method 3: NVIDIA CUDA Toolkit (Alternative)
 
 If you need CUDA toolkit with the driver:
@@ -319,16 +358,24 @@ sudo ln -sf /usr/bin/nvidia-smi /usr/local/bin/nvidia-smi
 ```bash
 # Check NVENC capability
 nvidia-smi -q | grep -i "encoder\|nvenc"
+```
 
-# If driver is 580.126.x, you MUST downgrade:
-# 1. Remove current driver
+If driver is 580.126.x, you **must** downgrade. Use the method that matches your system:
+
+**Without Secure Boot:**
+```bash
 sudo apt remove --purge '^nvidia-.*'
-
-# 2. Install correct version
 sudo apt install nvidia-driver-580=580.82.07-0ubuntu1
-# OR use .run installer for 580.82.09
-
 sudo reboot
+```
+
+**With Secure Boot (or to install 580.82.09 via .run):**
+```bash
+# Step 1 — enroll signing key (one reboot required)
+sudo bash scripts/nvidia/enroll-mok.sh
+
+# Step 2 — install driver (after MOK enrollment reboot)
+sudo bash scripts/nvidia/install-nvidia-580.sh
 ```
 
 ### Vulkan Not Detecting NVIDIA GPU
