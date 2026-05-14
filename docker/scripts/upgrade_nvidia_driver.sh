@@ -215,9 +215,17 @@ disable_wayland_in_gdm() {
 }
 
 # Write an apt preferences pin that blocks future apt upgrades from
-# installing nvidia-driver / libnvidia-* / nvidia-dkms-* packages over the
-# .run-managed install. The .run installer is the canonical owner of the
-# driver bits; apt should stay out of the way.
+# installing the apt-managed nvidia driver stack over the .run-managed
+# install. The .run installer is the canonical owner of the driver bits;
+# apt should stay out of the way.
+#
+# Important: do NOT use a catch-all `libnvidia-*` glob here. That pattern
+# also matches `libnvidia-container-tools` and `libnvidia-container1`,
+# which are part of the nvidia-container-toolkit stack (needed for Docker
+# GPU support) and have nothing to do with the driver. Pinning them to -1
+# breaks `apt install nvidia-container-toolkit` later in the miniprem
+# install flow with "Depends: libnvidia-container-tools but it is not
+# installable". Enumerate the driver-component patterns explicitly.
 write_apt_pin() {
     cat > "$APT_PIN_FILE" <<EOF
 # Managed by upgrade_nvidia_driver.sh
@@ -226,7 +234,11 @@ write_apt_pin() {
 # at a specific pinned version. Block apt from installing competing nvidia
 # packages on future apt upgrades. To revert (e.g. switching back to apt-
 # managed driver), delete this file and reinstall via apt.
-Package: nvidia-driver-* nvidia-dkms-* nvidia-utils-* libnvidia-* nvidia-kernel-common-* nvidia-kernel-source-* xserver-xorg-video-nvidia-* nvidia-compute-utils-*
+#
+# libnvidia-container* (container toolkit) is intentionally NOT pinned —
+# nvidia-container-toolkit depends on it and it does not conflict with
+# the .run-installed driver.
+Package: nvidia-driver-* nvidia-dkms-* nvidia-utils-* nvidia-kernel-common-* nvidia-kernel-source-* xserver-xorg-video-nvidia-* nvidia-compute-utils-* nvidia-firmware-* libnvidia-gl-* libnvidia-compute-* libnvidia-decode-* libnvidia-encode-* libnvidia-cfg1-* libnvidia-common-* libnvidia-extra-* libnvidia-fbc1-* libnvidia-ifr1-* libnvidia-nscq-* libnvidia-egl-* libnvidia-ml-*
 Pin: release *
 Pin-Priority: -1
 EOF
