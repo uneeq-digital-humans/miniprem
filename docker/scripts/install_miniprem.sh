@@ -505,59 +505,36 @@ retry_network_operation() {
 check_wss_service() {
     local url=$1
 
-    # Extract the protocol, address, port, and path from the URL
-    local components
-    mapfile -t components < <(extract_url_components "$url")
-    local protocol="${components[0]}"
-    local address="${components[1]}"
-    local port="${components[2]}"
-    local path="${components[3]}"
-
-    # Default port if not specified
-    if [[ -z $port ]]; then
-        if [[ $protocol == "wss://" ]]; then
-            port=443
-        else
-            port=80
-        fi
-    fi
+    # Convert wss:// to https:// for curl (curl handles the WebSocket upgrade over HTTPS)
+    local curl_url="${url/wss:\/\//https://}"
+    curl_url="${curl_url/ws:\/\//http://}"
 
     info "Testing WebSocket connection to $url..."
-    info "  Protocol: $protocol, Host: $address, Port: $port, Path: $path"
 
-    # Generate a valid Sec-WebSocket-Key
-    local valid_key=$(openssl rand -base64 16)
+    local valid_key
+    valid_key=$(openssl rand -base64 16)
 
-    # Temporarily disable exit-on-error for socat command
     set +e
-    local response
-    # Use socat to test the WebSocket connection
-    if [[ $protocol == "wss://" ]]; then
-        response=$(echo -e "GET $path HTTP/1.1\r\nHost: $address\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $valid_key\r\nSec-WebSocket-Version: 13\r\n\r\n" | socat -t 5 - SSL:$address:$port,verify=0 2>&1)
-        local socat_exit=$?
-    else
-        response=$(echo -e "GET $path HTTP/1.1\r\nHost: $address\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: $valid_key\r\nSec-WebSocket-Version: 13\r\n\r\n" | socat -t 5 - TCP:$address:$port 2>&1)
-        local socat_exit=$?
-    fi
-    set -e  # Re-enable exit-on-error
+    local http_code
+    # --max-time 20 so firewall timeouts don't stall the install indefinitely.
+    http_code=$(curl -sk -o /dev/null -w "%{http_code}" \
+        --max-time 20 \
+        -H "Connection: Upgrade" \
+        -H "Upgrade: websocket" \
+        -H "Sec-WebSocket-Version: 13" \
+        -H "Sec-WebSocket-Key: $valid_key" \
+        "$curl_url" 2>/dev/null)
+    local curl_exit=$?
+    set -e
 
-    # Debug output
-    info "  Socat exit code: $socat_exit"
-    if [ $socat_exit -ne 0 ]; then
-        warning "Socat command failed with exit code $socat_exit"
-        info "First 5 lines of response:"
-        echo "$response" | head -5
-    fi
+    info "  HTTP response code: $http_code"
 
-    # Check if the response contains "101 Switching Protocols"
-    if [[ $response == *"101 Switching Protocols"* || $response == *"200 OK"* ]]; then
-        success "$CHECKMARK Service at $url is reachable."
+    # 101 = WebSocket upgrade, 200 = OK, 401/403 = reachable but requires auth
+    if [[ "$http_code" == "101" || "$http_code" == "200" || "$http_code" == "401" || "$http_code" == "403" ]]; then
+        success "$CHECKMARK Service at $url is reachable (HTTP $http_code)."
     else
-        error "$CROSS Service at $url is not reachable."
-        info "Expected '101 Switching Protocols' or '200 OK' in response"
-        info "Actual response (first 10 lines):"
-        echo "$response" | head -10
-        fatal "WebSocket connection test failed for $url"
+        warning "$CROSS Could not verify $url (HTTP ${http_code:-timeout/error})."
+        warning "Installation will continue — verify network allows port 443 outbound before starting Renny."
     fi
 }
 
