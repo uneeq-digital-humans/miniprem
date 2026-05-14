@@ -1,0 +1,33 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: digitalhuman-websocket-api
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- range $k, $v := .Values.ingress.annotations }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+spec:
+  rules:
+  - host: {{ .Values.ingress.host }}
+    http:
+      paths:
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: digitalhuman-websocket-api
+            port:
+              number: {{ .Values.service.wsPort }}
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: digitalhuman-websocket-api
+            port:
+              number: {{ .Values.service.httpPort }}
+{{- end }}

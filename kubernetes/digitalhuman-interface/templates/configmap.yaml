@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: digitalhuman-interface-config
+  namespace: {{ .Release.Namespace }}
+data:
+  config.yaml: |
+    backend:
+      endpoints:
+        ws:   "{{ .Values.backend.wsUrl }}"
+        http: "{{ .Values.backend.httpUrl }}"
+      key: "{{ .Values.backend.key }}"
+    stt:
+      provider: "{{ .Values.stt.provider }}"
+      rivaUrl:  "{{ .Values.stt.rivaUrl }}"
+      language: "{{ .Values.stt.language }}"
+    standalone: {{ .Values.standalone }}

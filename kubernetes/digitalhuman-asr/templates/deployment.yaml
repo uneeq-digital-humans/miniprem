@@ -1,0 +1,124 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digitalhuman-asr
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: digitalhuman-asr
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: digitalhuman-asr
+  template:
+    metadata:
+      labels:
+        app: digitalhuman-asr
+    spec:
+      imagePullSecrets:
+      {{- range .Values.imagePullSecrets }}
+      - name: {{ .name }}
+      {{- end }}
+      nodeSelector:
+        {{- range $k, $v := .Values.nodeSelector }}
+        {{ $k }}: {{ $v }}
+        {{- end }}
+      tolerations:
+      {{- range .Values.tolerations }}
+      - key: {{ .key }}
+        operator: {{ .operator }}
+        effect: {{ .effect }}
+      {{- end }}
+      # Shared /dev/shm for CUDA inter-process communication
+      volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: {{ .Values.nemotron.shmSize }}
+      - name: nim-model-cache
+        persistentVolumeClaim:
+          claimName: nim-model-cache
+      containers:
+      # ── Container 1: Nemotron ASR NIM ────────────────────────────────────
+      - name: nemotron-asr
+        image: {{ .Values.nemotron.image }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.nemotron.httpPort }}
+        - name: grpc
+          containerPort: {{ .Values.nemotron.grpcPort }}
+        env:
+        - name: NIM_HTTP_API_PORT
+          value: {{ .Values.nemotron.httpPort | quote }}
+        - name: NIM_GRPC_API_PORT
+          value: {{ .Values.nemotron.grpcPort | quote }}
+        - name: NIM_TAGS_SELECTOR
+          value: "mode=str"
+        - name: NGC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.nimCredentialsSecret }}
+              key: NGC_API_KEY
+        resources:
+          requests:
+            cpu: {{ .Values.nemotron.resources.requests.cpu }}
+            memory: {{ .Values.nemotron.resources.requests.memory }}
+            nvidia.com/gpu: {{ index .Values.nemotron.resources.requests "nvidia.com/gpu" }}
+          limits:
+            cpu: {{ .Values.nemotron.resources.limits.cpu }}
+            memory: {{ .Values.nemotron.resources.limits.memory }}
+            nvidia.com/gpu: {{ index .Values.nemotron.resources.limits "nvidia.com/gpu" }}
+        volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
+        - name: nim-model-cache
+          mountPath: /opt/nim/.cache
+        livenessProbe:
+          httpGet:
+            path: /v1/health/ready
+            port: {{ .Values.nemotron.httpPort }}
+          initialDelaySeconds: 600
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /v1/health/ready
+            port: {{ .Values.nemotron.httpPort }}
+          initialDelaySeconds: 600
+          periodSeconds: 15
+          timeoutSeconds: 5
+          failureThreshold: 3
+      # ── Container 2: RIVA WebSocket proxy (sidecar) ───────────────────────
+      - name: riva-ws-proxy
+        image: {{ .Values.proxy.image }}
+        ports:
+        - name: ws
+          containerPort: {{ .Values.proxy.port }}
+        env:
+        # Sidecar shares pod network — NIM gRPC is on localhost
+        - name: RIVA_GRPC_URL
+          value: "localhost:{{ .Values.nemotron.grpcPort }}"
+        - name: PORT
+          value: {{ .Values.proxy.port | quote }}
+        - name: PROTO_DIR
+          value: "/protos"
+        resources:
+          requests:
+            cpu: {{ .Values.proxy.resources.requests.cpu }}
+            memory: {{ .Values.proxy.resources.requests.memory }}
+          limits:
+            cpu: {{ .Values.proxy.resources.limits.cpu }}
+            memory: {{ .Values.proxy.resources.limits.memory }}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.proxy.port }}
+          initialDelaySeconds: 15
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{ .Values.proxy.port }}
+          initialDelaySeconds: 10
+          periodSeconds: 10
