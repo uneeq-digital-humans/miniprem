@@ -426,10 +426,21 @@
           failed_when: false
           changed_when: false
 
+        - name: Check if helm is functional
+          command: helm version --short
+          register: helm_check
+          changed_when: false
+          failed_when: false
+
+        - name: Remove stale helm at /usr/local/bin/helm (broken symlink from prior install)
+          file:
+            path: /usr/local/bin/helm
+            state: absent
+          when: helm_check.rc != 0
+
         - name: Install Helm 3
           shell: curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-          args:
-            creates: /usr/local/bin/helm
+          when: helm_check.rc != 0
 
         - name: Wait for node to be Ready
           command: kubectl wait --for=condition=Ready node --all --timeout=300s
