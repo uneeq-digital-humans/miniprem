@@ -451,6 +451,7 @@ Use `--apply-quick` when you trust the GPU autodetection and just want the recom
 
 > **Note**: `scale-quick N` (via `./miniprem.sh scale-quick N`) only changes the replica count. `sizer --apply` is the right choice when you also need to change GPU time-slicing (e.g. moving from 2 to 4 pods per GPU).
 
+
 ---
 
 ## Monitoring & Troubleshooting

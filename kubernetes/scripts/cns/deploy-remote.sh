@@ -39,7 +39,7 @@ error() { echo "❌ $*"; }
 CNS_REMOTE_HOST="${CNS_REMOTE_HOST:-}"
 CNS_REMOTE_USER="${CNS_REMOTE_USER:-ubuntu}"
 CNS_SSH_KEY="${CNS_SSH_KEY:-~/.ssh/id_rsa}"
-CNS_K8S_TYPE="${CNS_K8S_TYPE:-microk8s}"
+CNS_K8S_TYPE="${CNS_K8S_TYPE:-kubeadm}"
 NGC_API_KEY="${NGC_API_KEY:-}"
 USE_ANSIBLE="${USE_ANSIBLE:-auto}"
 

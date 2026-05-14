@@ -62,60 +62,20 @@ scrape_configs:
     metrics_path: /metrics
 ```
 
-## Instrumenting Your Applications
+## Flowise Integration
 
-### Python Applications
+Flowise is instrumented via OpenTelemetry using `@arizeai/openinference-instrumentation-langchain`.
+This is loaded automatically via `docker/flowise/otel-init.js` — no code changes to Flowise are needed.
 
-Install the Phoenix instrumentation library:
+To enable tracing, set `PHOENIX_ENABLED=true` when starting the stack:
 
 ```bash
-pip install arize-phoenix openinference-instrumentation-openai
+PHOENIX_ENABLED=true docker compose -f docker-compose.full.yml --profile phoenix up -d
 ```
 
-Configure tracing:
+Every LLM call, chain run, tool call, and agent step in Flowise will appear as a trace in Phoenix at http://localhost:6006.
 
-```python
-import phoenix as px
-from openinference.instrumentation.openai import OpenAIInstrumentor
-
-# Connect to Phoenix
-px.launch_app()  # or px.connect(endpoint="http://localhost:6006")
-
-# Instrument OpenAI client
-OpenAIInstrumentor().instrument()
-
-# Your LLM calls are now traced
-from openai import OpenAI
-client = OpenAI()
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[{"role": "user", "content": "Hello!"}]
-)
-```
-
-### Flowise Integration
-
-Flowise workflows can be traced by enabling LangChain tracing:
-
-```yaml
-# In docker-compose.env or environment
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_ENDPOINT=http://localhost:4317
-```
-
-### vLLM Integration
-
-For vLLM-based inference:
-
-```python
-from openinference.instrumentation.openai import OpenAIInstrumentor
-
-# Instrument vLLM's OpenAI-compatible API
-OpenAIInstrumentor().instrument()
-
-# Point to vLLM
-client = OpenAI(base_url="http://localhost:8800/v1")
-```
+**How it works**: The init script at `/otel/otel-init.js` is injected into Node.js via `NODE_OPTIONS=--require` before Flowise starts. It instruments LangChain.js callbacks and exports spans to Phoenix's OTLP gRPC endpoint on port 4317. If Phoenix is not running, Flowise continues normally — the exporter fails silently.
 
 ## Kubernetes Deployment
 

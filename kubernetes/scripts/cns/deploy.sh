@@ -40,7 +40,7 @@ source "$SCRIPT_DIR/../common/deployment-functions.sh" 2>/dev/null || true
 ################################################################################
 
 CNS_DEPLOY_TYPE="${CNS_DEPLOY_TYPE:-local}"
-CNS_K8S_TYPE="${CNS_K8S_TYPE:-microk8s}"
+CNS_K8S_TYPE="${CNS_K8S_TYPE:-kubeadm}"
 CNS_REMOTE_HOST="${CNS_REMOTE_HOST:-}"
 CNS_REMOTE_USER="${CNS_REMOTE_USER:-ubuntu}"
 CNS_SSH_KEY="${CNS_SSH_KEY:-~/.ssh/id_rsa}"

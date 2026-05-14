@@ -20,5 +20,15 @@ RUN git clone https://github.com/FlowiseAI/Flowise.git .
 RUN pnpm install
 RUN pnpm build
 
+# Install OpenTelemetry packages for Phoenix tracing (isolated to avoid pnpm workspace conflicts)
+WORKDIR /otel
+RUN npm init -y && npm install --save \
+    @opentelemetry/sdk-node \
+    @opentelemetry/exporter-trace-otlp-grpc \
+    @arizeai/openinference-instrumentation-langchain \
+    @opentelemetry/api
+COPY otel-init.js /otel/otel-init.js
+
+WORKDIR /usr/src
 EXPOSE 3000
 CMD [ "pnpm", "start" ]
