@@ -4,14 +4,9 @@ metadata:
   name: digitalhuman-interface-config
   namespace: {{ .Release.Namespace }}
 data:
+  # Rendered verbatim from .Values.config — shape must match the app's
+  # Config interface (interface/src/types/utils/Config.ts).
+  # Mounted at /usr/share/nginx/html/assets/config.yaml in the pod and
+  # fetched at runtime by useConfig().
   config.yaml: |
-    backend:
-      endpoints:
-        ws:   "{{ .Values.backend.wsUrl }}"
-        http: "{{ .Values.backend.httpUrl }}"
-      key: "{{ .Values.backend.key }}"
-    stt:
-      provider: "{{ .Values.stt.provider }}"
-      rivaUrl:  "{{ .Values.stt.rivaUrl }}"
-      language: "{{ .Values.stt.language }}"
-    standalone: {{ .Values.standalone }}
+{{ toYaml .Values.config | indent 4 }}
