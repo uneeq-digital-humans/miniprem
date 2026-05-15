@@ -364,6 +364,36 @@
             name: containerd
             state: restarted
 
+        # CDI spec pins per-version library filenames (e.g. libcuda.so.580.142).
+        # If the driver is ever swapped without regenerating this, NIM/Triton/
+        # vLLM containers see only their in-image libcuda compat lib instead
+        # of the host driver and fail at CUDA init (cudaErrorInsufficientDriver).
+        - name: Ensure /var/run/cdi exists
+          file:
+            path: /var/run/cdi
+            state: directory
+            mode: '0755'
+
+        - name: Generate NVIDIA CDI spec for current driver
+          command: nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml
+          changed_when: false
+          failed_when: false   # tolerated if driver not yet present; revisited post-install
+
+        # Time-sliced GPU sharing creates a CUDA context per pod. Without
+        # persistence mode the driver tears down state between contexts, which
+        # can produce CUDA error 999 ("unknown error") under load.
+        - name: Enable NVIDIA persistence mode
+          command: nvidia-smi -pm 1
+          changed_when: false
+          failed_when: false   # NVIDIA driver may not be present yet on first run
+
+        - name: Enable nvidia-persistenced systemd service
+          systemd:
+            name: nvidia-persistenced
+            enabled: yes
+            state: started
+          failed_when: false   # service only exists after a recent driver install
+
         - name: Add Kubernetes apt signing key
           get_url:
             url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
@@ -486,6 +516,16 @@
           shell: kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
           changed_when: false
 
+        # Driver enabled vs pre-installed:
+        #   - true  : GPU Operator installs its own driver container DaemonSet.
+        #             Useful for cloud nodes with no host driver.
+        #   - false : Host already has an NVIDIA .run install (typical for
+        #             on-prem workstations like Dell Precision running a
+        #             Secure Boot-signed driver via scripts/nvidia/install-nvidia-580.sh).
+        #             The node should also carry the label
+        #             `nvidia.com/gpu.deploy.driver=pre-installed`.
+        # Override `gpu_operator_driver_enabled: false` in inventory/group_vars
+        # when the driver is already installed on the host.
         - name: Install GPU Operator
           command: >
             helm upgrade --install gpu-operator nvidia/gpu-operator
@@ -496,6 +536,20 @@
             --set devicePlugin.enabled=true
             --set dcgmExporter.enabled=true
             --wait --timeout 10m
+          changed_when: false
+
+        # After the GPU Operator's container-toolkit DaemonSet lands its bundled
+        # nvidia-ctk into /usr/local/nvidia/toolkit/, regenerate the CDI spec so
+        # it reflects the host driver. Critical when the driver was installed
+        # *before* this playbook ran — otherwise containers see a stale libcuda.
+        - name: Regenerate CDI spec after GPU Operator install
+          command: nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml
+          changed_when: false
+          failed_when: false
+
+        - name: Restart nvidia-device-plugin to pick up fresh CDI spec
+          shell: |
+            kubectl delete pod -n gpu-operator -l app=nvidia-device-plugin-daemonset --grace-period=10 || true
           changed_when: false
 
         - name: Wait for GPU resources

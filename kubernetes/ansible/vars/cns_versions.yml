@@ -10,6 +10,13 @@ kubernetes_version: "1.31"
 
 # NVIDIA Components
 gpu_operator_version: "v24.9.0"
+# Driver version selection guide:
+#   580.142   : Recommended. Tested end-to-end on Blackwell + GPU Operator
+#               with NIM Magpie/Nemotron + vLLM. Libcuda mounts cleanly via CDI.
+#   580.82.x  : OK for renny-only deploys. Known issue with NIM/Triton on this
+#               stack where containers see only the in-image compat libcuda
+#               (surfaces as CUDA error 35 cudaErrorInsufficientDriver).
+#   580.126.x : DO NOT USE. Breaks NVENC hardware encoding on every GPU type.
 nvidia_driver_version: "580.142"
 cuda_version: "12.4"
 nvidia_container_toolkit_version: "1.16.0"

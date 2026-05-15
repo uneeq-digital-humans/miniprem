@@ -1490,17 +1490,18 @@ validate_driver_for_renny() {
 
     # Extract major.minor version (e.g., 580.82 from 580.82.09)
     local major_minor=$(echo "$driver_version" | cut -d. -f1,2)
+    local major=$(echo "$driver_version" | cut -d. -f1)
+    local minor=$(echo "$driver_version" | cut -d. -f2)
 
-    # Known problematic versions
+    # Known-bad: 580.126.x breaks NVENC hardware encoding on every GPU type.
     if [[ "$major_minor" == "580.126" ]]; then
         error "Driver $driver_version is INCOMPATIBLE with Renny!"
         echo ""
         echo "  Driver 580.126.x breaks NVENC hardware encoding on ALL GPU types."
-        echo "  Renny requires driver 580.82.x for proper video encoding."
+        echo "  Use 580.82.x (renny-only) or 580.14x+ (renny + NIM/Triton/vLLM workloads)."
         echo ""
-        echo "  To fix, install the correct driver:"
-        echo "    - For Blackwell/RTX PRO 6000: Download 580.82.09 from NVIDIA"
-        echo "    - For L4/A10G/T4: apt install nvidia-driver-580=580.82.07-0ubuntu1"
+        echo "  To fix, install the recommended driver:"
+        echo "    sudo DRIVER_VERSION=580.142 bash scripts/nvidia/install-nvidia-580.sh"
         echo ""
         read -p "Do you want to continue anyway? (y/N): " response
         if [[ ! "$response" =~ ^[Yy]$ ]]; then
@@ -1510,30 +1511,89 @@ validate_driver_for_renny() {
         return
     fi
 
-    # Check for recommended 580.82.x version
+    # Allow list:
+    #   580.82.x  - works for renny-only deploys. On this stack, NIM/Triton
+    #               containers can hit cudaErrorInsufficientDriver because
+    #               the GPU Operator's libcuda mount path resolves to an
+    #               in-image compat library (see docs/troubleshooting.md).
+    #   580.14x+  - tested working end-to-end on Blackwell + GPU Operator
+    #               with NIM Magpie/Nemotron and vLLM. Recommended.
     if [[ "$major_minor" == "580.82" ]]; then
         success "Driver $driver_version is compatible with Renny"
+        if [[ "$gpu_name" =~ "RTX 6000 Ada"|"Blackwell"|"RTX PRO 6000" ]]; then
+            warning "If you plan to run NIM/Triton/vLLM containers on this host,"
+            echo "  consider 580.142+ — 580.82.x has known CDI/libcuda mount"
+            echo "  issues with NVIDIA NIM images that surface as CUDA error 35."
+            echo "  Upgrade with: sudo bash scripts/nvidia/install-nvidia-580.sh"
+        fi
         return
     fi
 
-    # Check if driver is too old (< 550)
-    local major=$(echo "$driver_version" | cut -d. -f1)
-    if [[ "$major" -lt 550 ]]; then
-        warning "Driver $driver_version may be too old for optimal Renny performance"
-        echo "  Recommended: 580.82.x for production Renny deployments"
+    if [[ "$major" -eq 580 ]] && [[ "$minor" -ge 140 ]]; then
+        success "Driver $driver_version is compatible with Renny + NIM workloads"
+        return
     fi
 
-    # Check for Blackwell GPUs that need specific driver
+    # Too old
+    if [[ "$major" -lt 550 ]]; then
+        warning "Driver $driver_version may be too old for optimal Renny performance"
+        echo "  Recommended: 580.142+ for renny + NIM, or 580.82.x for renny-only"
+    fi
+
+    # Newer-than-blessed: ok but flag
+    if [[ "$major" -gt 580 ]] || ([[ "$major" -eq 580 ]] && [[ "$minor" -gt 142 ]] && [[ "$minor" -lt 159 ]]); then
+        warning "Driver $driver_version is newer than our last-tested version (580.142)."
+        echo "  Should be fine; report any NVENC/CUDA issues so we can update the allow-list."
+    fi
+
     if [[ "$gpu_name" =~ "Blackwell" ]] || [[ "$gpu_name" =~ "RTX PRO 6000" ]] || [[ "$gpu_name" =~ "RTX 6000" ]]; then
-        if [[ "$major_minor" != "580.82" ]]; then
-            warning "Blackwell/RTX PRO 6000 GPU detected with driver $driver_version"
+        if [[ "$major" -ne 580 ]] || [[ "$minor" -lt 82 ]]; then
+            warning "Blackwell/RTX PRO 6000 detected with driver $driver_version"
             echo ""
-            echo "  For best Renny compatibility, install driver 580.82.09:"
-            echo "    wget https://us.download.nvidia.com/XFree86/Linux-x86_64/580.82.09/NVIDIA-Linux-x86_64-580.82.09.run"
-            echo "    chmod +x NVIDIA-Linux-x86_64-580.82.09.run"
-            echo "    sudo ./NVIDIA-Linux-x86_64-580.82.09.run --silent --dkms"
+            echo "  Recommended: 580.142 (or 580.82.x for renny-only deploys):"
+            echo "    sudo bash scripts/nvidia/install-nvidia-580.sh"
             echo ""
         fi
+    fi
+}
+
+# Verify the GPU Operator's CDI spec matches the running driver.
+# After a driver swap, /var/run/cdi/nvidia.yaml is pinned to the OLD driver's
+# library filenames. Containers then get the in-image compat libcuda instead
+# of the host driver, surfacing as `cudaErrorInsufficientDriver` (err 35).
+check_cdi_spec_freshness() {
+    local cdi_file=/var/run/cdi/nvidia.yaml
+
+    if [ ! -f "$cdi_file" ]; then
+        info "No CDI spec at $cdi_file (GPU Operator not yet installed — skipping check)."
+        return 0
+    fi
+
+    if ! command -v nvidia-smi &>/dev/null; then
+        return 0
+    fi
+
+    local host_driver
+    host_driver=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1 | xargs)
+    local cdi_driver
+    cdi_driver=$(grep -oE "libcuda\.so\.[0-9.]+" "$cdi_file" | head -1 | sed 's/libcuda.so.//')
+
+    if [ -z "$cdi_driver" ]; then
+        warning "CDI spec at $cdi_file does not reference a libcuda version. Regenerating..."
+        sudo nvidia-ctk cdi generate --output="$cdi_file" 2>/dev/null || true
+        return 0
+    fi
+
+    if [ "$host_driver" = "$cdi_driver" ]; then
+        success "CDI spec matches host driver ($host_driver)"
+        return 0
+    fi
+
+    warning "CDI drift: host=$host_driver  CDI=$cdi_driver  →  regenerating spec"
+    sudo nvidia-ctk cdi generate --output="$cdi_file"
+    if kubectl get ds -n gpu-operator nvidia-device-plugin-daemonset &>/dev/null; then
+        info "Restarting nvidia-device-plugin to pick up new CDI spec..."
+        kubectl delete pod -n gpu-operator -l app=nvidia-device-plugin-daemonset --grace-period=10 || true
     fi
 }
 

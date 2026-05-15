@@ -95,20 +95,32 @@ spec:
               mountPath: /models
             - name: shm
               mountPath: /dev/shm
+          # Cold-start: model download (~10 GB FP8 weights from HF) + vLLM
+          # graph compilation can exceed 15 min. startupProbe disables
+          # liveness/readiness until it succeeds, then the lean liveness
+          # below takes over for the running-state checks.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 80   # ~40 min total grace for cold start
+            timeoutSeconds: 5
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 120   # model download + load can take ~5 min on first run
             periodSeconds: 10
-            failureThreshold: 60
+            failureThreshold: 3
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
               port: 8000
-            initialDelaySeconds: 600
             periodSeconds: 30
-            failureThreshold: 5
+            failureThreshold: 3
+            timeoutSeconds: 5
       volumes:
         - name: model-cache
           persistentVolumeClaim:

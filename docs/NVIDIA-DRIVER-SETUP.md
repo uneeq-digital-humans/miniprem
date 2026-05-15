@@ -2,14 +2,22 @@
 
 ## Critical Driver Requirements
 
-**Required Driver Version: 580.82.x**
+**Recommended Driver Version: 580.142** (renny + NIM/Triton/vLLM workloads)
+
+For **renny-only** deployments, **580.82.x** also works. For mixed workloads
+that include NIM Magpie TTS, Nemotron ASR, or vLLM, use **580.142+** —
+580.82.x has a known issue on the GPU Operator stack where containers end up
+using the in-image `libcuda.so.550.54.15` compat library instead of the host
+driver, producing `cudaErrorInsufficientDriver` (error 35) during TensorRT
+initialization. See [troubleshooting.md](./troubleshooting.md#cuda-error-35--cuinit-failed-error-999).
 
 > **WARNING:** Driver version **580.126.x is INCOMPATIBLE** with Renny. It breaks NVENC hardware video encoding on ALL GPU types.
 
 | Driver Version | Status | Notes |
 |----------------|--------|-------|
-| 580.82.09 | **RECOMMENDED** | Required for RTX PRO 6000 Blackwell |
-| 580.82.07 | **RECOMMENDED** | For A100, L4, T4, other GPUs |
+| 580.142 | **RECOMMENDED** | Renny + NIM/Triton/vLLM. Confirmed end-to-end on Blackwell + GPU Operator + NIM Magpie/Nemotron + vLLM. |
+| 580.82.09 | OK for renny-only | Required for RTX PRO 6000 Blackwell. **NIM/Triton workloads fail** with `cudaErrorInsufficientDriver` — see [troubleshooting](./troubleshooting.md#cuda-error-35--cuinit-failed-error-999). |
+| 580.82.07 | OK for renny-only | Same caveat as above. For A100, L4, T4, other GPUs. |
 | 580.126.xx | **BROKEN** | Breaks NVENC - DO NOT USE |
 | 575.xx | Compatible | Older, may lack features |
 | < 550 | Not Recommended | Too old for optimal performance |
@@ -187,6 +195,105 @@ lsmod | grep nvidia
 
 # 4. Check persistence mode (should be enabled for servers)
 nvidia-smi -pm 1
+```
+
+---
+
+## After-Install Steps (GPU Operator Deployments)
+
+If you are running the NVIDIA GPU Operator (Kubernetes / CNS deployments), the
+`.run` install is **not complete** until you also refresh the Container Device
+Interface (CDI) spec. The CDI spec at `/var/run/cdi/nvidia.yaml` pins per-version
+library filenames (e.g. `libcuda.so.580.82.09`). After any driver swap that
+file is stale, and pods will receive only the in-image `libcuda.so` compat
+library — surfacing as `cudaErrorInsufficientDriver` (CUDA error 35) during
+CUDA/TensorRT init even though `nvidia-smi` works fine on the host.
+
+```bash
+# 1. Regenerate the CDI spec to reference the just-installed driver
+sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml
+
+# 2. Restart the device plugin so it re-reads the new spec
+kubectl delete pod -n gpu-operator -l app=nvidia-device-plugin-daemonset
+
+# 3. Verify end-to-end with the included probe script
+bash scripts/nvidia/verify-driver-install.sh
+```
+
+The `verify-driver-install.sh` script schedules a CUDA pod with
+`runtimeClassName: nvidia` and exercises `cudaGetDeviceCount` + `cudaMalloc`.
+It is the only test that catches the in-image-compat-library issue described
+above — `nvidia-smi` alone is not sufficient.
+
+> **Note:** Pods that need GPU access must set `runtimeClassName: nvidia` in
+> their PodSpec. Without it, the NVIDIA container runtime is not invoked and
+> the host `libcuda.so` is not mounted. See [runtimeClassName](#runtimeclassname-nvidia-required-for-gpu-pods)
+> below.
+
+### runtimeClassName: nvidia (required for GPU pods)
+
+The GPU Operator installs a `RuntimeClass` named `nvidia` that points containerd
+at `/usr/bin/nvidia-container-runtime`. Pods that request `nvidia.com/gpu` but
+do **not** set `runtimeClassName: nvidia` will be scheduled on the GPU node and
+charged a slot, but will run under plain `runc` — the host driver libraries
+are not mounted, and CUDA initialization fails (`Devices=0`, error 35).
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+spec:
+  template:
+    spec:
+      runtimeClassName: nvidia   # ← required
+      containers:
+        - name: my-cuda-app
+          resources:
+            limits:
+              nvidia.com/gpu: "1"
+```
+
+All manifests in `kubernetes/manifests/` follow this pattern.
+
+---
+
+## Driver-Swap Procedure (Live Cluster)
+
+Swapping a driver under a running GPU Operator deployment requires draining the
+GPU components and regenerating the CDI spec. Doing this in the wrong order
+leaves the kernel module stuck in-use or the CDI spec stale.
+
+```bash
+# 1. Scale all GPU workloads to 0
+kubectl scale -n uneeq deploy renny digitalhuman-asr --replicas=0
+kubectl scale -n nim-models deploy magpie-tts vllm-gemma4 --replicas=0
+kubectl scale -n gpu-operator deploy gpu-operator --replicas=0
+
+# 2. Drain GPU Operator daemonsets from the node by clearing deploy labels
+NODE=$(kubectl get node -l nvidia.com/gpu.present=true -o jsonpath='{.items[0].metadata.name}')
+for c in dcgm-exporter device-plugin container-toolkit operator-validator gpu-feature-discovery dcgm; do
+  kubectl label node "$NODE" "nvidia.com/gpu.deploy.${c}=false" --overwrite
+done
+
+# 3. Stop host-side GPU consumers
+sudo systemctl stop xvfb.service 2>/dev/null || true
+sudo systemctl stop gdm
+
+# 4. Run the install (handles driver removal, install, MOK signing, CDI regen)
+sudo bash scripts/nvidia/install-nvidia-580.sh
+# (System will reboot)
+
+# 5. After reboot, re-enable GPU Operator components
+for c in dcgm-exporter device-plugin container-toolkit operator-validator gpu-feature-discovery dcgm; do
+  kubectl label node "$NODE" "nvidia.com/gpu.deploy.${c}=true" --overwrite
+done
+kubectl scale -n gpu-operator deploy gpu-operator --replicas=1
+
+# 6. Verify with the probe
+bash scripts/nvidia/verify-driver-install.sh
+
+# 7. Scale workloads back up
+kubectl scale -n uneeq deploy renny digitalhuman-asr --replicas=1
+kubectl scale -n nim-models deploy magpie-tts vllm-gemma4 --replicas=1
 ```
 
 ---

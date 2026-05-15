@@ -70,22 +70,23 @@ Look for the `Driver Version` in the output. The version number determines compa
 
 ### Known Good Versions
 
-| Version | Install Method | Verified On |
-|---------|---------------|-------------|
-| 580.82.07 | apt (Ubuntu package manager) | L4 (AWS g6), A10G (AWS g5) |
-| 580.82.09 | .run installer (NVIDIA direct) | L4, RTX PRO 6000 |
+| Version | Install Method | Verified On | Notes |
+|---------|---------------|-------------|-------|
+| 580.142 | .run installer (NVIDIA direct) | RTX 6000 Ada + GPU Operator + NIM + vLLM | **Recommended** for mixed renny + NIM/Triton/vLLM workloads |
+| 580.82.07 | apt (Ubuntu package manager) | L4 (AWS g6), A10G (AWS g5) | Renny-only. NIM workloads fail — see below. |
+| 580.82.09 | .run installer (NVIDIA direct) | L4, RTX PRO 6000 | Same caveat as 580.82.07. |
 
 ### Quick Fix
 
-If you are running a bad driver version, install the known good version:
+If you are running a bad driver version, install the recommended version:
 
 ```bash
 # Check current version
 nvidia-smi | head -3
 
-# If version is 580.126.x, downgrade to 580.82:
-sudo apt install nvidia-driver-580=580.82.07-0ubuntu1
-sudo reboot
+# Downgrade/upgrade to 580.142 via the included script (handles MOK signing,
+# apt purge, CDI regeneration, persistence mode in one shot):
+sudo bash scripts/nvidia/install-nvidia-580.sh
 ```
 
 ### Monitor NVENC During a Session
@@ -94,6 +95,90 @@ sudo reboot
 # Watch encoder utilization (enc column should be >0% during active session)
 nvidia-smi dmon -s u
 ```
+
+### CUDA error 35 / cuInit failed (error 999)
+
+**Symptoms:**
+
+- NIM/Triton/vLLM pods crashloop with one of:
+  - `cuInit failed with error code 999: unknown error`
+  - `RuntimeError: CUDA unknown error - this may be due to an incorrectly set up environment, e.g. changing env variable CUDA_VISIBLE_DEVICES after program start`
+  - `Devices=0 Err=35 CUDA driver version is insufficient for CUDA runtime version`
+- `nvidia-smi` on the host works fine
+- The GPU Operator's `nvidia-cuda-validator` job completes successfully
+- Renny (which uses Vulkan, not CUDA) works fine
+- A bare `kubectl run --image=nvidia/cuda` pod **without** `runtimeClassName: nvidia` also fails
+
+**Root cause:**
+
+Either the CDI spec at `/var/run/cdi/nvidia.yaml` is stale (driver swap without
+`nvidia-ctk cdi generate`), or your pod is missing `runtimeClassName: nvidia`.
+In both cases the container ends up with only its bundled
+`/usr/local/cuda/compat/libcuda.so.550.54.15` instead of the host driver's
+`libcuda.so.<your-version>`. The runtime libraries in the container then
+report the driver as too old to satisfy them, hence error 35.
+
+**Diagnose:**
+
+```bash
+# Schedule a CUDA probe pod and check end-to-end
+bash scripts/nvidia/verify-driver-install.sh
+```
+
+**Fix:**
+
+```bash
+# 1. Regenerate the CDI spec
+sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml
+
+# 2. Restart the device plugin so it re-reads the spec
+kubectl delete pod -n gpu-operator -l app=nvidia-device-plugin-daemonset
+
+# 3. If pods still fail, check they have `runtimeClassName: nvidia`:
+kubectl get pod <pod-name> -o jsonpath='{.spec.runtimeClassName}'
+# Expected: nvidia
+
+# 4. Also confirm NVIDIA persistence mode is enabled:
+sudo nvidia-smi -pm 1
+```
+
+### NIM/Triton container in CrashLoopBackOff while building TensorRT engines
+
+**Symptoms:**
+
+- Container logs show TRT engine compilation in progress: `[Step 4/4] Building TRT engine (this may take several minutes)...`
+- Container is killed before compile finishes; restarts and tries again
+- `kubectl get pod` shows many restarts (10+, 50+) but no obvious error
+- Cold-start a NIM container easily takes 15–30 min on first model deploy
+
+**Root cause:**
+
+A long `livenessProbe.initialDelaySeconds` is not enough — once the delay
+expires, the probe fires every `periodSeconds` and after `failureThreshold`
+failures the kubelet kills the container. The container is making progress but
+the probe interprets "gRPC port not yet open" as "container is wedged."
+
+**Fix:**
+
+Use a `startupProbe` instead, which disables the liveness/readiness probes
+until startup succeeds. Once startup completes, the regular lean liveness
+takes over.
+
+```yaml
+startupProbe:
+  tcpSocket: { port: 50051 }          # or httpGet for HTTP services
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  failureThreshold: 80                # ~40 min total grace
+  timeoutSeconds: 5
+livenessProbe:
+  tcpSocket: { port: 50051 }
+  periodSeconds: 30
+  failureThreshold: 3                 # tight once running
+```
+
+See `kubernetes/manifests/magpie-tts.yaml` and `vllm-gemma4.yaml` for the
+pattern.
 
 For full details on driver types, installation methods, and GPU compatibility, see the [NVIDIA Driver Guide](guides/nvidia-drivers.md).
 
