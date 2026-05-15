@@ -180,6 +180,71 @@ livenessProbe:
 See `kubernetes/manifests/magpie-tts.yaml` and `vllm-gemma4.yaml` for the
 pattern.
 
+### Riva/Triton segfault inside libucs.so (digitalhuman-asr)
+
+**Symptoms:**
+
+- `digitalhuman-asr` pod stays at `1/2 Running` indefinitely with the
+  `nemotron-asr` container not Ready
+- Logs show Riva successfully reaching ready state, then dying:
+  ```
+  I0515 13:43:11 riva_server.cc:307] Riva Conversational AI Server listening on 0.0.0.0:50051
+  INFO:inference:Riva gRPC Server is READY
+  [pod:34398:0:34398] Caught signal 11 (Segmentation fault: address not mapped to object)
+  ==== backtrace (tid: 34398) ====
+   0  /opt/hpcx/ucx/lib/libucs.so.0(ucs_handle_error+0x2e4)
+  tritonserver process has exited unexpectedly. Stopping container.
+  W0515 13:43:16 riva_server.cc:340] Signal: 15
+  ```
+- After the crash the `riva_http_server` keeps logging `Failed to connect to
+  remote host: connect: Connection refused (111)` against port 50051 because
+  the Riva gRPC server is gone but the container itself is still alive
+
+**Root cause:**
+
+The NIM `nemotron-asr-streaming` image embeds Triton, which links HPC-X /
+UCX (`libucs.so`). On startup UCX probes available transports. On hosts that
+do **not** have RDMA/InfiniBand hardware, the RDMA-related probes can
+segfault inside libucs, taking tritonserver down with them. This shows up
+*after* Riva has bound port 50051 — making it especially confusing because
+the pod looks like it succeeded.
+
+**Fix:**
+
+Whitelist only the UCX transports that work without specialized network
+hardware. The chart now sets this by default via `nemotron.ucxTls`:
+
+```yaml
+# kubernetes/digitalhuman-asr/values.yaml
+nemotron:
+  ucxTls: "cuda_ipc,sm,tcp"   # default — works on single-GPU, multi-GPU same-host, and multi-host TCP
+  ucxLogLevel: "warn"
+```
+
+The defaults are portable across deployment shapes:
+
+| Transport | Used on |
+|---|---|
+| `cuda_ipc` | Multi-GPU same-host (NVLink / PCIe P2P) |
+| `sm` | Shared memory (CPU-side, single-host) |
+| `tcp` | Single-host fallback + multi-host comms |
+| *excluded:* `rc, ud, rdmacm, ib, dc` | InfiniBand/RoCE — only enable on hosts with real RDMA fabric |
+
+If you actually have InfiniBand hardware, override the values:
+
+```yaml
+nemotron:
+  ucxTls: "cuda_ipc,sm,tcp,rc,ud"
+```
+
+**Quick patch on a running deployment** (e.g. while you're upgrading the chart):
+
+```bash
+kubectl set env -n uneeq deploy/digitalhuman-asr \
+    -c nemotron-asr \
+    UCX_TLS=cuda_ipc,sm,tcp UCX_LOG_LEVEL=warn
+```
+
 For full details on driver types, installation methods, and GPU compatibility, see the [NVIDIA Driver Guide](guides/nvidia-drivers.md).
 
 ## vLLM Issues

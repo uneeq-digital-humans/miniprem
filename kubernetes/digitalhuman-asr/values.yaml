@@ -13,6 +13,12 @@ nemotron:
       nvidia.com/gpu: 1
   shmSize: "8Gi"
   modelCacheSize: "50Gi"
+  # UCX transport whitelist for the embedded HPC-X stack. Default works on
+  # single-GPU, multi-GPU same-host (cuda_ipc), and multi-host TCP fabrics.
+  # On real InfiniBand: override to e.g. "cuda_ipc,sm,tcp,rc,ud".
+  # See docs/troubleshooting.md "Riva/Triton segfault inside libucs.so".
+  ucxTls: "cuda_ipc,sm,tcp"
+  ucxLogLevel: "warn"
 
 proxy:
   image: "cr.uneeq.io/uneeq/riva-ws-proxy:latest"

@@ -63,6 +63,23 @@ spec:
             secretKeyRef:
               name: {{ .Values.nimCredentialsSecret }}
               key: NGC_API_KEY
+        # UCX transport whitelist.
+        #
+        # The NIM nemotron-asr image embeds Triton, which links HPC-X (UCX).
+        # At Riva startup UCX probes available transports; on hosts without
+        # RDMA hardware the RDMA/IB probes can segfault inside libucs.so,
+        # crashing tritonserver right after "Riva gRPC Server is READY".
+        #
+        # Whitelist below works across deployment shapes:
+        #   - cuda_ipc : multi-GPU same-host peer-to-peer (NVLink / PCIe P2P)
+        #   - sm       : shared memory (single-host CPU side)
+        #   - tcp      : single-host fallback + multi-host comms
+        # Excludes rc/ud/rdmacm/ib/dc which require InfiniBand/RoCE hardware.
+        # On a real InfiniBand fabric add ",rc,ud" via values.yaml override.
+        - name: UCX_TLS
+          value: {{ .Values.nemotron.ucxTls | default "cuda_ipc,sm,tcp" | quote }}
+        - name: UCX_LOG_LEVEL
+          value: {{ .Values.nemotron.ucxLogLevel | default "warn" | quote }}
         resources:
           requests:
             cpu: {{ .Values.nemotron.resources.requests.cpu }}
