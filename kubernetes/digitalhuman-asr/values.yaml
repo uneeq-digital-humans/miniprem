@@ -21,7 +21,7 @@ nemotron:
   ucxLogLevel: "warn"
 
 proxy:
-  image: "cr.uneeq.io/uneeq/riva-ws-proxy:latest"
+  image: "cr.uneeq.io/dell-isg-containers/riva-ws-proxy:latest"
   port: 8000
   resources:
     requests:
