@@ -6,7 +6,7 @@ metadata:
 data:
   # Rendered verbatim from .Values.config — shape must match the app's
   # Config interface (interface/src/types/utils/Config.ts).
-  # Mounted at /usr/share/nginx/html/assets/config.yaml in the pod and
+  # Mounted at /usr/share/nginx/html/config.yaml in the pod and
   # fetched at runtime by useConfig().
   config.yaml: |
-{{ toYaml .Values.config | indent 4 }}
+    {{- toYaml .Values.config | nindent 4 }}

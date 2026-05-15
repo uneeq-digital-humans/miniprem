@@ -1,12 +1,70 @@
 # CNS overrides for digitalhuman-interface
-# Set backend.key at deploy time via --set backend.key=<secret>
+# Secrets injected at deploy time via --set:
+#   --set config.personas.en.miniprem.id=<persona-id>
+#   --set config.personas.en.cloud.id=<persona-id>
+#   --set config.backend.key=<backend-key>
 replicas: 1
-backend:
-  wsUrl: "ws://digitalhuman-api.miniprem/ws"
-  httpUrl: "http://digitalhuman-api.miniprem"
-  key: ""
-stt:
-  provider: "riva"
-  rivaUrl: "http://digitalhuman-asr.miniprem"
-  language: "en-US"
-standalone: true
+
+config:
+  app:
+    name: "Dell Technologies Kiosk"
+    environment: "production"
+
+  personas:
+    en:
+      cloud:
+        CDN: "https://cdn.uneeq.io/hosted-experience/deploy/index.js"
+        API: "https://api.uneeq.io"
+        id: ""
+      miniprem:
+        CDN: "https://cdn.enterprise.uneeq.io/hosted-experience/deploy/index.js"
+        API: "https://api.enterprise.uneeq.io"
+        id: ""
+
+  backend:
+    endpoints:
+      ws: "ws://digitalhuman-api.miniprem/ws"
+      http: "http://digitalhuman-api.miniprem"
+    key: ""
+
+  standalone: true
+
+  stt:
+    provider: "riva"
+    rivaUrl: "http://digitalhuman-asr.miniprem"
+    language: "en-US"
+
+  # UneeQ SDK options — mirrors enterprise hosted experience reference defaults.
+  # Override any key via: --set config.uneeq.<key>=<value>
+  uneeq:
+    enableMicrophone: false
+    showUserInputInterface: false
+    enableVad: false
+    enableInterruptBySpeech: false
+    autoStart: false
+    displayCallToAction: true
+    renderContent: true
+    mobileViewWidthBreakpoint: 900
+    layoutMode: "fullScreen"
+    cameraAnchorHorizontal: "center"
+    cameraAnchorDistance: "loose_close_up"
+    logLevel: "info"
+    containedAutoLayout: true
+    showClosedCaptions: true
+    captionsPosition: "bottom-left"
+    speechRecognitionHintPhrasesBoost: 0
+    allowResumeSession: false
+    forceTURN: false
+    audioUpstreamMode: "speech-recognition-service"
+    speechRecognitionProvider: "google"
+    sttDeepgramModel: "nova-3"
+    sttDeepgramUtteranceEndMs: 1500
+    sttDeepgramSmartFormat: true
+    sttDeepgramInterimResults: true
+    sttDeepgramInterruptionWordThreshold: 1
+    sttDeepgramFillerWords: false
+    sttDeepgramEndpointing: 500
+    sttDeepgramSafetyNetTimeoutMs: 5000
+    sttDeepgramNoDelay: false
+    sttDeepgramEotThreshold: 0.7
+    sttDeepgramUseEagerEndOfTurn: true
