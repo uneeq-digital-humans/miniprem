@@ -5,7 +5,25 @@ imagePullSecrets:
 
 replicas: 1
 
-# Runtime configuration injected into /usr/share/nginx/html/assets/config.yaml
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  host: "digitalhuman.miniprem"
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+
+resources:
+  requests:
+    cpu: "200m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
+# Runtime configuration injected into /usr/share/nginx/html/config.yaml
 # via a ConfigMap mount. The shape must match the app's Config interface
 # (interface/src/types/utils/Config.ts).
 #
@@ -56,20 +74,11 @@ config:
   # code / phone-as-remote flow).
   standalone: true
 
-service:
-  type: ClusterIP
-  port: 80
-
-ingress:
-  enabled: true
-  host: "digitalhuman.miniprem"
-  annotations:
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
-
-resources:
-  requests:
-    cpu: "200m"
-    memory: "128Mi"
-  limits:
-    cpu: "500m"
-    memory: "256Mi"
+  # UneeQ SDK option overrides — all VAD/mic disabled by default.
+  # Override any key via: --set config.uneeq.<key>=<value>
+  uneeq:
+    enableMicrophone: false
+    enableVad: false
+    enableInterruptBySpeech: false
+    showUserInputInterface: false
+    autoStart: false

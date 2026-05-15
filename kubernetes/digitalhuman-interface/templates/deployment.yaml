@@ -38,7 +38,7 @@ spec:
             memory: {{ .Values.resources.limits.memory }}
         volumeMounts:
         - name: config
-          mountPath: /usr/share/nginx/html/assets/config.yaml
+          mountPath: /usr/share/nginx/html/config.yaml
           subPath: config.yaml
         livenessProbe:
           httpGet:
