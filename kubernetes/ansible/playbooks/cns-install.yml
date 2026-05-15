@@ -236,6 +236,18 @@
               Then re-run this playbook.
           when: "'MICROK8S_PRESENT' in microk8s_check.stdout"
 
+        - name: Ensure iptables alternative points to iptables-nft
+          # Ubuntu 24.04 default. Calico writes rules to whichever the alternative points to;
+          # a mismatch with Docker (always uses nft) leaves orphan rules in both stacks,
+          # producing IpInAddrErrors drops at the IP layer. See README troubleshooting.
+          alternatives:
+            name: "{{ item }}"
+            path: "/usr/sbin/{{ item }}-nft"
+          loop:
+            - iptables
+            - ip6tables
+          when: ansible_os_family == "Debian"
+
         - name: Disable swap
           command: swapoff -a
           changed_when: false
@@ -449,7 +461,7 @@
         - name: Label nodes for Renny scheduling
           shell: |
             for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
-              kubectl label node "$node" uneeq.io/node-type=renny --overwrite
+              kubectl label node "$node" uneeq.io/node-type=renderer --overwrite
             done
           changed_when: false
 
@@ -471,7 +483,7 @@
           changed_when: false
 
         - name: Create gpu-operator namespace
-          command: kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
+          shell: kubectl create namespace gpu-operator --dry-run=client -o yaml | kubectl apply -f -
           changed_when: false
 
         - name: Install GPU Operator
@@ -548,7 +560,7 @@
     - name: Deploy MiniPrem Stack
       block:
         - name: Create namespaces
-          command: kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
+          shell: kubectl create namespace {{ item }} --dry-run=client -o yaml | kubectl apply -f -
           loop:
             - "{{ renny_namespace }}"
             - nim-operator
@@ -557,7 +569,7 @@
           changed_when: false
 
         - name: Create NGC API secret
-          command: >
+          shell: >
             kubectl create secret generic ngc-api-key
             --from-literal=NGC_API_KEY="{{ ngc_api_key }}"
             --namespace nim-operator
@@ -573,21 +585,13 @@
           changed_when: false
           when: nim_operator_enabled | default(true)
 
-        # Note: Renny Helm chart would be deployed here
-        # This is a placeholder - actual chart deployment depends on chart location
-        - name: Check for Renny Helm chart
-          stat:
-            path: /home/{{ ansible_user }}/miniprem-cns/renny/Chart.yaml
-          register: renny_chart
-
-        - name: Deploy Renny via Helm
-          command: >
-            helm upgrade --install renny /home/{{ ansible_user }}/miniprem-cns/renny
-            --namespace {{ renny_namespace }}
-            --set replicas={{ renny_replicas }}
-            --wait --timeout 10m
-          when: renny_chart.stat.exists
-          changed_when: false
+        # Renny + Digital Human helm charts are deployed by
+        # scripts/cns/deploy-local.sh:deploy_miniprem_stack() and
+        # deploy_digitalhuman_stack(). The bash script owns workload deployment
+        # because it carries the credential/TTS-provider/quality-level state
+        # collected from the customer-facing prompts. This playbook stops at
+        # infrastructure (namespaces created, NGC secret created, operators
+        # installed) so bash can take over.
 
       tags: miniprem
 
@@ -597,11 +601,11 @@
     - name: Deploy Phoenix Observability
       block:
         - name: Create observability namespace
-          command: kubectl create namespace {{ phoenix_namespace }} --dry-run=client -o yaml | kubectl apply -f -
+          shell: kubectl create namespace {{ phoenix_namespace }} --dry-run=client -o yaml | kubectl apply -f -
           changed_when: false
 
         - name: Deploy Phoenix
-          command: >
+          shell: |
             kubectl apply -f - <<EOF
             apiVersion: apps/v1
             kind: Deployment
@@ -631,6 +635,10 @@
                     env:
                     - name: PHOENIX_ENABLE_PROMETHEUS
                       value: "true"
+                    # Override k8s-auto-injected PHOENIX_PORT="tcp://<svc-ip>:6006"
+                    # (Phoenix parses this env var as an integer port — see phoenix-arize#3853)
+                    - name: PHOENIX_PORT
+                      value: "6006"
                     resources:
                       requests:
                         memory: "2Gi"

@@ -15,6 +15,10 @@ spec:
       labels:
         app: digitalhuman-asr
     spec:
+      # GPU Operator installs the "nvidia" RuntimeClass; required for
+      # libcuda.so.1 to be present in the container. Without this, NIMs
+      # that use pycuda (Nemotron ASR's riva-deploy) fail to import.
+      runtimeClassName: nvidia
       imagePullSecrets:
       {{- range .Values.imagePullSecrets }}
       - name: {{ .name }}

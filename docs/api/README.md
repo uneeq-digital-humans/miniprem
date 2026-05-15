@@ -78,7 +78,7 @@ GET /api/v1/chatflows
 [
   {
     "id": "chatflow-123",
-    "name": "vLLM Gemma3 Chatflow",
+    "name": "vLLM Gemma4 Chatflow",
     "description": "Chatflow using HuggingFaceH4/zephyr-7b-beta via vLLM with Buffer Memory"
   }
 ]

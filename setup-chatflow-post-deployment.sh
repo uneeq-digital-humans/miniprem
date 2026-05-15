@@ -148,7 +148,7 @@ display_setup_guidance() {
     echo "1. Search for 'OpenAI Compatible' or 'Custom LLM' in the nodes panel"
     echo "2. Configure the node with:"
     echo "   - Base URL: http://vllm:8000/v1"
-    echo "   - Model: gemma-3-4b (or your chosen model)"
+    echo "   - Model: gemma-4-E4B-it (or your chosen model)"
     echo
     echo -e "${YELLOW}DOWNLOADING MODELS IN vLLM:${NC}"
     echo "vLLM will automatically download the model the first time it is requested."

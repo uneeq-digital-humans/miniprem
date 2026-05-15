@@ -27,7 +27,7 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 
 1. Click on "Chatflows" in the sidebar
 2. Click the "+" button to create a new Chatflow
-3. Name your Chatflow (e.g., "vLLM Gemma3 Chatflow")
+3. Name your Chatflow (e.g., "vLLM Gemma4 Chatflow")
 
 ### 3. Add and Configure Nodes
 
@@ -35,14 +35,14 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 
 1. From the nodes panel, drag and drop a "System Prompt" node onto the canvas
 2. Configure the node with:
-   - Prompt: "You are a helpful assistant powered by Gemma3. Provide concise and accurate responses."
+   - Prompt: "You are a helpful assistant powered by Gemma4. Provide concise and accurate responses."
 
 #### vLLM Node
 
 1. From the nodes panel, drag and drop a "vLLM" or "OpenAI Compatible" node onto the canvas
 2. Configure the node with:
    - Base URL: `http://vllm:8000/v1` (use the docker container name, not localhost)
-   - Model: `gemma-3-4b`
+   - Model: `gemma-4-E4B-it`
    - Temperature: `0.7`
    - Max Tokens: `1000`
    - Leave other settings at default values

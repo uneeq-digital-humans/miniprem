@@ -20,11 +20,23 @@ spec:
         prometheus.io/port: "8080"
         prometheus.io/scrape: "true"
     spec:
+      {{- if .Values.deployment.nodeType }}
       nodeSelector:
         uneeq.io/node-type: {{ .Values.deployment.nodeType }}
+      {{- end }}
+      # GPU Operator installs a RuntimeClass named "nvidia" that points
+      # containerd at /usr/bin/nvidia-container-runtime. Without this, pods
+      # using nvidia.com/gpu resources land on runc and the container has no
+      # libcuda.so / Vulkan ICD, so the renderer crashes with
+      # VK_ERROR_INCOMPATIBLE_DRIVER.
+      runtimeClassName: nvidia
       terminationGracePeriodSeconds: 18000
       imagePullSecrets:
+{{- if .Values.imagePullSecrets }}
+{{ toYaml .Values.imagePullSecrets | indent 6 }}
+{{- else }}
       - name: docker-config
+{{- end }}
       containers:
       - name: renny
         image: {{ .Values.image }}

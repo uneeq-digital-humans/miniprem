@@ -41,6 +41,7 @@ set -euo pipefail
 # Script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KUBERNETES_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
+ANSIBLE_DIR="$KUBERNETES_DIR/ansible"
 
 # Color codes
 BOLD='\033[1m'
@@ -216,7 +217,7 @@ GPU_TIMESLICE_REPLICAS="${GPU_TIMESLICE_REPLICAS:-8}"  # GPU time-slices per phy
 # Version pinning
 MICROK8S_CHANNEL="1.31/stable"
 GPU_OPERATOR_VERSION="v24.9.0"
-NIM_OPERATOR_VERSION="1.0.0"
+NIM_OPERATOR_VERSION="3.1.0"
 
 # Installation mode (set during interactive prompt)
 CNS_INSTALL_MODE="${CNS_INSTALL_MODE:-}"  # minimal or full
@@ -1415,13 +1416,16 @@ REPO
     fi
 
     # Install other common prerequisites
+    # ansible-core is required: infrastructure (k8s + GPU operator + NIM
+    # operator) is delegated to ansible/playbooks/cns-install.yml so the same
+    # definition serves both local and remote deployments.
     info "Installing additional tools..."
     case "$PKG_MANAGER" in
         apt)
-            apt-get install -y curl wget jq git
+            apt-get install -y curl wget jq git ansible-core
             ;;
         dnf|yum)
-            $PKG_MANAGER install -y curl wget jq git
+            $PKG_MANAGER install -y curl wget jq git ansible-core
             ;;
     esac
     success "Prerequisites installed"
@@ -1706,340 +1710,100 @@ check_ngc_api_key() {
 }
 
 ################################################################################
-# MicroK8s Installation
+# Infrastructure Installation (delegated to Ansible playbook)
 ################################################################################
+#
+# Why ansible: deploy-remote.sh already calls the same playbook over SSH; by
+# running it locally with ansible_connection=local we share one definition for
+# k8s + GPU operator + NIM operator across both deployment paths. This avoids
+# the bug duplication we hit during early development (containerd version
+# pinning, Calico-on-kernel-6.x quirks, iptables-nft alternative, etc.) where
+# fixes had to be applied to two parallel implementations.
+#
+# The bash script keeps ownership of:
+#   - OS-level prep for Renny rendering (Xvfb, Vulkan)
+#   - Credential collection (Harbor, NGC, DHOP, TTS)
+#   - Workload deployment (Renny helm + Digital Human helms)
+#   - VRAM-fit validation
+#   - Customer-facing prompts and progress UI
+#
+# Ansible owns:
+#   - Kubernetes (microk8s OR kubeadm based on cns_k8s_type)
+#   - Container runtime (containerd 1.7.x with CRI plugin enabled)
+#   - CNI (Calico v3.29.3)
+#   - GPU Operator + time-slicing configmap
+#   - NIM Operator
+#   - Phoenix observability
+#
+install_infra_via_ansible() {
+    info "Installing infrastructure via ansible playbook..."
 
-install_microk8s() {
-    info "Installing MicroK8s..."
-
-    # Verify snapd is available (should be installed in prerequisites)
-    if ! command -v snap &> /dev/null; then
-        error "snapd is not installed. Run install_prerequisites first."
-        exit 1
+    if ! command -v ansible-playbook &> /dev/null; then
+        error "ansible-playbook not found — install_prerequisites should have installed ansible-core."
+        error "Re-run with --skip-resume or install manually: apt-get install -y ansible-core"
+        return 1
     fi
 
-    # Install MicroK8s
-    if ! command -v microk8s &> /dev/null; then
-        snap install microk8s --classic --channel="$MICROK8S_CHANNEL"
-        success "MicroK8s installed"
+    if [[ ! -f "$ANSIBLE_DIR/playbooks/cns-install.yml" ]]; then
+        error "Ansible playbook not found at $ANSIBLE_DIR/playbooks/cns-install.yml"
+        return 1
+    fi
+
+    # Use the bundled inventory at inventory/hosts.yml (not a temp file) so
+    # ansible picks up the matching group_vars/cns.yml — that file defines
+    # phoenix_namespace, miniprem_namespace, harbor_*, etc., which playbook
+    # tasks reference. A temp inventory outside the inventory/ tree would
+    # require us to re-declare every default as an extra-var.
+    local inventory_file="$ANSIBLE_DIR/inventory/hosts.yml"
+    if [[ ! -f "$inventory_file" ]]; then
+        error "Ansible inventory not found at $inventory_file"
+        return 1
+    fi
+
+    # Map deploy-local.sh state -> ansible extra vars. Anything not set here
+    # falls back to defaults in inventory/hosts.yml, group_vars/cns.yml, and
+    # vars/cns_versions.yml.
+    local extra_vars=()
+    extra_vars+=("-e" "cns_k8s_type=${CNS_K8S_TYPE:-kubeadm}")
+    extra_vars+=("-e" "renny_replicas=${RENNY_REPLICAS:-2}")
+    extra_vars+=("-e" "renny_namespace=${KUBE_NAMESPACE:-uneeq}")
+    extra_vars+=("-e" "gpu_timeslice_replicas=${GPU_TIMESLICE_REPLICAS:-4}")
+
+    # NGC key only needed for full-stack (LLM) or DH ASR. Always pass through
+    # if set so the ansible task that creates the Secret has it.
+    if [[ -n "${NGC_API_KEY:-}" ]]; then
+        extra_vars+=("-e" "ngc_api_key=${NGC_API_KEY}")
+    fi
+
+    # Phoenix observability is included in full-stack mode (lots of LLM
+    # telemetry to capture). For minimal mode it's unnecessary overhead.
+    if [[ "${CNS_INSTALL_MODE:-minimal}" == "full" ]]; then
+        extra_vars+=("-e" "phoenix_enabled=true")
     else
-        info "MicroK8s already installed"
-        microk8s version
+        extra_vars+=("-e" "phoenix_enabled=false")
     fi
 
-    # Wait for MicroK8s to be ready
-    info "Waiting for MicroK8s to be ready..."
-    microk8s status --wait-ready
-
-    # Enable required addons
-    info "Enabling MicroK8s addons..."
-    microk8s enable dns
-    microk8s enable hostpath-storage
-    microk8s enable helm3
-
-    # Enable NVIDIA addon
-    info "Enabling NVIDIA GPU support..."
-    microk8s enable nvidia
-
-    success "MicroK8s configured with GPU support"
-
-    # Create kubectl alias
-    if [[ ! -f /usr/local/bin/kubectl ]]; then
-        ln -sf /snap/bin/microk8s.kubectl /usr/local/bin/kubectl
-    fi
-
-    # Create helm alias
-    if [[ ! -f /usr/local/bin/helm ]]; then
-        ln -sf /snap/bin/microk8s.helm3 /usr/local/bin/helm
-    fi
-
-    # Label all nodes for Renny scheduling
-    # The Helm chart uses nodeSelector with uneeq.io/node-type label
-    info "Labeling nodes for Renny scheduling..."
-    local nodes=$(microk8s kubectl get nodes -o jsonpath='{.items[*].metadata.name}')
-    for node in $nodes; do
-        microk8s kubectl label node "$node" uneeq.io/node-type= --overwrite 2>/dev/null || true
-    done
-    success "Nodes labeled for Renny scheduling"
-}
-
-################################################################################
-# kubeadm Installation
-################################################################################
-
-install_kubeadm() {
-    info "Installing Kubernetes via kubeadm (NVIDIA Cloud Native Stack)..."
-
-    local K8S_VERSION="1.31"
-    local CALICO_VERSION="v3.28.0"
-
-    # Step 1: Disable swap (kubeadm requirement)
-    CLEANUP_STAGE="swap-disable"
-    swapoff -a
-    sed -i '/\bswap\b/d' /etc/fstab
-    success "Swap disabled"
-
-    # Step 2: Kernel modules required by Kubernetes networking
-    CLEANUP_STAGE="kernel-modules"
-    modprobe overlay
-    modprobe br_netfilter
-    cat > /etc/modules-load.d/containerd.conf <<'EOF'
-overlay
-br_netfilter
-EOF
-    cat > /etc/sysctl.d/k8s.conf <<'EOF'
-net.bridge.bridge-nf-call-iptables  = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.ipv4.ip_forward                 = 1
-EOF
-    sysctl --system > /dev/null
-    success "Kernel modules and sysctl params configured"
-
-    # Step 3: Install containerd.io from Docker (not Ubuntu's containerd package)
-    # Ubuntu's containerd lacks CDI and does not receive timely updates
-    CLEANUP_STAGE="containerd-install"
-    info "Installing containerd.io from Docker registry..."
-    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
-    install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-    chmod a+r /etc/apt/keyrings/docker.asc
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
-https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-        > /etc/apt/sources.list.d/docker.list
-    apt-get update
-    apt-get install -y containerd.io
-
-    # Configure containerd: SystemdCgroup=true is required when using kubeadm
-    mkdir -p /etc/containerd
-    containerd config default > /etc/containerd/config.toml
-    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
-    systemctl restart containerd
-    systemctl enable containerd
-    success "containerd configured (SystemdCgroup=true)"
-
-    # Step 4: Install NVIDIA Container Toolkit and wire it into containerd
-    # This must happen before kubeadm init so the GPU runtime is available at cluster start
-    CLEANUP_STAGE="nvidia-ctk"
-    info "Installing NVIDIA Container Toolkit..."
-    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-        | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-    curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-        | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
-        > /etc/apt/sources.list.d/nvidia-container-toolkit.list
-    apt-get update
-    apt-get install -y nvidia-container-toolkit
-    nvidia-ctk runtime configure --runtime=containerd
-    systemctl restart containerd
-    success "NVIDIA Container Toolkit configured for containerd"
-
-    # Step 5: Install kubeadm, kubelet, kubectl
-    CLEANUP_STAGE="kubeadm-install"
-    info "Installing kubeadm, kubelet, kubectl v${K8S_VERSION}..."
-    mkdir -p /etc/apt/keyrings
-    curl -fsSL "https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/Release.key" \
-        | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] \
-https://pkgs.k8s.io/core:/stable:/v${K8S_VERSION}/deb/ /" \
-        > /etc/apt/sources.list.d/kubernetes.list
-    apt-get update
-    apt-get install -y kubelet kubeadm kubectl
-    apt-mark hold kubelet kubeadm kubectl
-    systemctl enable kubelet
-    success "kubeadm, kubelet, kubectl installed and held at v${K8S_VERSION}"
-
-    # Step 6: Initialize the cluster
-    # Use Calico's pod CIDR (192.168.0.0/16), not Flannel's — must match CNI
-    CLEANUP_STAGE="kubeadm-init"
-    info "Initializing Kubernetes cluster with kubeadm..."
-    kubeadm init \
-        --cri-socket /run/containerd/containerd.sock \
-        --pod-network-cidr=192.168.0.0/16
-    success "Cluster initialized"
-
-    # Step 7: kubeconfig for root and invoking user
-    CLEANUP_STAGE="kubeconfig"
-    mkdir -p /root/.kube
-    cp /etc/kubernetes/admin.conf /root/.kube/config
-    chmod 600 /root/.kube/config
-    if [[ -n "${SUDO_USER:-}" ]]; then
-        local user_home
-        user_home=$(getent passwd "$SUDO_USER" | cut -d: -f6)
-        mkdir -p "$user_home/.kube"
-        cp /etc/kubernetes/admin.conf "$user_home/.kube/config"
-        chown -R "${SUDO_USER}:${SUDO_USER}" "$user_home/.kube"
-        info "kubeconfig installed for user: $SUDO_USER"
-    fi
-
-    # Step 8: Install Calico CNI
-    CLEANUP_STAGE="calico-cni"
-    info "Installing Calico CNI ${CALICO_VERSION}..."
-    kubectl apply -f "https://raw.githubusercontent.com/projectcalico/calico/${CALICO_VERSION}/manifests/calico.yaml"
-    info "Waiting for Calico to be ready..."
-    kubectl wait --for=condition=available deployment/calico-kube-controllers \
-        -n kube-system --timeout=300s || true
-    success "Calico CNI installed"
-
-    # Step 9: Remove control-plane taint (single-node: allow pod scheduling here)
-    kubectl taint nodes --all node-role.kubernetes.io/control-plane- 2>/dev/null || true
-    success "Control-plane taint removed (single-node mode)"
-
-    # Step 10: Install Helm 3
-    CLEANUP_STAGE="helm-install"
-    info "Installing Helm 3..."
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    success "Helm 3 installed"
-
-    # Step 11: Wait for node Ready before proceeding to GPU Operator
-    CLEANUP_STAGE="node-ready"
-    info "Waiting for node to reach Ready state..."
-    kubectl wait --for=condition=Ready node --all --timeout=300s
-
-    # Step 12: Label node for Renny pod scheduling
-    local nodes
-    nodes=$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}')
-    for node in $nodes; do
-        kubectl label node "$node" uneeq.io/node-type=renny --overwrite
-    done
-
-    success "Kubernetes cluster ready (kubeadm + Calico)"
-}
-
-################################################################################
-# GPU Operator Installation
-################################################################################
-
-install_gpu_operator() {
-    info "Installing NVIDIA GPU Operator..."
-
-    local KUBECTL="kubectl"
-    local HELM="helm"
-
-    if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
-        KUBECTL="microk8s kubectl"
-        HELM="microk8s helm3"
-    fi
-
-    # Add NVIDIA Helm repo
-    $HELM repo add nvidia https://helm.ngc.nvidia.com/nvidia || true
-    $HELM repo update
-
-    # Create namespace
-    $KUBECTL create namespace gpu-operator --dry-run=client -o yaml | $KUBECTL apply -f -
-
-    # Detect whether NVIDIA drivers are pre-installed on the host.
-    # On CNS hardware (NVIDIA-sold servers, Dell ISG, etc.) drivers are typically
-    # already installed. If nvidia-smi works, tell GPU Operator to skip driver install.
-    local driver_enabled="true"
-    if nvidia-smi &>/dev/null; then
-        info "NVIDIA drivers detected on host — GPU Operator will skip driver installation"
-        driver_enabled="false"
+    # NIM operator only needed for full-stack mode (it manages local LLM CRDs).
+    if [[ "${CNS_INSTALL_MODE:-minimal}" == "full" ]]; then
+        extra_vars+=("-e" "nim_operator_enabled=true")
     else
-        info "No NVIDIA drivers detected — GPU Operator will install drivers"
+        extra_vars+=("-e" "nim_operator_enabled=false")
     fi
 
-    # For the kubeadm path, NVIDIA Container Toolkit was already installed and wired
-    # into containerd by install_kubeadm(). Tell GPU Operator not to reinstall it.
-    local toolkit_enabled="true"
-    if [[ "$CNS_K8S_TYPE" == "kubeadm" ]]; then
-        toolkit_enabled="false"
+    info "Running: ansible-playbook playbooks/cns-install.yml (this may take 10-20 min)"
+    info "Inventory: $inventory_file"
+    info "Extra vars: ${extra_vars[*]}"
+
+    # Run the playbook from the ansible/ directory so its relative paths work.
+    if ! (cd "$ANSIBLE_DIR" && ansible-playbook \
+            -i "$inventory_file" \
+            playbooks/cns-install.yml \
+            "${extra_vars[@]}"); then
+        error "Ansible playbook failed. Check output above for the failed task."
+        return 1
     fi
 
-    # Install GPU Operator
-    $HELM upgrade --install gpu-operator nvidia/gpu-operator \
-        --namespace gpu-operator \
-        --version "$GPU_OPERATOR_VERSION" \
-        --set driver.enabled="${driver_enabled}" \
-        --set toolkit.enabled="${toolkit_enabled}" \
-        --set devicePlugin.enabled=true \
-        --set dcgmExporter.enabled=true \
-        --wait --timeout 10m
-
-    success "GPU Operator installed (driver.enabled=${driver_enabled}, toolkit.enabled=${toolkit_enabled})"
-
-    # Wait for GPU to be available
-    info "Waiting for GPU resources to be available..."
-    local retries=30
-    while [[ $retries -gt 0 ]]; do
-        local gpu_count=$($KUBECTL get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || echo "0")
-        if [[ "$gpu_count" != "0" && -n "$gpu_count" ]]; then
-            success "GPU resources available: $gpu_count GPU(s)"
-            break
-        fi
-        echo "  Waiting for GPU... ($retries attempts remaining)"
-        sleep 10
-        ((retries--))
-    done
-
-    if [[ $retries -eq 0 ]]; then
-        warning "GPU resources not yet visible. Deployment will continue."
-    fi
-}
-
-################################################################################
-# GPU Time-Slicing Configuration
-################################################################################
-
-configure_gpu_timeslicing() {
-    info "Configuring GPU time-slicing..."
-
-    local KUBECTL="kubectl"
-    local GPU_OPERATOR_NS="gpu-operator"
-
-    if [[ "$CNS_K8S_TYPE" == "microk8s" ]]; then
-        KUBECTL="microk8s kubectl"
-        GPU_OPERATOR_NS="gpu-operator-resources"  # MicroK8s uses different namespace
-    fi
-
-    # Wait for GPU operator to be ready
-    info "Waiting for GPU operator pods to be ready..."
-    $KUBECTL wait --for=condition=ready pod -l app=gpu-operator -n "$GPU_OPERATOR_NS" --timeout=300s || true
-
-    # Fix known symlink creation bug (affects systemd cgroup setups)
-    info "Applying GPU operator fixes..."
-    $KUBECTL patch clusterpolicy/cluster-policy --type=merge \
-        -p '{"spec":{"validator":{"driver":{"env":[{"name":"DISABLE_DEV_CHAR_SYMLINK_CREATION","value":"true"}]}}}}' || true
-
-    # Wait for pods to restart after patch
-    sleep 10
-
-    # Create time-slicing ConfigMap
-    info "Creating time-slicing configuration..."
-    cat <<EOF | $KUBECTL apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: time-slicing-config
-  namespace: $GPU_OPERATOR_NS
-data:
-  any: |-
-    version: v1
-    flags:
-      migStrategy: none
-    sharing:
-      timeSlicing:
-        renameByDefault: false
-        failRequestsGreaterThanOne: false
-        resources:
-          - name: nvidia.com/gpu
-            replicas: ${GPU_TIMESLICE_REPLICAS:-8}
-EOF
-
-    # Patch cluster policy for time-slicing
-    $KUBECTL patch clusterpolicies.nvidia.com/cluster-policy \
-        --type merge \
-        -p '{"spec": {"devicePlugin": {"config": {"name": "time-slicing-config", "default": "any"}}}}' || true
-
-    # Wait for device plugin to restart
-    info "Waiting for GPU resources to update..."
-    sleep 30
-
-    # Verify time-slicing is working
-    local gpu_count=$($KUBECTL get nodes -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}' 2>/dev/null || echo "0")
-    if [[ "$gpu_count" -gt 1 ]]; then
-        success "GPU time-slicing configured ($gpu_count GPU replicas available)"
-    else
-        warning "Time-slicing may not be active yet. GPU count: $gpu_count"
-    fi
+    success "Infrastructure ready (k8s + GPU operator + time-slicing)"
 }
 
 ################################################################################
@@ -2715,43 +2479,31 @@ main() {
     fi
 
     echo ""
-    echo "Installing Kubernetes..."
+    echo "Installing Kubernetes infrastructure (via ansible playbook)..."
     echo ""
 
-    # Install Kubernetes distribution
+    # Single stage covers k8s + GPU operator + time-slicing + NIM operator +
+    # (optionally) Phoenix. Ansible is idempotent, so resume is automatic — a
+    # re-run on a healthy cluster is a no-op. We collapse the two former stages
+    # (kubernetes_install, gpu_timeslicing) into one because ansible handles
+    # both atomically.
     if should_run_stage "kubernetes_install"; then
-        CLEANUP_STAGE="Kubernetes installation"
+        CLEANUP_STAGE="Infrastructure (ansible)"
         mark_progress "kubernetes_install"
         case "$CNS_K8S_TYPE" in
-            microk8s)
-                start_spinner "Installing MicroK8s (this may take several minutes)..."
-                install_microk8s 2>&1 | tail -20
-                stop_spinner 0 "MicroK8s installed"
-                ;;
-            kubeadm)
-                start_spinner "Installing kubeadm cluster..."
-                install_kubeadm 2>&1 | tail -20
-                stop_spinner 0 "kubeadm cluster initialized"
-                install_gpu_operator
+            microk8s|kubeadm)
+                install_infra_via_ansible
                 ;;
             *)
                 error "Unknown Kubernetes type: $CNS_K8S_TYPE"
                 exit 1
                 ;;
         esac
-    else
-        info "Resume: Kubernetes installation already completed — skipping"
-    fi
-
-    # Configure GPU time-slicing (for multiple Rennys)
-    if should_run_stage "gpu_timeslicing"; then
-        CLEANUP_STAGE="GPU time-slicing"
+        # gpu_timeslicing stage is now part of the playbook — mark complete
+        # so resume logic stays consistent with the stage_index list.
         mark_progress "gpu_timeslicing"
-        start_spinner "Configuring GPU time-slicing..."
-        configure_gpu_timeslicing 2>&1 | tail -10
-        stop_spinner 0 "GPU time-slicing configured"
     else
-        info "Resume: GPU time-slicing already completed — skipping"
+        info "Resume: Infrastructure already completed — skipping"
     fi
 
     # Deploy MiniPrem stack
