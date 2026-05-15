@@ -5,18 +5,56 @@ imagePullSecrets:
 
 replicas: 1
 
-# Backend URLs injected into config.yaml at deploy time
-backend:
-  wsUrl: "ws://digitalhuman-api.miniprem/ws"
-  httpUrl: "http://digitalhuman-api.miniprem"
-  key: ""
+# Runtime configuration injected into /usr/share/nginx/html/assets/config.yaml
+# via a ConfigMap mount. The shape must match the app's Config interface
+# (interface/src/types/utils/Config.ts).
+#
+# Customers should override these values at install time, e.g.:
+#   helm install ... \
+#     --set config.personas.en.cloud.id=<persona-id> \
+#     --set config.apis.pixabay.api_key=<key>
+config:
+  app:
+    name: "Digital Human Kiosk"
+    environment: "production"   # development | staging | production
+    autoStartMic: true
 
-stt:
-  provider: "riva"
-  rivaUrl: "http://digitalhuman-asr.miniprem"
-  language: "en-US"
+  # Per-language persona definitions. Each language has both a "cloud" (UneeQ
+  # hosted) and "miniprem" (on-prem) variant. Customers typically need to
+  # change the `id` to their own UneeQ persona ID.
+  personas:
+    en:
+      cloud:
+        CDN: "https://cdn-eu.uneeq.io/hosted-experience/deploy/index.js"
+        API: "https://api-eu.uneeq.io"
+        id: ""
+      miniprem:
+        CDN: "https://cdn-eu.uneeq.io/hosted-experience/deploy/index.js"
+        API: "https://api-eu.uneeq.io"
+        id: ""
 
-standalone: true
+  apis:
+    pixabay:
+      api_key: ""
+      api_url: "https://pixabay.com/api/"
+
+  # Backend WebSocket API the frontend connects to.
+  backend:
+    endpoints:
+      ws: "ws://digitalhuman-api.miniprem/ws"
+      http: "http://digitalhuman-api.miniprem"
+    key: ""
+
+  # Speech-to-text provider. Use "riva" for the on-prem NVIDIA Riva sidecar
+  # shipped by the digitalhuman-asr chart, or "deepgram" for cloud STT.
+  stt:
+    provider: "riva"
+    rivaUrl: "http://digitalhuman-asr.miniprem"
+    language: "en-US"
+
+  # When true, the mic button is rendered directly on the kiosk page (no QR
+  # code / phone-as-remote flow).
+  standalone: true
 
 service:
   type: ClusterIP
