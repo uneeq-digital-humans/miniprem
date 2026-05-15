@@ -1,0 +1,133 @@
+# vLLM serving Gemma 4 E4B-it at FP8 quantization on a single RTX 6000 Ada.
+#
+# VRAM budget on a shared 48 GB GPU (with Renny + Magpie TTS + Nemotron ASR co-located):
+#   ~10 GB weights at FP8 + KV cache for 128K context (--max-model-len limits this)
+#
+# Prereqs:
+#   - hf-token Secret in the nim-models namespace (gemma-4 is a gated model)
+#     kubectl create secret generic hf-token \
+#       -n nim-models \
+#       --from-literal=HF_TOKEN=hf_xxxxxxxxxxxxx
+#   - StorageClass exists (we installed microk8s-hostpath alias on local-path-provisioner)
+#   - nvidia RuntimeClass exists (installed by GPU Operator)
+#
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vllm-gemma4-cache
+  namespace: nim-models
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 30Gi
+  storageClassName: microk8s-hostpath
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-gemma4
+  namespace: nim-models
+  labels: { app: vllm-gemma4 }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: vllm-gemma4 }
+  template:
+    metadata:
+      labels: { app: vllm-gemma4 }
+    spec:
+      runtimeClassName: nvidia
+      # ASR's chart wants this label too; using the same selector so vLLM
+      # lands on GPU nodes in multi-node clusters.
+      nodeSelector:
+        uneeq.io/node-type: renderer
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--model"
+            - "google/gemma-4-E4B-it"
+            - "--quantization"
+            - "fp8"
+            - "--max-model-len"
+            - "32768"          # cap KV cache; full 128K would blow VRAM with Renny+TTS+ASR co-tenants
+            - "--gpu-memory-utilization"
+            - "0.30"           # leave headroom for the other GPU tenants on this 48 GB card
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8000"
+            - "--served-model-name"
+            - "gemma-4-E4B-it"
+          ports:
+            - containerPort: 8000
+              name: http
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: HF_TOKEN
+            - name: HUGGINGFACE_HUB_CACHE
+              value: /models
+            - name: HF_HOME
+              value: /models
+            - name: VLLM_LOGGING_LEVEL
+              value: INFO
+          resources:
+            requests:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 24Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /models
+            - name: shm
+              mountPath: /dev/shm
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 120   # model download + load can take ~5 min on first run
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 600
+            periodSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: vllm-gemma4-cache
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vllm-gemma4
+  namespace: nim-models
+  labels: { app: vllm-gemma4 }
+spec:
+  selector: { app: vllm-gemma4 }
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+  type: ClusterIP

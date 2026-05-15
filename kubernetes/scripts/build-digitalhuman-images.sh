@@ -17,9 +17,11 @@ REGISTRY="cr.uneeq.io/uneeq"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MINIPREM_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-INTERFACE_SRC="$MINIPREM_DIR/../../dell-kiosk-application/interface"
-WSAPI_SRC="$MINIPREM_DIR/../../../dell-kiosk-websocket-api"
-PROXY_SRC="$MINIPREM_DIR/kubernetes/digitalhuman-asr/ws-proxy-src"
+# Source directories — expected as siblings of the MiniPrem checkout. Override
+# via env vars if your layout differs.
+INTERFACE_SRC="${INTERFACE_SRC:-$MINIPREM_DIR/../dell-kiosk-application/interface}"
+WSAPI_SRC="${WSAPI_SRC:-$MINIPREM_DIR/../dell-kiosk-websocket-api}"
+PROXY_SRC="${PROXY_SRC:-$MINIPREM_DIR/kubernetes/digitalhuman-asr/ws-proxy-src}"
 
 info()    { echo "ℹ️  $*"; }
 success() { echo "✅ $*"; }
