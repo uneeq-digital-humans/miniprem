@@ -298,7 +298,7 @@ MiniPrem is a multi-deployment digital human platform with two main architecture
 ### Docker Architecture (Local Development)
 - **MiniPrem Monitor**: Real-time container and Kubernetes monitoring dashboard (port 3001)
 - **Renny**: Digital human renderer with internal speech processing (UneeQ integration)
-- **vLLM**: LLM inference server (Gemma3/Mistral models)
+- **vLLM**: LLM inference server (Gemma4/Mistral models)
 - **Flowise**: Workflow automation and LLM integration
 - **Grafana/Prometheus**: Monitoring and metrics (Grafana on port 3002)
 - **Redis**: Message queuing

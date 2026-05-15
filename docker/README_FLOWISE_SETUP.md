@@ -10,7 +10,7 @@ After starting the Docker containers with `docker compose -f docker-compose.upda
 
 1. Click on "Chatflows" in the sidebar
 2. Click the "+" button to create a new Chatflow
-3. Name your Chatflow (e.g., "Ollama Gemma3 Chatflow")
+3. Name your Chatflow (e.g., "Ollama Gemma4 Chatflow")
 
 ## Add and Configure Nodes
 
@@ -18,7 +18,7 @@ After starting the Docker containers with `docker compose -f docker-compose.upda
 
 1. From the nodes panel, drag and drop a "System Prompt" node onto the canvas
 2. Configure the node with:
-   - Prompt: "You are a helpful assistant powered by Gemma3. Provide concise and accurate responses."
+   - Prompt: "You are a helpful assistant powered by Gemma4. Provide concise and accurate responses."
 
 ### 2. Add Ollama Node
 

@@ -15,7 +15,7 @@ cuda_version: "12.4"
 nvidia_container_toolkit_version: "1.16.0"
 
 # NIM Operator
-nim_operator_version: "1.0.0"
+nim_operator_version: "3.1.0"
 
 # Observability
 phoenix_version: "latest"
@@ -29,4 +29,4 @@ containerd_version: "1.7.0"
 renny_chart_version: "0.1184-2f3b7"
 
 # CNI
-calico_version: "v3.28.0"
+calico_version: "v3.29.3"
