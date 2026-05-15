@@ -57,10 +57,13 @@ spec:
             - "--quantization"
             - "fp8"
             - "--max-model-len"
-            - "16384"          # cap KV cache; 32768 + co-tenants blew the 48 GB card and OOM'd ASR
+            - "16384"          # half of vLLM default. Caps KV cache so we don't balloon past gpu-memory-utilization.
             - "--gpu-memory-utilization"
-            - "0.20"           # ~9.5 GB on a 48 GB card. Math: renny ~2.5 + magpie ~13.7 + asr ~7 + this ~9.5 + headroom = 48
-                               # If running this manifest alone (no NIM co-tenants), raise to 0.85+ for full perf.
+            - "0.27"           # ~13 GB on a 48 GB card. FP8 weights are 11.52 GB so 0.20 (9.5 GB) is too tight —
+                               # vLLM errors `No available memory for cache blocks`. 0.27 leaves ~1.5 GB for KV at 16k.
+                               # Full budget math with co-tenants:
+                               #   renny ~2.5 + magpie ~13.7 + asr ~7 + this ~13 + headroom = ~48
+                               # If running this manifest alone, raise to 0.85+ for full perf.
             - "--host"
             - "0.0.0.0"
             - "--port"
