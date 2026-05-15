@@ -1,4 +1,4 @@
-image: "cr.uneeq.io/uneeq/digitalhuman-websocket-api:latest"
+image: "cr.uneeq.io/dell-isg-containers/digitalhuman-websocket-api:latest"
 
 imagePullSecrets:
   - name: harbor-credentials
