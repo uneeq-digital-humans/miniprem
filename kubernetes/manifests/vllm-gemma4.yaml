@@ -57,9 +57,10 @@ spec:
             - "--quantization"
             - "fp8"
             - "--max-model-len"
-            - "32768"          # cap KV cache; full 128K would blow VRAM with Renny+TTS+ASR co-tenants
+            - "16384"          # cap KV cache; 32768 + co-tenants blew the 48 GB card and OOM'd ASR
             - "--gpu-memory-utilization"
-            - "0.30"           # leave headroom for the other GPU tenants on this 48 GB card
+            - "0.20"           # ~9.5 GB on a 48 GB card. Math: renny ~2.5 + magpie ~13.7 + asr ~7 + this ~9.5 + headroom = 48
+                               # If running this manifest alone (no NIM co-tenants), raise to 0.85+ for full perf.
             - "--host"
             - "0.0.0.0"
             - "--port"
