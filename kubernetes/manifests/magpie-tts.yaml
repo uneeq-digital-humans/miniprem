@@ -83,18 +83,28 @@ spec:
               mountPath: /opt/nim/.cache
             - name: shm
               mountPath: /dev/shm
+          # Cold-start (model download + TRT engine compile) can exceed 30 min.
+          # startupProbe disables liveness/readiness until it succeeds, then
+          # the lean liveness below takes over for the running-state checks.
+          startupProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 80   # ~40 min total grace for cold start
+            timeoutSeconds: 5
           readinessProbe:
             tcpSocket:
               port: 50051
-            initialDelaySeconds: 180   # model download + warm-up
             periodSeconds: 15
-            failureThreshold: 60
+            failureThreshold: 3
+            timeoutSeconds: 5
           livenessProbe:
             tcpSocket:
               port: 50051
-            initialDelaySeconds: 600
             periodSeconds: 30
-            failureThreshold: 5
+            failureThreshold: 3
+            timeoutSeconds: 5
       volumes:
         - name: model-cache
           persistentVolumeClaim:
