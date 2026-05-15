@@ -1,0 +1,122 @@
+# NVIDIA Magpie TTS Multilingual (Riva-based NIM).
+#
+# Image source: https://catalog.ngc.nvidia.com/orgs/nim/teams/nvidia/containers/magpie-tts-multilingual
+# This is a NIM container that wraps Riva TTS. Exposes:
+#   - gRPC port 50051 (Riva protocol — Renny's renderer.riva.endpoint points here)
+#   - HTTP port 9000  (OpenAI-compatible streaming)
+#
+# VRAM: ~11 GB at batch_size=8 (NIM default). Up to ~31 GB at batch_size=32.
+# We pin batch_size=8 here to share the 48 GB GPU with Renny + ASR + vLLM.
+#
+# Prereqs:
+#   - ngc-api-key Secret already exists in nim-operator ns; we mirror it here
+#     OR create ngc-registry-credentials (docker-registry type) for the pull
+#   - 30 GB storage for model cache
+#
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: magpie-model-cache
+  namespace: nim-models
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 30Gi
+  storageClassName: microk8s-hostpath
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magpie-tts
+  namespace: nim-models
+  labels: { app: magpie-tts }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: magpie-tts }
+  template:
+    metadata:
+      labels: { app: magpie-tts }
+    spec:
+      runtimeClassName: nvidia
+      nodeSelector:
+        uneeq.io/node-type: renderer
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      imagePullSecrets:
+        - name: ngc-registry-credentials
+      containers:
+        - name: magpie-tts
+          image: nvcr.io/nim/nvidia/magpie-tts-multilingual:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 50051
+              name: grpc
+            - containerPort: 9000
+              name: http
+          env:
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ngc-api-key
+                  key: NGC_API_KEY
+            - name: NIM_CACHE_PATH
+              value: /opt/nim/.cache
+            # Pin small batch to fit VRAM on shared 48 GB GPU
+            - name: NIM_TAGS_SELECTOR
+              value: "name=magpie-tts-multilingual,batch_size=8"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 8Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "4"
+              memory: 16Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: model-cache
+              mountPath: /opt/nim/.cache
+            - name: shm
+              mountPath: /dev/shm
+          readinessProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 180   # model download + warm-up
+            periodSeconds: 15
+            failureThreshold: 60
+          livenessProbe:
+            tcpSocket:
+              port: 50051
+            initialDelaySeconds: 600
+            periodSeconds: 30
+            failureThreshold: 5
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim:
+            claimName: magpie-model-cache
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: magpie-tts
+  namespace: nim-models
+  labels: { app: magpie-tts }
+spec:
+  selector: { app: magpie-tts }
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+    - name: http
+      port: 9000
+      targetPort: http
+  type: ClusterIP
