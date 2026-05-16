@@ -88,7 +88,7 @@ check_driver_prerequisites() {
 
         # Warn if not on the supported driver version
         if [[ "$driver_version" != "$SUPPORTED_NVIDIA_DRIVER_VERSION" ]]; then
-            log_warn "Nvidia driver $driver_version detected. MiniPrem only supports $SUPPORTED_NVIDIA_DRIVER_VERSION."
+            warning "Nvidia driver $driver_version detected. MiniPrem only supports $SUPPORTED_NVIDIA_DRIVER_VERSION."
         fi
 
         # Check if CUDA version is at least the minimum required version
