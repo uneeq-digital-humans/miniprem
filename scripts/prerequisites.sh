@@ -150,22 +150,71 @@ check_installer_prequisites() {
         success "$CHECKMARK snap installed successfully."
     fi
 
-    # Check if yq is installed, if not install it using snap
-    if ! command_exists_and_works yq; then
-        info "yq is not installed or not working correctly. Installing yq using snap..."
-
-        # Prompt for sudo password
-        sudo -v
-
-        {
-            # Install yq using snap
-            sudo snap install yq
-        } &
-        show_spinner $!
-        success "$CHECKMARK yq installed successfully."
-    fi
+    # Ensure yq is installed as a static binary (NOT a snap).
+    #
+    # Why not snap: when the installer runs under sudo, snap-confined yq has
+    # its `home` interface scoped to root's $HOME (/root), so reading files
+    # under /home/<user>/miniprem-2025 fails with EACCES even though POSIX
+    # permissions allow it. The mikefarah/yq upstream binary is a single
+    # static Go executable with no confinement.
+    ensure_yq_binary
+    success "$CHECKMARK yq ready: $(yq --version 2>&1)"
 
     success "$CHECKMARK installer software prerequisites are met."
+}
+
+# Install (or replace) yq as a static binary at /usr/local/bin/yq.
+# Skips the install if a non-snap yq is already on PATH. If a snap-installed
+# yq is detected, installs the binary alongside it — /usr/local/bin sits
+# earlier in sudo's secure_path, so the binary version wins for the
+# installer without disturbing the user's existing snap.
+ensure_yq_binary() {
+    if command -v yq >/dev/null 2>&1; then
+        local resolved
+        resolved=$(readlink -f "$(command -v yq)" 2>/dev/null || echo "")
+        case "$resolved" in
+            /snap/*)
+                warning "yq is currently snap-installed ($resolved)."
+                warning "Snap confinement under sudo blocks /home access — installing static binary to shadow it."
+                ;;
+            "")
+                info "yq present but path could not be resolved; reinstalling as static binary."
+                ;;
+            *)
+                # Already a non-snap yq. Trust it.
+                return 0
+                ;;
+        esac
+    fi
+
+    # Detect architecture for the upstream release name.
+    local arch
+    case "$(uname -m)" in
+        x86_64)        arch="amd64" ;;
+        aarch64|arm64) arch="arm64" ;;
+        *) fatal "Unsupported architecture for yq install: $(uname -m)" ;;
+    esac
+
+    local url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${arch}"
+    local target="/usr/local/bin/yq"
+    info "Installing yq (static binary) from $url to $target..."
+
+    sudo -v
+    {
+        sudo curl -fsSL "$url" -o "$target" \
+            && sudo chmod +x "$target"
+    } &
+    show_spinner $!
+
+    if [ ! -x "$target" ]; then
+        fatal "Failed to install yq from $url"
+    fi
+
+    # Flush bash's PATH cache so subsequent `yq` calls resolve to /usr/local/bin
+    # instead of any cached /snap/bin/yq lookup.
+    hash -r 2>/dev/null || true
+
+    success "$CHECKMARK yq installed at $target"
 }
 
 check_software_prequisites() {

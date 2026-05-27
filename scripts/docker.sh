@@ -55,30 +55,60 @@ check_nvidia_toolkit() {
     if ! dpkg-query -W -f='${Status}' nvidia-container-toolkit 2>/dev/null | grep -q "ok installed"; then
         info "Nvidia Container Toolkit is not installed. Installing Nvidia Container Toolkit..."
 
-        # Prompt for sudo password
         sudo -v
 
-        # Run apt-get commands with spinner.
-        # See this page for more information: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
-        {
-            if [[ -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg ]]; then
-                sudo rm /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-            fi
-            curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg > /dev/null 2>&1 \
-                && curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-                sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-                sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null 2>&1
-            if [ $? -ne 0 ]; then
-                fatal "$CROSS Failed to add Nvidia Docker GPG key so that Nvidia docker runtime can be installed."
-            fi
+        # apt non-interactive env. NEEDRESTART_MODE=a is the critical one on
+        # Ubuntu Desktop: by default needrestart prompts the user about which
+        # services to restart, writing directly to /dev/tty and ignoring
+        # stdout/stderr redirection. Without this, apt-get install hangs
+        # forever waiting for keyboard input. DEBIAN_FRONTEND covers any
+        # debconf prompts from pulled-in dependencies.
+        # See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+        local apt_env=(
+            DEBIAN_FRONTEND=noninteractive
+            NEEDRESTART_MODE=a
+            NEEDRESTART_SUSPEND=1
+        )
 
-            sudo apt-get update > /dev/null 2>&1
-            sudo apt-get install -y nvidia-container-toolkit > /dev/null 2>&1
-            sudo systemctl restart docker > /dev/null 2>&1
-            sudo nvidia-ctk runtime configure --runtime=docker > /dev/null 2>&1
-            sudo systemctl restart docker > /dev/null 2>&1
-        } &
-        show_spinner $!
+        # Stream apt/curl output to the install log file rather than /dev/null
+        # so failures (or hangs that the operator killed) leave a trail.
+        _nvtk_run() {
+            local desc="$1"; shift
+            info "  $desc"
+            if ! "$@" >>"$LOG_FILE" 2>&1; then
+                error "Step failed: $desc"
+                error "Last 30 lines of $LOG_FILE:"
+                tail -n 30 "$LOG_FILE" >&2 || true
+                fatal "$CROSS Nvidia Container Toolkit install failed at: $desc"
+            fi
+        }
+
+        if [[ -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg ]]; then
+            sudo rm -f /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+        fi
+
+        _nvtk_run "Fetching NVIDIA Container Toolkit GPG key" \
+            bash -c 'curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+                | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg'
+
+        _nvtk_run "Adding NVIDIA Container Toolkit apt source" \
+            bash -c 'curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+                | sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g" \
+                | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list'
+
+        _nvtk_run "Running apt-get update" \
+            sudo "${apt_env[@]}" apt-get update
+
+        _nvtk_run "Installing nvidia-container-toolkit (may take a minute)" \
+            sudo "${apt_env[@]}" apt-get install -y nvidia-container-toolkit
+
+        _nvtk_run "Configuring Docker for NVIDIA runtime" \
+            sudo nvidia-ctk runtime configure --runtime=docker
+
+        _nvtk_run "Restarting Docker" \
+            sudo systemctl restart docker
+
+        unset -f _nvtk_run
         success "$CHECKMARK Nvidia Docker runtime installed successfully."
     fi
 
@@ -204,18 +234,8 @@ pull_docker_images() {
         fi
     fi
 
-    # Docker login for Harbor registry
-    info "Logging in to Harbor registry (cr.uneeq.io) for Renny images..."
-    info "If you don't have Harbor credentials:"
-    info "  - Contact: help@uneeq.com"
-    info "  - Or ask your UneeQ representative"
-    echo
-
-    read -p "Enter Harbor robot username (e.g., robot\$customer-name): " HARBOR_USERNAME
-    read -s -p "Enter Harbor robot password: " HARBOR_PASSWORD
-    echo
-
-    # Test network connectivity to Harbor
+    # Pre-flight: clearer error if Harbor itself is unreachable than letting
+    # docker login fail with a generic network error.
     info "Testing connectivity to cr.uneeq.io..."
     if ! curl --max-time 10 --silent --fail --output /dev/null "https://cr.uneeq.io" 2>/dev/null; then
         warning "Cannot reach cr.uneeq.io"
@@ -227,10 +247,13 @@ pull_docker_images() {
     fi
     success "$CHECKMARK Network connectivity to Harbor verified"
 
-    # Log in to Harbor registry using stdin to provide credentials
-    # Note: eval is needed for DOCKER_CMD expansion, single quotes prevent $HARBOR_USERNAME expansion
-    echo "$HARBOR_PASSWORD" | eval "$DOCKER_CMD" login https://cr.uneeq.io -u \'"$HARBOR_USERNAME"\' --password-stdin
-    if [ $? -ne 0 ]; then
+    # Authenticate to Harbor. ensure_harbor_credentials (defined in
+    # environment.sh) is the single source of truth: it reads existing creds
+    # from docker-compose.env (populated by seed_apply_harbor_creds for
+    # seeded installs) and only falls back to a prompt when those are
+    # missing. In non-interactive mode the prompt fails fast with a missing-
+    # key report instead of hanging on stdin.
+    if ! ensure_harbor_credentials; then
         echo ""
         error "ERROR: Harbor Registry Authentication Failed"
         echo ""
@@ -243,12 +266,6 @@ pull_docker_images() {
         echo ""
         fatal "Please contact UneeQ Support for further assistance."
     fi
-    success "$CHECKMARK Successfully logged in to Harbor registry."
-
-    # Save credentials for future use (e.g., after reboot)
-    update_env_variable "HARBOR_USERNAME" "$HARBOR_USERNAME"
-    update_env_variable "HARBOR_PASSWORD" "$HARBOR_PASSWORD"
-    success "$CHECKMARK Harbor credentials saved for future sessions"
 
     # Pull images for the selected install type
     info "Pulling Docker images for selected install type..."
@@ -309,10 +326,10 @@ update_docker_compose_image() {
 read_docker_compose_value() {
     local key=$1
     local install_type=$(cat "$PROJECT_ROOT/.miniprem_install_type" 2>/dev/null || echo "default")
-    local compose_file="docker/docker-compose.yml"
+    local compose_file="$PROJECT_ROOT/docker/docker-compose.yml"
 
     if [ "$install_type" = "full" ]; then
-        compose_file="docker/docker-compose.full.yml"
+        compose_file="$PROJECT_ROOT/docker/docker-compose.full.yml"
     fi
 
     if [[ -f "$compose_file" ]]; then
@@ -320,7 +337,7 @@ read_docker_compose_value() {
     else
         warning "Docker compose file $compose_file not found. Trying fallback options."
         # Try miniprem services file as fallback
-        compose_file="docker/docker-compose.miniprem.services.yml"
+        compose_file="$PROJECT_ROOT/docker/docker-compose.miniprem.services.yml"
         if [[ -f "$compose_file" ]]; then
             yq eval ".services.renny.$key" "$compose_file"
         else
