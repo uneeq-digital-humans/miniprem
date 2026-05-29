@@ -80,6 +80,11 @@ NO_REBOOT="${MINIPREM_NO_REBOOT:-no}"
 # path at startup so operators know where to look on failure.
 LOG_FILE="/var/log/upgrade_nvidia_driver-$(date +%Y%m%d-%H%M%S).log"
 
+# Stable path always pointing at the most recent run's log. Timestamped logs
+# above are kept for history; log collectors / monitoring watch this single
+# fixed path instead of having to glob-and-sort for the newest file.
+LATEST_LOG_LINK="/var/log/miniprem_driver_latest.log"
+
 # Where to keep the apt preferences pin that prevents future apt upgrades
 # from clobbering the .run-managed install.
 APT_PIN_FILE="/etc/apt/preferences.d/nvidia-pin-runfile"
@@ -98,7 +103,7 @@ info()    { echo "${C_BLUE}INFO:${C_OFF}    $*"; }
 warn()    { echo "${C_YELLOW}WARN:${C_OFF}    $*" >&2; }
 err()     { echo "${C_RED}ERROR:${C_OFF}   $*" >&2; }
 success() { echo "${C_GREEN}OK:${C_OFF}      $*"; }
-fatal()   { err "$*"; err "Full apt/installer output: $LOG_FILE"; exit 1; }
+fatal()   { err "$*"; err "Full apt/installer output: $LOG_FILE (latest: ${LATEST_LOG_LINK:-n/a})"; exit 1; }
 
 # Run a noisy command, redirect its stdout+stderr to the log file. The
 # script's own info/success/warn messages remain on the terminal.
@@ -136,6 +141,49 @@ current_driver_version() {
             | head -1 \
             | tr -d '[:space:]'
     fi
+}
+
+# Report Secure Boot state without depending on mokutil. mokutil is NOT
+# installed on a fresh/minimal Ubuntu, so gating detection on it silently
+# skips the check on exactly the unattended boxes we care about. Read the
+# UEFI SecureBoot variable directly; use mokutil only as a secondary signal
+# when it happens to be present.
+#
+# Echoes one of: enabled | disabled | unsupported | unknown
+#   enabled      SecureBoot data byte == 1
+#   disabled     SecureBoot data byte == 0
+#   unsupported  legacy/BIOS boot (no /sys/firmware/efi) — SB cannot apply
+#   unknown      EFI present but state unreadable and no mokutil to confirm
+secure_boot_state() {
+    if [ ! -d /sys/firmware/efi ]; then
+        echo "unsupported"
+        return 0
+    fi
+
+    # The efivar payload is a 4-byte attribute header followed by the 1-byte
+    # value; od prints all 5 decimal bytes, the last of which is the state.
+    local efivar="/sys/firmware/efi/efivars/SecureBoot-8be4df61-93ca-11d2-aa0d-00e098032b8c"
+    if [ -r "$efivar" ]; then
+        local last_byte
+        last_byte="$(od -An -t u1 "$efivar" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' | tail -1)"
+        case "$last_byte" in
+            1) echo "enabled";  return 0 ;;
+            0) echo "disabled"; return 0 ;;
+        esac
+    fi
+
+    # Fall back to mokutil if the efivar was unreadable.
+    if command -v mokutil >/dev/null 2>&1; then
+        local sb
+        sb="$(mokutil --sb-state 2>/dev/null)"
+        if echo "$sb" | grep -qi "enabled"; then
+            echo "enabled";  return 0
+        elif echo "$sb" | grep -qi "disabled"; then
+            echo "disabled"; return 0
+        fi
+    fi
+
+    echo "unknown"
 }
 
 # Returns 0 (yes) if the operator confirmed, 1 (no) otherwise.
@@ -273,7 +321,12 @@ main() {
     # Open the log file early so all subsequent quietly() calls can append.
     : > "$LOG_FILE"
     chmod 600 "$LOG_FILE"
+    # Point the stable "latest" symlink at this run's log (-n: don't follow an
+    # existing link into a directory). Best-effort: never let this abort the run.
+    ln -sfn "$LOG_FILE" "$LATEST_LOG_LINK" 2>/dev/null || \
+        warn "Could not update latest-log symlink $LATEST_LOG_LINK"
     info "Verbose apt/installer output will be logged to: $LOG_FILE"
+    info "  (also reachable at the stable path: $LATEST_LOG_LINK)"
 
     local current
     current="$(current_driver_version || true)"
@@ -297,23 +350,40 @@ main() {
     # Secure Boot would silently break a .run-installed driver: DKMS signs
     # modules with a self-generated MOK that requires manual enrollment at
     # the next reboot via the blue MOK Manager screen — impossible
-    # unattended. Fail fast with a clear message.
-    if [ -d /sys/firmware/efi ] && command -v mokutil >/dev/null 2>&1; then
-        if mokutil --sb-state 2>/dev/null | grep -qi "enabled"; then
+    # unattended. Detect it WITHOUT relying on mokutil (absent on minimal
+    # Ubuntu), so the check actually runs on the unattended boxes it protects.
+    local sb_state
+    sb_state="$(secure_boot_state)"
+    case "$sb_state" in
+        enabled)
             if [ "$ASSUME_YES" = "yes" ]; then
-                fatal "Secure Boot is ENABLED. The .run installer's DKMS-signed modules will not load without manual MOK enrollment at the next boot, which is impossible under --yes. Disable Secure Boot in BIOS and re-run."
+                fatal "Secure Boot is ENABLED. The .run installer's DKMS-signed modules will not load without manual MOK enrollment at the next boot, which is impossible under --yes. Either disable Secure Boot in firmware, or pre-enrol a MOK with scripts/nvidia/enroll-mok.sh and re-run."
             else
                 warn "Secure Boot is ENABLED."
-                warn "You will be asked to set an MOK password during install,"
-                warn "and you'll need to enrol it manually at the blue MOK Manager"
-                warn "screen on next reboot — this requires physical/IPMI access."
+                warn "The .run installer's DKMS modules must be signed and the key"
+                warn "enrolled manually at the blue MOK Manager screen on next reboot,"
+                warn "which requires physical/IPMI access. See scripts/nvidia/enroll-mok.sh."
                 if ! confirm "Continue anyway?"; then
                     info "Aborted."
                     exit 0
                 fi
             fi
-        fi
-    fi
+            ;;
+        disabled)
+            info "Secure Boot is disabled — .run/DKMS modules will load without MOK enrollment."
+            ;;
+        unsupported)
+            info "Legacy/BIOS boot (no UEFI) — Secure Boot does not apply."
+            ;;
+        unknown)
+            # EFI present but state unreadable and no mokutil to confirm.
+            # Don't block an unattended run on an indeterminate reading; warn
+            # loudly so it's in the log if the driver later fails to load.
+            warn "Secure Boot state could not be determined (UEFI present, SecureBoot variable unreadable, mokutil absent)."
+            warn "If Secure Boot turns out to be ENABLED, DKMS modules will fail to load on reboot until a MOK is enrolled (scripts/nvidia/enroll-mok.sh)."
+            warn "Proceeding."
+            ;;
+    esac
 
     # ---- Step 1/9: ensure kernel headers, build toolchain, dkms, curl ----
     # build-essential pulls in gcc/g++/make/libc6-dev/dpkg-dev — DKMS
