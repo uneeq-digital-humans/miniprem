@@ -321,6 +321,32 @@ For full details on driver types, installation methods, and GPU compatibility, s
    curl -I http://localhost:3000
    ```
 
+### Login Redirect Loop
+
+**Symptoms**: After creating the admin account (or logging in), Flowise immediately redirects back to the login page in a loop.
+
+**Solutions**:
+1. Access Flowise via exactly `http://localhost:3000`. The session cookie is host-bound, so accessing via the machine's IP or another hostname can break the login. From a remote machine, use an SSH tunnel instead:
+   ```bash
+   ssh -L 3000:localhost:3000 <host>
+   ```
+   Then open http://localhost:3000 locally.
+
+2. Ensure the JWT/session secrets are set and stable across restarts. They are generated at install time into `docker/flowise.env` (`JWT_AUTH_TOKEN_SECRET`, `JWT_REFRESH_TOKEN_SECRET`, `EXPRESS_SESSION_SECRET`, `TOKEN_HASH_SECRET`). If that file is missing, re-run the installer or recreate it from `docker/flowise.env.example`, then restart Flowise.
+
+3. Wipe a corrupted first-run state and start fresh (this deletes all Flowise data including chatflows and the admin account):
+   ```bash
+   cd docker
+   docker compose -f docker-compose.full.yml stop flowise
+   docker volume rm $(docker volume ls -q | grep flowise_data)
+   docker compose -f docker-compose.full.yml up -d flowise
+   ```
+
+4. Check the container logs for auth errors:
+   ```bash
+   docker logs flowise
+   ```
+
 ### Chatflow Creation Failures
 
 **Symptoms**: Cannot create or save chatflows
@@ -346,16 +372,12 @@ For full details on driver types, installation methods, and GPU compatibility, s
 **Symptoms**: Unauthorized errors when accessing the API
 
 **Solutions**:
-1. Check if you're using the correct API key:
+1. Create an API key in the Flowise UI (Settings → API Keys) after logging in with your admin account, then use it:
    ```
-   Authorization: Bearer miniprem_demo_secret_key
+   Authorization: Bearer <your-api-key>
    ```
 
-2. Reset the API key:
-   ```bash
-   docker exec -it flowise node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-   ```
-   Then update the `FLOWISE_SECRETKEY_OVERWRITE` in the appropriate compose file (docker-compose.base.yml or docker-compose.extras.yml, depending on your install type).
+2. If credentials stored in Flowise fail to decrypt, the encryption key may have changed. `FLOWISE_SECRETKEY_OVERWRITE` is generated at install time into `docker/flowise.env` — it must not change after credentials have been saved. If it has changed, wipe the `flowise_data` volume and reconfigure (see "Login Redirect Loop" above for the wipe procedure).
 
 ## Renny Issues
 

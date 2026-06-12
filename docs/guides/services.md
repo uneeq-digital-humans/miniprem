@@ -95,7 +95,9 @@ Each service is configured via environment variables in the Docker Compose file.
 
 - **Flowise**:
   - `DATABASE_TYPE`: Set to SQLite for local database
-  - `FLOWISE_USERNAME` & `FLOWISE_PASSWORD`: Authentication credentials
+  - `JWT_AUTH_TOKEN_SECRET`, `JWT_REFRESH_TOKEN_SECRET`, `EXPRESS_SESSION_SECRET`, `TOKEN_HASH_SECRET`: Auth/session secrets, generated at install time into `docker/flowise.env`. They must remain stable across container restarts or logins are invalidated.
+  - `FLOWISE_SECRETKEY_OVERWRITE`: Encryption key for credentials stored in Flowise (also generated into `docker/flowise.env`)
+  - `FLOWISE_ADMIN_EMAIL` & `FLOWISE_ADMIN_PASSWORD`: Initial admin account created during install (replaces the legacy `FLOWISE_USERNAME`/`FLOWISE_PASSWORD` basic auth, which Flowise no longer supports)
   - `REDIS_HOST` & `REDIS_PORT`: Redis connection details
 
 - **vLLM**:
