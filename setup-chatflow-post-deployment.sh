@@ -75,39 +75,49 @@ ensure_jq_installed() {
     fi
 }
 
-# Function to get API key from Flowise
-get_api_key() {
-    log_info "Attempting to retrieve API key from Flowise container..."
-    # Increased timeout for docker exec, just in case
-    DOCKER_API_KEY=$(timeout 10s docker exec flowise cat /usr/src/.flowise/api.json 2>/dev/null)
-    local exit_code=$?
-    if [ $exit_code -ne 0 ]; then
-         log_warning "docker exec command failed or timed out (exit code $exit_code)."
-    elif [ ! -z "$DOCKER_API_KEY" ]; then
-        # Validate if it's JSON before trying to parse
-        if echo "$DOCKER_API_KEY" | jq -e . > /dev/null 2>&1; then
-            API_KEY=$(echo "$DOCKER_API_KEY" | jq -r '.[0].apiKey // empty' | head -n 1) # Assumes the key is in the first element of an array
-            if [ ! -z "$API_KEY" ]; then
-                log_success "Successfully extracted API key from container: ${API_KEY:0:5}..."
-                # Sanity check the key format (basic length check)
-                if [ ${#API_KEY} -gt 10 ]; then
-                     return 0
-                else
-                     log_warning "Extracted API key seems too short. Proceeding with caution."
-                     return 0 # Still return success, but log warning
-                fi
-            else
-                 log_warning "Extracted JSON from container, but couldn't find apiKey field."
-            fi
-        else
-             log_warning "Content read from api.json is not valid JSON. Content: $DOCKER_API_KEY"
-        fi
-    else
-         log_warning "api.json file inside container is empty or could not be read."
-    fi
+# Flowise 3.x authentication: an admin account (email + password) replaces the
+# legacy FLOWISE_USERNAME/FLOWISE_PASSWORD basic auth and the api.json key file.
+# The installer generates the credentials into docker/flowise.env; we register
+# the account if it doesn't exist yet, then log in to obtain a session cookie.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FLOWISE_ENV_FILE="$SCRIPT_DIR/docker/flowise.env"
+COOKIE_JAR=$(mktemp)
+trap 'rm -f "$COOKIE_JAR"' EXIT
 
-    log_warning "Could not reliably extract API key from container. Using predefined key 'miniprem_demo_secret_key'."
-    API_KEY="miniprem_demo_secret_key" # Fallback key
+load_admin_credentials() {
+    if [ -z "${FLOWISE_ADMIN_EMAIL:-}" ] || [ -z "${FLOWISE_ADMIN_PASSWORD:-}" ]; then
+        if [ -f "$FLOWISE_ENV_FILE" ]; then
+            FLOWISE_ADMIN_EMAIL=$(grep '^FLOWISE_ADMIN_EMAIL=' "$FLOWISE_ENV_FILE" | cut -d'=' -f2-)
+            FLOWISE_ADMIN_PASSWORD=$(grep '^FLOWISE_ADMIN_PASSWORD=' "$FLOWISE_ENV_FILE" | cut -d'=' -f2-)
+        fi
+    fi
+    if [ -z "${FLOWISE_ADMIN_EMAIL:-}" ] || [ -z "${FLOWISE_ADMIN_PASSWORD:-}" ]; then
+        log_error "Flowise admin credentials not found (expected in $FLOWISE_ENV_FILE or FLOWISE_ADMIN_EMAIL/FLOWISE_ADMIN_PASSWORD env vars)."
+        log_error "Re-run docker/scripts/install_miniprem.sh, or create the admin account manually at http://localhost:3000."
+        return 1
+    fi
+    return 0
+}
+
+flowise_login() {
+    log_info "Registering Flowise admin account (no-op if it already exists)..."
+    REGISTER_RESPONSE=$(curl --silent --request POST "http://localhost:3000/api/v1/account/register" \
+        --header "Content-Type: application/json" \
+        --data "{\"user\":{\"name\":\"MiniPrem Admin\",\"email\":\"${FLOWISE_ADMIN_EMAIL}\",\"credential\":\"${FLOWISE_ADMIN_PASSWORD}\"}}")
+    echo "Register response: $REGISTER_RESPONSE" >> "$LOG_FILE"
+
+    log_info "Logging in to Flowise as ${FLOWISE_ADMIN_EMAIL}..."
+    LOGIN_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+        --cookie-jar "$COOKIE_JAR" \
+        --request POST "http://localhost:3000/api/v1/auth/login" \
+        --header "Content-Type: application/json" \
+        --data "{\"user\":{\"email\":\"${FLOWISE_ADMIN_EMAIL}\",\"credential\":\"${FLOWISE_ADMIN_PASSWORD}\"}}")
+
+    if [ "$LOGIN_STATUS" -ne 200 ] && [ "$LOGIN_STATUS" -ne 201 ]; then
+        log_error "Flowise login failed (HTTP $LOGIN_STATUS). If the admin account was created manually with different credentials, update $FLOWISE_ENV_FILE to match."
+        return 1
+    fi
+    log_success "Logged in to Flowise."
     return 0
 }
 
@@ -141,7 +151,8 @@ display_setup_guidance() {
     echo -e "${GREEN}=== FLOWISE AND vLLM SETUP GUIDE ===${NC}"
     echo
     echo -e "${YELLOW}CREATING A CHATFLOW WITH vLLM:${NC}"
-    echo "1. Go to http://localhost:3000 and log in (default: user/password)"
+    echo "1. Go to http://localhost:3000 and log in with the admin account from docker/flowise.env"
+    echo "   (on a fresh install, the first visit prompts you to create the admin account)"
     echo "2. Click 'Chatflows' in the sidebar and then 'Create New'"
     echo
     echo -e "${YELLOW}TO USE vLLM IN YOUR CHATFLOW:${NC}"
@@ -186,9 +197,12 @@ done
 echo # Newline after dots
 log_success "Flowise is up and running!"
 
-# Get authorization token
-get_api_key
-log_info "Using API key: ${API_KEY:0:5}..." # Show only the beginning of the key
+# Authenticate against Flowise (register admin account on first run, then log in)
+if ! load_admin_credentials || ! flowise_login; then
+    log_warning "Cannot authenticate with Flowise. Please create the admin account and chatflow manually at http://localhost:3000"
+    display_setup_guidance
+    exit 1
+fi
 
 # Create a simple empty chatflow
 log_info "Creating an empty chatflow via API..."
@@ -219,7 +233,8 @@ EOF
 # Create the chatflow
 HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" --request POST "http://localhost:3000/api/v1/chatflows" \
   --header "Content-Type: application/json" \
-  --header "Authorization: Bearer ${API_KEY}" \
+  --header "x-request-from: internal" \
+  --cookie "$COOKIE_JAR" \
   --data "$CREATE_PAYLOAD")
 
 # Extract status code and response body
