@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Install a SPECIFIC, PINNED version of the NVIDIA proprietary driver on an
 # Ubuntu workstation. The Renny digital-human renderer is benchmarked and
-# tested against a named driver version (default: 580.82.09), so this script
+# tested against a named driver version (default: 580.159.03), so this script
 # guarantees that exact version — not a "current 580.x" approximation.
 #
 # Approach:
@@ -32,7 +32,7 @@ set -euo pipefail
 #                                   Equivalent to MINIPREM_NO_REBOOT=yes.
 #
 # Config env vars (set before invocation, or pass via sudo -E):
-#   TARGET_NVIDIA_VERSION=580.82.09 (default)  Exact pinned version.
+#   TARGET_NVIDIA_VERSION=580.159.03 (default)  Exact pinned version.
 #   ALLOW_WAYLAND=no                (default)  Set to yes to leave Wayland on.
 #
 # Examples:
@@ -70,7 +70,7 @@ set -euo pipefail
 # Config
 # ---------------------------------------------------------------------------
 
-TARGET_NVIDIA_VERSION="${TARGET_NVIDIA_VERSION:-580.82.09}"
+TARGET_NVIDIA_VERSION="${TARGET_NVIDIA_VERSION:-580.159.03}"
 TARGET_NVIDIA_MAJOR="580"
 ALLOW_WAYLAND="${ALLOW_WAYLAND:-no}"
 ASSUME_YES="${MINIPREM_ASSUME_YES:-no}"
@@ -461,7 +461,7 @@ main() {
     #   sets skip_module_load=TRUE — so the installer compiles + installs
     #   modules into /lib/modules/.../updates/dkms/ but does NOT attempt
     #   to load them over the live driver. The reboot at Step 9
-    #   activates the new 580.82.09 modules cleanly.
+    #   activates the new 580.159.03 modules cleanly.
     # Installer also writes its own log at /var/log/nvidia-installer.log.
     if ! "$runfile" --silent --dkms --disable-nouveau --no-nouveau-check \
             --no-x-check --allow-installation-with-running-driver \
