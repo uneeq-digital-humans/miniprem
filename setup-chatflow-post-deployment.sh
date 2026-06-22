@@ -81,8 +81,20 @@ ensure_jq_installed() {
 # the account if it doesn't exist yet, then log in to obtain a session cookie.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FLOWISE_ENV_FILE="$SCRIPT_DIR/docker/flowise.env"
-COOKIE_JAR=$(mktemp)
-trap 'rm -f "$COOKIE_JAR"' EXIT
+FLOWISE_URL="http://localhost:3000"
+
+# Flowise runs with NODE_ENV=production, which forces secure cookies. Over plain
+# HTTP that has two consequences we have to work around:
+#   1. express-session only issues its session cookie (connect.sid) when it
+#      believes the connection is secure. The JWT auth guard needs that session
+#      to populate req.user, so without it every authenticated call returns 401.
+#   2. curl will not resend Secure cookies from a cookie jar over http://, so the
+#      classic --cookie-jar/--cookie round-trip silently sends nothing.
+# We send X-Forwarded-Proto: https (Flowise trusts the proxy header) so the
+# session cookie is issued, capture the Set-Cookie values ourselves, and replay
+# them via an explicit Cookie header on subsequent requests.
+FLOWISE_XFP_HEADER="X-Forwarded-Proto: https"
+FLOWISE_COOKIES=""
 
 load_admin_credentials() {
     if [ -z "${FLOWISE_ADMIN_EMAIL:-}" ] || [ -z "${FLOWISE_ADMIN_PASSWORD:-}" ]; then
@@ -101,20 +113,38 @@ load_admin_credentials() {
 
 flowise_login() {
     log_info "Registering Flowise admin account (no-op if it already exists)..."
-    REGISTER_RESPONSE=$(curl --silent --request POST "http://localhost:3000/api/v1/account/register" \
+    # Registration uses a {user:{name,email,credential}} body. On a fresh install
+    # this returns 201; on re-runs it returns 400 ("You can only have one
+    # organization"), which is harmless — we just log it and proceed to login.
+    REGISTER_RESPONSE=$(curl --silent --request POST "$FLOWISE_URL/api/v1/account/register" \
         --header "Content-Type: application/json" \
+        --header "$FLOWISE_XFP_HEADER" \
         --data "{\"user\":{\"name\":\"MiniPrem Admin\",\"email\":\"${FLOWISE_ADMIN_EMAIL}\",\"credential\":\"${FLOWISE_ADMIN_PASSWORD}\"}}")
     echo "Register response: $REGISTER_RESPONSE" >> "$LOG_FILE"
 
     log_info "Logging in to Flowise as ${FLOWISE_ADMIN_EMAIL}..."
-    LOGIN_STATUS=$(curl --silent --output /dev/null --write-out "%{http_code}" \
-        --cookie-jar "$COOKIE_JAR" \
-        --request POST "http://localhost:3000/api/v1/auth/login" \
+    # Login is POST /api/v1/auth/login with a TOP-LEVEL {email,password} body
+    # (NOT {user:{email,credential}} — a wrong shape silently falls through to the
+    # SPA and returns 200 text/html with no cookies). We capture the response
+    # headers so we can extract the auth cookies (token + refreshToken +
+    # connect.sid) and replay them on the chatflow request.
+    local login_headers
+    login_headers=$(curl --silent --dump-header - --output /dev/null \
+        --request POST "$FLOWISE_URL/api/v1/auth/login" \
         --header "Content-Type: application/json" \
-        --data "{\"user\":{\"email\":\"${FLOWISE_ADMIN_EMAIL}\",\"credential\":\"${FLOWISE_ADMIN_PASSWORD}\"}}")
+        --header "$FLOWISE_XFP_HEADER" \
+        --data "{\"email\":\"${FLOWISE_ADMIN_EMAIL}\",\"password\":\"${FLOWISE_ADMIN_PASSWORD}\"}")
 
-    if [ "$LOGIN_STATUS" -ne 200 ] && [ "$LOGIN_STATUS" -ne 201 ]; then
-        log_error "Flowise login failed (HTTP $LOGIN_STATUS). If the admin account was created manually with different credentials, update $FLOWISE_ENV_FILE to match."
+    # Assemble a "name=value; ..." Cookie header from every Set-Cookie line.
+    FLOWISE_COOKIES=$(printf '%s' "$login_headers" | tr -d '\r' \
+        | awk -F': ' 'tolower($1)=="set-cookie"{split($2,a,";"); printf "%s; ", a[1]}')
+
+    # A successful login sets the JWT "token" cookie. Its absence means auth
+    # failed (bad credentials, or the request fell through to the SPA) — this
+    # replaces the old HTTP-200 check, which the SPA fallthrough passed falsely.
+    if ! printf '%s' "$FLOWISE_COOKIES" | grep -qE '(^|; )token='; then
+        log_error "Flowise login failed: no session cookie returned."
+        log_error "If the admin account was created manually with different credentials, update $FLOWISE_ENV_FILE to match."
         return 1
     fi
     log_success "Logged in to Flowise."
@@ -207,34 +237,26 @@ fi
 # Create a simple empty chatflow
 log_info "Creating an empty chatflow via API..."
 
-# Valid flowData with empty nodes and edges
-EMPTY_FLOWDATA=$(cat <<EOF
-{
-  "nodes": [],
-  "edges": [],
-  "viewport": {"x": 0, "y": 0, "zoom": 1}
-}
-EOF
-)
+# Valid flowData with empty nodes and edges, as compact JSON.
+EMPTY_FLOWDATA=$(jq -nc '{nodes: [], edges: [], viewport: {x: 0, y: 0, zoom: 1}}')
 
-# Construct the POST payload JSON string
-CREATE_PAYLOAD=$(cat <<EOF
-{
-  "name": "My vLLM Chatflow",
-  "description": "An empty chatflow for vLLM integration",
-  "flowData": $(echo "$EMPTY_FLOWDATA" | jq -c .),
-  "deployed": false,
-  "isPublic": false,
-  "type": "CHATFLOW"
-}
-EOF
-)
+# Construct the POST payload. flowData must be a STRING containing JSON — Flowise
+# runs JSON.parse() on it, so passing a raw JSON object fails with HTTP 500
+# ("[object Object]" is not valid JSON). Using jq --arg encodes it as a string.
+CREATE_PAYLOAD=$(jq -n \
+  --arg name "My vLLM Chatflow" \
+  --arg description "An empty chatflow for vLLM integration" \
+  --arg flowData "$EMPTY_FLOWDATA" \
+  '{name: $name, description: $description, flowData: $flowData, deployed: false, isPublic: false, type: "CHATFLOW"}')
 
-# Create the chatflow
-HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" --request POST "http://localhost:3000/api/v1/chatflows" \
+# Create the chatflow. Authenticated internal call: the session cookies captured
+# at login, the internal-request marker, and the forwarded-proto header (so the
+# session is honored over http) are all required.
+HTTP_RESPONSE=$(curl --silent --write-out "\n%{http_code}" --request POST "$FLOWISE_URL/api/v1/chatflows" \
   --header "Content-Type: application/json" \
   --header "x-request-from: internal" \
-  --cookie "$COOKIE_JAR" \
+  --header "$FLOWISE_XFP_HEADER" \
+  --header "Cookie: $FLOWISE_COOKIES" \
   --data "$CREATE_PAYLOAD")
 
 # Extract status code and response body
