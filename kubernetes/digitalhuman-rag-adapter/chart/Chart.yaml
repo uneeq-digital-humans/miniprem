@@ -1,0 +1,6 @@
+apiVersion: v2
+name: digitalhuman-rag-adapter
+description: UneeQ <-> NVIDIA RAG middleware (Flowise-compatible facade + session memory)
+type: application
+version: 0.2.0
+appVersion: "0.1.0"

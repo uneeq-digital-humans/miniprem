@@ -533,6 +533,7 @@
             --version {{ gpu_operator_version }}
             --set driver.enabled={{ gpu_operator_driver_enabled | default(true) }}
             --set toolkit.enabled=true
+            --set toolkit.version={{ nvidia_container_toolkit_version_tag | default('v1.16.2-ubuntu20.04') }}
             --set devicePlugin.enabled=true
             --set dcgmExporter.enabled=true
             --wait --timeout 10m

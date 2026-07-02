@@ -1,0 +1,23 @@
+# NVIDIA RAG blueprint ↔ Digital Human kiosk integration (single-model alignment).
+#
+# The blueprint ships with several LLM roles pointed at a `nim-llm` service and
+# non-loaded model names. This manifest + apply-rag-integration.sh align EVERY
+# blueprint LLM role to the ONE model the kiosk serves (the Gemma NIM), locally —
+# no cloud fallbacks, no NGC key needed at runtime.
+#
+# Apply with: kubectl apply -f nvidia-rag-integration.yaml
+#             ./scripts/apply-rag-integration.sh   (env alignments)
+---
+# Alias the blueprint's default LLM service name to the loaded Gemma NIM.
+# Fixes: "Summary LLM ... Cannot connect to host nim-llm:8000 [Name or service
+# not known]" during portal ingestion, and any other default nim-llm reference.
+apiVersion: v1
+kind: Service
+metadata:
+  name: nim-llm
+  namespace: advanced-rag
+  labels:
+    app.kubernetes.io/part-of: digitalhuman-kiosk
+spec:
+  type: ExternalName
+  externalName: gemma.nim-models.svc.cluster.local

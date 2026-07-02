@@ -1,0 +1,51 @@
+# miniprem-monitor — standalone values.
+#   helm install miniprem-monitor ./miniprem-monitor/chart -n <ns>
+
+# The monitor image lives in the PUBLIC Harbor project — anonymous pull, no
+# secret needed. Pinned to the current release build (`:patched` was a stale
+# box-local tag that does not exist in the registry; `latest` also tracks this
+# artifact).
+image: "cr.uneeq.io/public/miniprem-monitor:bea6827f70054f820c04f55136c4eec1f6fb8bf8"
+imagePullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicas: 1
+
+# "kubernetes" → watch the cluster via the in-cluster API (default here).
+# "docker"     → read docker.sock (only on a Docker-runtime box; not used on kubeadm).
+mode: kubernetes
+
+# Cluster-read RBAC (pods/nodes/deployments/metrics). Disable if your cluster
+# already grants the monitor's ServiceAccount the reads it needs, or you bind
+# your own Role. ClusterRole/Binding names are release-scoped to avoid collisions.
+rbac:
+  create: true
+
+service:
+  # NodePort by default: the monitor is a Next.js app that emits ABSOLUTE asset paths
+  # (/_next/static/...), so a /monitor sub-path rewrite-ingress serves the HTML but
+  # 404s the assets. Serving at root on a NodePort makes assets resolve. The kiosk's
+  # "MiniPrem Monitor" link points at http://<host>:<nodePort>.
+  type: NodePort
+  port: 3001
+  nodePort: 32601   # must be in the cluster's node-port range (30000-32767)
+
+# Sub-path ingress is OFF by default — it breaks this app's absolute asset URLs (see
+# above). Only enable if the monitor image is rebuilt with a basePath, or you front it
+# on its own host/subdomain (path: /).
+ingress:
+  enabled: false
+  className: nginx
+  hosts:
+    - digitalhuman.miniprem
+    - localhost
+  path: /monitor
+  rewrite: true
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"

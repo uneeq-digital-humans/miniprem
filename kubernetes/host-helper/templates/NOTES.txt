@@ -1,0 +1,23 @@
+host-helper deployed to namespace {{ .Values.namespace }}.
+
+{{- if .Values.bundleSource }}
+The agent source ConfigMap ({{ .Values.srcConfigMap }}) was created from the
+copy bundled in this chart — no further steps required.
+{{- else }}
+bundleSource=false — create the source ConfigMap yourself from a repo checkout:
+
+  kubectl -n {{ .Values.namespace }} create configmap {{ .Values.srcConfigMap }} \
+    --from-file=host_helper.py=digitalhuman-host-helper/host_helper.py \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n {{ .Values.namespace }} rollout restart deploy/host-helper
+{{- end }}
+
+NOTE: install this chart BEFORE (or alongside) digitalhuman-interface — the
+kiosk image's nginx declares host-helper as an upstream and will not start
+until the `host-helper` Service exists in the namespace.
+
+On generic (non-appliance) clusters the audio/display/model-pull features
+simply report unavailable — GPU and service health still work. No values
+customization is required for a default install.
+
+Test:  curl -s -H 'Host: localhost' http://127.0.0.1/host-admin/gpu

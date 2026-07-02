@@ -1,0 +1,107 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: host-helper, namespace: {{ .Values.namespace }} }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: { name: host-helper }
+rules:
+  - { apiGroups: [""], resources: ["pods","pods/log"], verbs: ["get","list"] }
+  - { apiGroups: [""], resources: ["services"], verbs: ["get","list"] }            # rag-frontend NodePort
+  - { apiGroups: ["apps"], resources: ["deployments"], verbs: ["get","list","patch","update"] }
+  - { apiGroups: ["apps"], resources: ["deployments/scale"], verbs: ["get","patch","update"] }  # RAG enable/disable
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: { name: host-helper }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: host-helper }
+subjects: [ { kind: ServiceAccount, name: host-helper, namespace: {{ .Values.namespace }} } ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: host-helper, namespace: {{ .Values.namespace }}, labels: { app: host-helper } }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: host-helper } }
+  template:
+    metadata: { labels: { app: host-helper } }
+    spec:
+      serviceAccountName: host-helper
+      {{- with .Values.nodeName }}
+      nodeName: {{ . }}
+      {{- end }}
+      hostPID: true
+      containers:
+        - name: host-helper
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          workingDir: /app
+          command: ["/bin/sh","-c"]
+          args:
+            - |
+              set -e
+              apt-get update
+              apt-get install -y --no-install-recommends pulseaudio-utils x11-xserver-utils curl ca-certificates python3-tk
+              pip install --no-cache-dir fastapi uvicorn pydantic httpx
+              curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v{{ .Values.kubectlVersion }}/bin/linux/amd64/kubectl
+              chmod +x /usr/local/bin/kubectl
+              exec uvicorn host_helper:app --host 0.0.0.0 --port 8086
+          env:
+            - { name: DISPLAY, value: {{ .Values.env.display | quote }} }
+            - { name: XAUTHORITY, value: {{ .Values.env.xauthority | quote }} }
+            - { name: PULSE_SERVER, value: {{ .Values.env.pulseServer | quote }} }
+          ports: [ { containerPort: 8086 } ]
+          securityContext: { privileged: true }
+          {{- if .Values.gpu }}
+          resources: { limits: { nvidia.com/gpu: 1 } }
+          {{- end }}
+          volumeMounts:
+            - { name: src, mountPath: /app }
+            - { name: xsock, mountPath: /tmp/.X11-unix }
+            - { name: xauth, mountPath: /host-xauth, readOnly: true }
+            - { name: pulse, mountPath: /run/user/1000/pulse }
+            - { name: containerd-sock, mountPath: /run/containerd/containerd.sock }
+            - { name: nerdctl-bin, mountPath: /usr/local/bin/nerdctl, readOnly: true }
+            - { name: ngc-docker, mountPath: /root/.docker, readOnly: true }
+      volumes:
+        - { name: src, configMap: { name: {{ .Values.srcConfigMap }} } }
+        - { name: xsock, hostPath: { path: {{ .Values.hostPaths.x11 }}, type: Directory } }
+        - { name: xauth, hostPath: { path: {{ .Values.hostPaths.xauth }}, type: Directory } }
+        - { name: pulse, hostPath: { path: {{ .Values.hostPaths.pulse }}, type: Directory } }
+        - { name: containerd-sock, hostPath: { path: {{ .Values.hostPaths.containerdSock }}, type: Socket } }
+        - { name: nerdctl-bin, hostPath: { path: {{ .Values.hostPaths.nerdctl }}, type: File } }
+        - { name: ngc-docker, secret: { secretName: {{ .Values.ngcDockerSecret }}, items: [ { key: .dockerconfigjson, path: config.json } ], optional: true } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: host-helper, namespace: {{ .Values.namespace }} }
+spec:
+  selector: { app: host-helper }
+  ports: [ { port: 8086, targetPort: 8086 } ]
+{{- if .Values.ingress.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: host-helper
+  namespace: {{ .Values.namespace }}
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /host-admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: { service: { name: host-helper, port: { number: 8086 } } }
+    {{- end }}
+    - http:    # catch-all (bare LAN IP)
+        paths:
+          - path: /host-admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend: { service: { name: host-helper, port: { number: 8086 } } }
+{{- end }}

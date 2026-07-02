@@ -52,24 +52,23 @@ spec:
           image: vllm/vllm-openai:latest
           imagePullPolicy: IfNotPresent
           args:
+            # Model + GPU budget are templated by the installer (VRAM-based
+            # template). deploy-allinone.sh envsubst's these before apply:
+            #   GEMMA_MODEL (HF repo), GEMMA_SERVED_NAME, VLLM_GPU_UTIL, VLLM_MAX_LEN.
             - "--model"
-            - "google/gemma-4-E4B-it"
+            - "${GEMMA_MODEL}"
             - "--quantization"
             - "fp8"
             - "--max-model-len"
-            - "16384"          # half of vLLM default. Caps KV cache so we don't balloon past gpu-memory-utilization.
+            - "${VLLM_MAX_LEN}"
             - "--gpu-memory-utilization"
-            - "0.27"           # ~13 GB on a 48 GB card. FP8 weights are 11.52 GB so 0.20 (9.5 GB) is too tight —
-                               # vLLM errors `No available memory for cache blocks`. 0.27 leaves ~1.5 GB for KV at 16k.
-                               # Full budget math with co-tenants:
-                               #   renny ~2.5 + magpie ~13.7 + asr ~7 + this ~13 + headroom = ~48
-                               # If running this manifest alone, raise to 0.85+ for full perf.
+            - "${VLLM_GPU_UTIL}"   # co-tenant budget (renny+magpie+asr+llm); installer sets per template
             - "--host"
             - "0.0.0.0"
             - "--port"
             - "8000"
             - "--served-model-name"
-            - "gemma-4-E4B-it"
+            - "${GEMMA_SERVED_NAME}"
           ports:
             - containerPort: 8000
               name: http

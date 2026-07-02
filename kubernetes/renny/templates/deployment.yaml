@@ -7,6 +7,11 @@ metadata:
     app: renny
 spec:
   replicas: {{ .Values.deployment.totalReplicas | default .Values.deployment.replicas }}
+  # GPU-heavy: Recreate (not RollingUpdate) so an update/restart NEVER holds two
+  # copies of the model in VRAM at once — double-occupancy during rollouts is what
+  # starves the other services on a shared single GPU.
+  strategy:
+    type: Recreate
   revisionHistoryLimit: 5
   selector:
     matchLabels:
@@ -40,6 +45,10 @@ spec:
       containers:
       - name: renny
         image: {{ .Values.image }}
+        # Default Always so the moving `enterprise-latest` tag re-pulls each
+        # rollout. Pin a digest/version tag + set imagePullPolicy=IfNotPresent
+        # in values to freeze a known-good build.
+        imagePullPolicy: {{ .Values.imagePullPolicy | default "Always" }}
         ports:
         - containerPort: 8888
         resources:
@@ -87,7 +96,11 @@ spec:
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: GoogleAuth.json
         - name: INACTIVITY_TIMEOUT_SECS
-          value: "600.0"
+          # Idle session timeout. Default 600s (10 min) for shared/cloud pods so
+          # idle sessions free the GPU. The all-in-one kiosk overrides this to
+          # -1.0 (never time out) so an idle, walk-up Renny doesn't blank out —
+          # the kiosk app owns when a session starts/ends.
+          value: "{{ .Values.renderer.inactivityTimeoutSecs | default "600.0" }}"
         - name: LAUNCH_DARKLY_KEY
           valueFrom:
             secretKeyRef:
@@ -96,6 +109,13 @@ spec:
               optional: true
         - name: TTS_ADDRESS
           value: {{ .Values.renderer.tts.proxyUrl }}
+        {{- if .Values.renderer.tts.rivaServerAddr }}
+        # Riva TTS gRPC server address. When the persona's Admin-Portal TTS is
+        # NVIDIA Riva, the renderer dials this. Empty → Renny defaults to
+        # localhost:50051 (nothing there) → silent digital human.
+        - name: RIVA_SERVER_ADDR
+          value: {{ .Values.renderer.tts.rivaServerAddr | quote }}
+        {{- end }}
         - name: VERITONE_API_KEY
           valueFrom:
             secretKeyRef:

@@ -1,0 +1,157 @@
+# host-helper on KUBEADM — the privileged on-box agent that bridges the kiosk to
+# the HOST: GPU (nvidia-smi), PulseAudio (pactl), X/xrandr (monitors), and Renny
+# (kubectl logs/restart). This is the kubeadm equivalent of the Docker `run.sh`
+# (which used `docker run --gpus all -v /run/.../pulse -v /tmp/.X11-unix`). Proves
+# kubeadm does everything the Docker box did — no Docker fallback needed.
+#
+# Box-specific defaults (adjust if the kiosk user isn't uid 1000 / DISPLAY :1):
+#   KIOSK_UID=1000, DISPLAY=:1, Xauthority=/run/user/1000/gdm/Xauthority
+#
+# IMAGE: built in CI from this dir's Dockerfile and pushed to Harbor (same flow as
+# the kiosk) — the cluster PULLS it with the harbor-credentials secret. No docker
+# on the box (kubeadm uses containerd). Build/push once per host_helper.py change:
+#   docker build -t cr.uneeq.io/dell-isg-containers/host-helper:latest .   # on a builder/CI
+#   docker push cr.uneeq.io/dell-isg-containers/host-helper:latest
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: host-helper
+  namespace: uneeq
+---
+# Renny logs + restart need read on pods/logs and patch on the renny Deployment.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: host-helper
+  namespace: uneeq
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: host-helper
+  namespace: uneeq
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: host-helper
+subjects:
+  - kind: ServiceAccount
+    name: host-helper
+    namespace: uneeq
+---
+# In-kiosk LLM switching: the host-helper provisions a NIMCache + NIMService for the
+# chosen model in the nim-models namespace, then repoints the adapter. Without this the
+# kiosk "Set as active LLM" returns a clear "not enabled" error instead of switching.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: host-helper-nim
+  namespace: nim-models
+rules:
+  - apiGroups: ["apps.nvidia.com"]
+    resources: ["nimcaches", "nimservices"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: host-helper-nim
+  namespace: nim-models
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: host-helper-nim
+subjects:
+  - kind: ServiceAccount
+    name: host-helper
+    namespace: uneeq
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: host-helper
+  namespace: uneeq
+  labels: { app: host-helper }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: host-helper }
+  template:
+    metadata:
+      labels: { app: host-helper }
+    spec:
+      serviceAccountName: host-helper
+      imagePullSecrets:
+        - name: harbor-credentials
+      # Pin to the GPU node (single-node appliance) so the hostPath sockets resolve.
+      nodeName: dell-test-0udaxtn8
+      containers:
+        - name: host-helper
+          image: cr.uneeq.io/dell-isg-containers/host-helper:latest
+          imagePullPolicy: IfNotPresent
+          command: ["uvicorn", "host_helper:app", "--host", "0.0.0.0", "--port", "8086"]
+          securityContext:
+            privileged: true          # pactl/xrandr against the host session
+          env:
+            - { name: DISPLAY, value: ":1" }
+            - { name: XAUTHORITY, value: "/host-xauth/Xauthority" }
+            - { name: PULSE_SERVER, value: "unix:/run/user/1000/pulse/native" }
+          ports:
+            - { containerPort: 8086 }
+          resources:
+            limits:
+              nvidia.com/gpu: 1       # so nvidia-smi works DIRECTLY (GPU usage/VRAM)
+          volumeMounts:
+            - { name: xsock, mountPath: /tmp/.X11-unix }
+            - { name: xauth, mountPath: /host-xauth, readOnly: true }
+            - { name: pulse, mountPath: /run/user/1000/pulse }
+      volumes:
+        - name: xsock
+          hostPath: { path: /tmp/.X11-unix, type: Directory }
+        - name: xauth
+          hostPath: { path: /run/user/1000/gdm, type: Directory }
+        - name: pulse
+          hostPath: { path: /run/user/1000/pulse, type: Directory }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: host-helper
+  namespace: uneeq
+spec:
+  selector: { app: host-helper }
+  ports:
+    - { port: 8086, targetPort: 8086 }
+---
+# /host-admin/... -> host-helper:8086 (rewrite strips the prefix). On both the LAN
+# host and localhost so the kiosk's audio/display/GPU/renny controls work either way.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: host-helper
+  namespace: uneeq
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: digitalhuman.miniprem
+      http: &paths
+        paths:
+          - path: /host-admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: host-helper
+                port: { number: 8086 }
+    - host: localhost
+      http: *paths
+    - http: *paths   # catch-all (LAN IP)

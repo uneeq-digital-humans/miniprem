@@ -1,0 +1,99 @@
+# Arize Phoenix — LLM/RAG observability & tracing for the all-in-one box.
+# NIM / NAT / the RAG adapter export OTLP traces here; the UI shows latency,
+# token usage, and per-request RAG traces for health checks and debugging.
+#
+# Namespace is supplied by `kubectl apply -n <ns>` (deploy-allinone uses uneeq).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phoenix
+  labels:
+    app: phoenix
+spec:
+  replicas: 1
+  # hostNetwork binds :6006 on the node, so two pods can't run at once — replace
+  # the old pod before starting the new one (avoids the rolling-update port clash).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: phoenix
+  template:
+    metadata:
+      labels:
+        app: phoenix
+    spec:
+      # Bind Phoenix on the node's own network so the appliance's localhost:6006
+      # reaches the UI directly (matches the Docker host-network setup + the kiosk
+      # Settings "Phoenix Traces" link). ClusterFirstWithHostNet keeps in-cluster
+      # DNS working so the adapter/NIM still reach phoenix via the Service.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: phoenix
+          image: arizephoenix/phoenix:latest
+          ports:
+            - name: ui
+              containerPort: 6006
+            - name: otlp-grpc
+              containerPort: 4317
+            - name: otlp-http
+              containerPort: 4318
+          env:
+            # K8s auto-injects PHOENIX_PORT="tcp://<ip>:6006" for the "phoenix"
+            # Service, which Phoenix can't parse — pin it to the integer explicitly.
+            - name: PHOENIX_PORT
+              value: "6006"
+            - name: PHOENIX_WORKING_DIR
+              value: /data
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 6006
+            initialDelaySeconds: 10
+            periodSeconds: 15
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: phoenix-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: phoenix-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phoenix
+  labels:
+    app: phoenix
+spec:
+  selector:
+    app: phoenix
+  ports:
+    - name: ui
+      port: 6006
+      targetPort: 6006
+    - name: otlp-grpc
+      port: 4317
+      targetPort: 4317
+    - name: otlp-http
+      port: 4318
+      targetPort: 4318

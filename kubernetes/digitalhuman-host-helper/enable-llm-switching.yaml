@@ -1,0 +1,33 @@
+# One-time RBAC that lets the kiosk's host-helper switch the served LLM from Settings.
+# It grants the host-helper service account (uneeq ns) permission to create/manage the
+# NIMCache + NIMService for a chosen model in the nim-models namespace. This is a
+# cluster-admin grant — an app can't grant it to itself (security boundary) — so an
+# operator applies it ONCE per box:
+#
+#     kubectl apply -f enable-llm-switching.yaml
+#
+# After this, Settings → Brain → pick a downloaded model → "Set as active LLM" works.
+# (Already baked into k8s-deploy.yaml, so freshly-installed boxes have it automatically.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: host-helper-nim
+  namespace: nim-models
+rules:
+  - apiGroups: ["apps.nvidia.com"]
+    resources: ["nimcaches", "nimservices"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: host-helper-nim
+  namespace: nim-models
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: host-helper-nim
+subjects:
+  - kind: ServiceAccount
+    name: host-helper
+    namespace: uneeq

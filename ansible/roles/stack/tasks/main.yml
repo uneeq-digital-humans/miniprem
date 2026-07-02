@@ -1,0 +1,81 @@
+---
+# Deploys the full UneeQ stack by driving the proven, env-parameterised
+# deploy-allinone.sh (NIM Gemma, Riva TTS/STT, NVIDIA RAG, rag-adapter, Phoenix,
+# Renny, kiosk, host-helper, TLS + their secrets), then codifies the Renny DHOP
+# wiring that isn't env-driven in the script. Reusing the tested orchestrator
+# avoids re-implementing (and re-breaking) it in Ansible.
+
+- name: Ensure the repo (charts + scripts + manifests) is present on the control host
+  ansible.builtin.stat:
+    path: "{{ repo_dir }}/kubernetes/scripts/deploy-allinone.sh"
+  register: deployer
+
+- name: Fail if repo missing
+  ansible.builtin.assert:
+    that: deployer.stat.exists
+    fail_msg: "Clone miniprem-2025 to {{ repo_dir }} (or set repo_dir) before running the stack role."
+
+- name: Run the all-in-one deployer (full stack + secrets)
+  ansible.builtin.command:
+    cmd: bash kubernetes/scripts/deploy-allinone.sh
+    chdir: "{{ repo_dir }}"
+  environment:
+    KUBECONFIG: "{{ kubeconfig }}"
+    NGC_API_KEY: "{{ ngc_api_key }}"
+    HARBOR_USERNAME: "{{ harbor_username }}"
+    HARBOR_PASSWORD: "{{ harbor_password }}"
+    GEMMA_MODEL: "{{ gemma_model }}"
+    GEMMA_BACKEND: "nim"
+    KIOSK_BRAND: "{{ kiosk_brand }}"
+    RAG_CHART_VERSION: "2.3.2"
+    DEPLOY_RAG: "{{ 'true' if enable_rag else 'false' }}"
+    DEPLOY_PHOENIX: "{{ 'true' if enable_phoenix else 'false' }}"
+  register: deploy_out
+  changed_when: true
+  no_log: true          # env carries secrets
+
+- name: Show deployer tail
+  ansible.builtin.debug:
+    msg: "{{ deploy_out.stdout_lines[-15:] | default([]) }}"
+
+# --- Renny DHOP wiring not covered by env in the script (codified manual fixes) ---
+- name: Set Renny DHOP tenant + on-box Riva TTS address
+  ansible.builtin.command:
+    cmd: >-
+      kubectl set env deploy/renny -n uneeq
+      DHOP_TENANTID='{{ dhop_tenant_id }}'
+      RIVA_SERVER_ADDR='{{ riva_server_addr }}'
+  environment: { KUBECONFIG: "{{ kubeconfig }}" }
+  changed_when: true
+  no_log: true
+
+- name: Set the kiosk MiniPrem persona id in the server kiosk-config
+  ansible.builtin.shell: |
+    set -e
+    kubectl exec -n uneeq deploy/rag-adapter -- python3 - <<'PY'
+    import json, urllib.request
+    B="http://127.0.0.1:8085"
+    cfg=json.load(urllib.request.urlopen(B+"/admin/kiosk-config", timeout=10))
+    langs=cfg.setdefault("languages", {})
+    if not langs: langs["en"]={"miniprem":{}}
+    for lc in langs.values(): lc.setdefault("miniprem", {})["personaId"]="{{ persona_id }}"
+    body=json.dumps(cfg).encode()
+    urllib.request.urlopen(urllib.request.Request(B+"/admin/kiosk-config", data=body,
+      headers={"Content-Type":"application/json"}, method="POST"), timeout=10)
+    print("persona set")
+    PY
+  environment: { KUBECONFIG: "{{ kubeconfig }}" }
+  changed_when: true
+  failed_when: false        # adapter may not be ready yet; persona is also settable in Settings
+
+- name: (Optional) install the kiosk-ui Helm chart instead of the baked stage_kiosk
+  ansible.builtin.command:
+    cmd: >-
+      helm upgrade --install kiosk-ui kubernetes/kiosk-ui -n uneeq
+      --set image.repository={{ kiosk_image.split(':')[0] }}
+      --set image.tag={{ kiosk_image.split(':')[1] | default('latest') }}
+      --set "ingress.hosts={{ '{' }}{{ kiosk_host }}{{ '}' }}"
+    chdir: "{{ repo_dir }}"
+  environment: { KUBECONFIG: "{{ kubeconfig }}" }
+  when: use_kiosk_ui_chart | default(false) | bool
+  changed_when: true

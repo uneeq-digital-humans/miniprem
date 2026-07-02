@@ -96,6 +96,20 @@ FLOWISE_URL="http://localhost:3000"
 FLOWISE_XFP_HEADER="X-Forwarded-Proto: https"
 FLOWISE_COOKIES=""
 
+# vLLM endpoint as seen from the Flowise container. In docker-compose.full.yml both
+# vllm and flowise run with network_mode: host, so vLLM's --port 8800 is reachable
+# at localhost:8800 from inside Flowise. The /v1 suffix is the OpenAI-compatible base.
+# Model must match the vllm `--model` arg (served model id) exactly.
+VLLM_BASE_URL="${VLLM_BASE_URL:-http://localhost:8800/v1}"
+VLLM_MODEL_NAME="${VLLM_MODEL_NAME:-HuggingFaceH4/zephyr-7b-beta}"
+FLOWDATA_TEMPLATE="$SCRIPT_DIR/docker/flowise/vllm-chatflow.flowdata.json"
+
+# Name used for both the auto-created chatflow and the OpenAI-compatible credential,
+# so re-runs are idempotent (we reuse the existing records instead of duplicating).
+CHATFLOW_NAME="vLLM Chatflow"
+CREDENTIAL_NAME="vLLM (local)"
+CREDENTIAL_ID=""
+
 load_admin_credentials() {
     if [ -z "${FLOWISE_ADMIN_EMAIL:-}" ] || [ -z "${FLOWISE_ADMIN_PASSWORD:-}" ]; then
         if [ -f "$FLOWISE_ENV_FILE" ]; then
@@ -151,6 +165,54 @@ flowise_login() {
     return 0
 }
 
+# Create (or reuse) an OpenAI-compatible credential pointing at vLLM. The ChatOpenAI
+# node requires an openAIApi credential to instantiate its client; vLLM does not
+# validate the key, so a placeholder is fine. Sets CREDENTIAL_ID on success.
+flowise_ensure_credential() {
+    log_info "Ensuring Flowise credential '${CREDENTIAL_NAME}' exists..."
+
+    # Reuse an existing credential with the same name (idempotent re-runs).
+    local existing
+    existing=$(curl --silent --request GET "$FLOWISE_URL/api/v1/credentials?credentialName=openAIApi" \
+        --header "x-request-from: internal" \
+        --header "$FLOWISE_XFP_HEADER" \
+        --header "Cookie: $FLOWISE_COOKIES")
+    CREDENTIAL_ID=$(printf '%s' "$existing" \
+        | jq -r --arg n "$CREDENTIAL_NAME" 'if type=="array" then ([.[] | select(.name==$n)][0].id // empty) else empty end' 2>/dev/null)
+    if [ -n "$CREDENTIAL_ID" ]; then
+        log_success "Reusing existing credential (${CREDENTIAL_ID})."
+        return 0
+    fi
+
+    local resp
+    resp=$(curl --silent --request POST "$FLOWISE_URL/api/v1/credentials" \
+        --header "Content-Type: application/json" \
+        --header "x-request-from: internal" \
+        --header "$FLOWISE_XFP_HEADER" \
+        --header "Cookie: $FLOWISE_COOKIES" \
+        --data "$(jq -n --arg name "$CREDENTIAL_NAME" \
+            '{name:$name, credentialName:"openAIApi", plainDataObj:{openAIApiKey:"sk-no-key-required"}}')")
+    CREDENTIAL_ID=$(printf '%s' "$resp" | jq -r '.id // empty' 2>/dev/null)
+
+    if [ -z "$CREDENTIAL_ID" ]; then
+        log_error "Failed to create Flowise credential. Response: $resp"
+        return 1
+    fi
+    log_success "Created credential '${CREDENTIAL_NAME}' (${CREDENTIAL_ID})."
+    return 0
+}
+
+# Returns the id of an existing chatflow named "$CHATFLOW_NAME", or empty.
+flowise_find_chatflow() {
+    local list
+    list=$(curl --silent --request GET "$FLOWISE_URL/api/v1/chatflows" \
+        --header "x-request-from: internal" \
+        --header "$FLOWISE_XFP_HEADER" \
+        --header "Cookie: $FLOWISE_COOKIES")
+    printf '%s' "$list" \
+        | jq -r --arg n "$CHATFLOW_NAME" 'if type=="array" then ([.[] | select(.name==$n)][0].id // empty) else empty end' 2>/dev/null
+}
+
 # Function to prompt user to open browser
 open_browser_prompt() {
     if command_exists xdg-open; then
@@ -180,28 +242,26 @@ display_setup_guidance() {
     echo
     echo -e "${GREEN}=== FLOWISE AND vLLM SETUP GUIDE ===${NC}"
     echo
-    echo -e "${YELLOW}CREATING A CHATFLOW WITH vLLM:${NC}"
+    echo -e "${YELLOW}USING THE AUTO-CREATED CHATFLOW:${NC}"
     echo "1. Go to http://localhost:3000 and log in with the admin account from docker/flowise.env"
     echo "   (on a fresh install, the first visit prompts you to create the admin account)"
-    echo "2. Click 'Chatflows' in the sidebar and then 'Create New'"
+    echo "2. Open the '${CHATFLOW_NAME}' chatflow under 'Chatflows' and click the chat icon to test it."
+    echo "   It is pre-wired as: ChatOpenAI -> Conversation Chain (+ Buffer Memory)."
     echo
-    echo -e "${YELLOW}TO USE vLLM IN YOUR CHATFLOW:${NC}"
-    echo "1. Search for 'OpenAI Compatible' or 'Custom LLM' in the nodes panel"
-    echo "2. Configure the node with:"
-    echo "   - Base URL: http://vllm:8000/v1"
-    echo "   - Model: gemma-4-E4B-it (or your chosen model)"
+    echo -e "${YELLOW}HOW IT IS CONFIGURED (if you want to rebuild it manually):${NC}"
+    echo "1. Add a 'ChatOpenAI' node, then in its additional params set:"
+    echo "   - BasePath:  ${VLLM_BASE_URL}"
+    echo "   - Model Name: ${VLLM_MODEL_NAME}"
+    echo "   - Connect Credential: any OpenAI credential (vLLM ignores the API key)"
+    echo "2. Add 'Conversation Chain' and 'Buffer Memory' nodes."
+    echo "3. Connect ChatOpenAI -> Conversation Chain (Chat Model) and"
+    echo "   Buffer Memory -> Conversation Chain (Memory). Save and test."
     echo
-    echo -e "${YELLOW}DOWNLOADING MODELS IN vLLM:${NC}"
-    echo "vLLM will automatically download the model the first time it is requested."
-    echo "To pre-download the model, you can run:"
-    echo "docker exec -it vllm python3 -m vllm.entrypoints.openai.api_server --model facebook/opt-125m"
+    echo -e "${YELLOW}NOTE ON THE vLLM MODEL:${NC}"
+    echo "The Model Name must match the vllm container's --model argument exactly."
+    echo "Current full-install default: ${VLLM_MODEL_NAME} (see docker/docker-compose.full.yml)."
     echo
-    echo -e "${YELLOW}CONNECTING NODES:${NC}"
-    echo "1. Add 'Chat Message' and 'Memory' nodes"
-    echo "2. Connect them to create a conversation flow"
-    echo "3. Save and test your chatflow"
-    echo
-    echo -e "${BLUE}For more help, visit: https://vllm.readthedocs.io/en/latest/${NC}"
+    echo -e "${BLUE}For more help, visit: https://docs.flowiseai.com/ and https://docs.vllm.ai/${NC}"
     echo
 }
 
@@ -234,20 +294,66 @@ if ! load_admin_credentials || ! flowise_login; then
     exit 1
 fi
 
-# Create a simple empty chatflow
-log_info "Creating an empty chatflow via API..."
+# Build a fully-wired vLLM chatflow (ChatOpenAI -> Conversation Chain + Buffer
+# Memory) from the versioned flowData template, pointed at the local vLLM endpoint.
+if [ ! -f "$FLOWDATA_TEMPLATE" ]; then
+    log_error "flowData template not found at $FLOWDATA_TEMPLATE"
+    log_warning "Cannot create chatflow automatically. Please create one manually at http://localhost:3000"
+    display_setup_guidance
+    exit 1
+fi
 
-# Valid flowData with empty nodes and edges, as compact JSON.
-EMPTY_FLOWDATA=$(jq -nc '{nodes: [], edges: [], viewport: {x: 0, y: 0, zoom: 1}}')
+# Create/reuse the credential the ChatOpenAI node needs (vLLM ignores the key).
+if ! flowise_ensure_credential; then
+    log_warning "Cannot create chatflow without a credential. Please configure one manually at http://localhost:3000"
+    display_setup_guidance
+    exit 1
+fi
+
+# Skip creation if a chatflow with this name already exists (idempotent re-runs).
+EXISTING_CHATFLOW_ID=$(flowise_find_chatflow)
+if [ -n "$EXISTING_CHATFLOW_ID" ]; then
+    log_success "Chatflow '${CHATFLOW_NAME}' already exists (ID: ${EXISTING_CHATFLOW_ID})."
+    log_info "Open it at http://localhost:3000/chatflows/$EXISTING_CHATFLOW_ID"
+    display_setup_guidance
+    log_info "Flowise UI: http://localhost:3000"
+    log_success "Setup process completed."
+    open_browser_prompt
+    exit 0
+fi
+
+log_info "Creating vLLM chatflow via API (model: ${VLLM_MODEL_NAME}, endpoint: ${VLLM_BASE_URL})..."
+
+# Inject the credential id, vLLM base path and model name into the ChatOpenAI node,
+# then emit just {nodes, edges, viewport} as the flowData object.
+FLOWDATA=$(jq -c \
+  --arg cred "$CREDENTIAL_ID" \
+  --arg base "$VLLM_BASE_URL" \
+  --arg model "$VLLM_MODEL_NAME" '
+  .nodes |= map(
+    if .data.name == "chatOpenAI" then
+        .data.credential = $cred
+        | .data.inputs.credential = $cred
+        | .data.inputs.basepath = $base
+        | .data.inputs.modelName = $model
+    else . end)
+  | {nodes: .nodes, edges: .edges, viewport: .viewport}' "$FLOWDATA_TEMPLATE")
+
+if [ -z "$FLOWDATA" ]; then
+    log_error "Failed to render flowData from template."
+    display_setup_guidance
+    exit 1
+fi
 
 # Construct the POST payload. flowData must be a STRING containing JSON — Flowise
 # runs JSON.parse() on it, so passing a raw JSON object fails with HTTP 500
 # ("[object Object]" is not valid JSON). Using jq --arg encodes it as a string.
+# deployed:true makes it immediately callable via the prediction API.
 CREATE_PAYLOAD=$(jq -n \
-  --arg name "My vLLM Chatflow" \
-  --arg description "An empty chatflow for vLLM integration" \
-  --arg flowData "$EMPTY_FLOWDATA" \
-  '{name: $name, description: $description, flowData: $flowData, deployed: false, isPublic: false, type: "CHATFLOW"}')
+  --arg name "$CHATFLOW_NAME" \
+  --arg description "Conversation chain backed by the local vLLM server (${VLLM_MODEL_NAME})" \
+  --arg flowData "$FLOWDATA" \
+  '{name: $name, description: $description, flowData: $flowData, deployed: true, isPublic: false, type: "CHATFLOW"}')
 
 # Create the chatflow. Authenticated internal call: the session cookies captured
 # at login, the internal-request marker, and the forwarded-proto header (so the
@@ -270,7 +376,7 @@ echo "HTTP Status: $HTTP_STATUS" >> "$LOG_FILE"
 
 # Check if request was successful
 if [[ "$HTTP_STATUS" -ne 200 && "$HTTP_STATUS" -ne 201 ]]; then
-    log_error "Failed to create empty chatflow. HTTP status: $HTTP_STATUS"
+    log_error "Failed to create vLLM chatflow. HTTP status: $HTTP_STATUS"
     log_error "Response: $RESPONSE"
     log_warning "Cannot create chatflow automatically. Please create one manually at http://localhost:3000"
 else
@@ -279,10 +385,10 @@ else
 
     if [ -z "$CHATFLOW_ID" ]; then
         log_warning "Created chatflow but couldn't extract ID from response."
-        log_info "You can now manually configure a chatflow at http://localhost:3000"
+        log_info "You can now open it at http://localhost:3000"
     else
-        log_success "Created empty chatflow with ID: $CHATFLOW_ID"
-        log_info "You can now configure this chatflow at http://localhost:3000/chatflows/$CHATFLOW_ID"
+        log_success "Created vLLM chatflow '${CHATFLOW_NAME}' with ID: $CHATFLOW_ID"
+        log_info "Test it at http://localhost:3000/chatflows/$CHATFLOW_ID (model: ${VLLM_MODEL_NAME})"
     fi
 fi
 

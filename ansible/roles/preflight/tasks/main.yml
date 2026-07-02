@@ -1,0 +1,50 @@
+---
+- name: Ensure base tools present
+  ansible.builtin.apt:
+    name: [curl, ca-certificates, git, python3, gnupg]
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: Check for an NVIDIA GPU (nvidia-smi)
+  ansible.builtin.command: nvidia-smi --query-gpu=name,driver_version --format=csv,noheader
+  register: gpu_check
+  changed_when: false
+  failed_when: false
+
+- name: Warn if no NVIDIA GPU/driver detected
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: nvidia-smi not found or failed. This stack REQUIRES an NVIDIA GPU +
+      driver (>= 580 for Blackwell). Install the driver before continuing.
+  when: gpu_check.rc != 0
+
+- name: Report detected GPU
+  ansible.builtin.debug:
+    msg: "Detected GPU: {{ gpu_check.stdout }}"
+  when: gpu_check.rc == 0
+
+- name: Install Helm if missing
+  ansible.builtin.shell: |
+    set -e
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+  args:
+    creates: /usr/local/bin/helm
+
+- name: Install kubectl if missing
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/v{{ k8s_version }}.0/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+  args: {}
+  when: not (lookup('ansible.builtin.fileglob', '/usr/local/bin/kubectl') or lookup('ansible.builtin.fileglob', '/usr/bin/kubectl'))
+
+- name: Fail early on missing required secrets/vars
+  ansible.builtin.assert:
+    that:
+      - ngc_api_key | length > 0
+      - dhop_api_key | length > 0
+      - dhop_tenant_id | length > 0
+      - persona_id | length > 0
+    fail_msg: "Set ngc_api_key, dhop_api_key, dhop_tenant_id, persona_id in group_vars/all.yml."
+    success_msg: "Required credentials present."

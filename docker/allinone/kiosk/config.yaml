@@ -1,0 +1,54 @@
+# Kiosk runtime config for the all-in-one appliance.
+# Mounted over /usr/share/nginx/html/config.yaml. The kiosk's Chrome runs on the
+# box, so all endpoints are localhost (zero config; streaming-safe secure context).
+app:
+  name: "UneeQ NVIDIA Digital Human"
+  environment: "production"
+
+brands:
+  dell:
+    personas:
+      en:
+        # TODO: set the DHOP persona ID for this tenant (from the UneeQ Admin Portal).
+        miniprem:
+          CDN: "https://cdn.enterprise.uneeq.io/hosted-experience/deploy/index.js"
+          API: "https://api.enterprise.uneeq.io"
+          id: ""
+        cloud:
+          CDN: "https://cdn.uneeq.io/hosted-experience/deploy/index.js"
+          API: "https://api.uneeq.io"
+          id: ""
+
+# Speech-to-text: on-prem NVIDIA Riva via the local ws-proxy.
+stt:
+  provider: "riva"
+  rivaUrl: "http://localhost:8009"
+  language: "en-US"
+
+# Conversation: kiosk owns it, talks to the local NVIDIA stack. Generate with the
+# Gemma NIM directly (full prompt/persona/memory control); inline buffer memory so
+# the digital human remembers context (NVIDIA RAG keeps none on its own).
+conversation:
+  provider: "rag"
+  generation: "nim"            # nim = retrieve(RAG) + generate(NIM); rag = RAG bundled /v1/generate
+  memory: "inline"
+  streaming: false             # localhost is a secure context, but non-streaming is the safe default
+  # No systemPrompt baked: the kiosk falls back to the shared DEFAULT_PERSONA_PROMPT
+  # (persona + full emotion/gesture instructions) so the configured default always
+  # matches the "Reset to UneeQ default" button. Set one here only to override it.
+  rag:
+    # generation=nim uses searchEndpoint (skipped if RAG profile not running);
+    # generation=rag uses endpoint (/v1/generate).
+    searchEndpoint: "http://localhost:8081/v1/search"
+    endpoint: "http://localhost:8081/v1/generate"
+    collectionNames: ["multimodal_data"]
+    useKnowledgeBase: true
+    enableReranker: true
+    enableCitations: true
+  nim:
+    # Point at the rag-adapter (:8085), NOT the model directly (:8000). The adapter
+    # proxies to the model and records each call as an OpenInference span to Phoenix
+    # (project "kiosk-conversations", view at http://localhost:6006) so operators can
+    # read conversation history. The adapter's LLM_URL selects the actual backend.
+    endpoint: "http://localhost:8085/v1/chat/completions"
+    model: "google/gemma-4-26B-A4B-it"
