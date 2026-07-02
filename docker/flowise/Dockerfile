@@ -12,9 +12,13 @@ ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 ENV NODE_OPTIONS=--max-old-space-size=8192
 WORKDIR /usr/src
 
-# Clone the repository
+# Clone the repository at a pinned release tag for reproducible builds.
+# When bumping: pick the latest stable tag from https://github.com/FlowiseAI/Flowise/releases
+# and re-verify the chatflow auto-setup (setup-chatflow-post-deployment.sh) and the
+# OTel injection (otel-init.js via NODE_OPTIONS) still work.
+ARG FLOWISE_VERSION=flowise@3.1.2
 RUN apk add --no-cache git
-RUN git clone https://github.com/FlowiseAI/Flowise.git .
+RUN git clone --branch "${FLOWISE_VERSION}" --depth 1 https://github.com/FlowiseAI/Flowise.git .
 
 # Install dependencies and build
 RUN pnpm install

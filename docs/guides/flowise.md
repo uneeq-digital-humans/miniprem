@@ -5,9 +5,11 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 ## Accessing Flowise
 
 - **URL**: http://localhost:3000
-- **Default Credentials**:
-  - Username: `user`
-  - Password: `password`
+- **Credentials**: Flowise uses an admin account (email + password) instead of the old username/password basic auth.
+  - The MiniPrem installer creates an admin account automatically — the credentials are stored in `docker/flowise.env` (`FLOWISE_ADMIN_EMAIL` / `FLOWISE_ADMIN_PASSWORD`).
+  - If no account exists yet, your first visit to http://localhost:3000 prompts you to create one (your own email + password). Subsequent visits use those credentials.
+
+> **Tip**: Access Flowise via exactly `http://localhost:3000` — from a remote machine use an SSH tunnel (`ssh -L 3000:localhost:3000 <host>`). The login session cookie is host-bound, and accessing via another hostname/IP can cause a login redirect loop.
 
 ## Flowise Concepts
 
@@ -21,7 +23,7 @@ Flowise provides a visual interface for creating and managing AI workflows. This
 ### 1. Access Flowise UI
 
 1. Open your browser and navigate to: http://localhost:3000
-2. Log in with username `user` and password `password`
+2. Log in with the admin account credentials from `docker/flowise.env` (or create the admin account if prompted)
 
 ### 2. Create a New Chatflow
 
