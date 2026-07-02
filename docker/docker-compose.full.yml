@@ -200,6 +200,15 @@ services:
       - "3000:3000"
     volumes:
       - flowise_data:/usr/src/.flowise
+    # Flowise 3.x replaced the legacy FLOWISE_USERNAME/FLOWISE_PASSWORD basic auth
+    # with a first-run admin-account signup. Auth/encryption secrets
+    # (FLOWISE_SECRETKEY_OVERWRITE, JWT_AUTH_TOKEN_SECRET, JWT_REFRESH_TOKEN_SECRET,
+    # EXPRESS_SESSION_SECRET, TOKEN_HASH_SECRET) and the initial admin credentials
+    # (FLOWISE_ADMIN_EMAIL / FLOWISE_ADMIN_PASSWORD) are generated at install time
+    # by install_miniprem.sh into flowise.env (see flowise.env.example).
+    env_file:
+      - path: flowise.env
+        required: false
     environment:
       # Basic configuration
       - PORT=3000
@@ -207,13 +216,6 @@ services:
       - DATABASE_PATH=/usr/src/.flowise/database.sqlite
       - NODE_ENV=production
       - LOG_LEVEL=debug
-      # Authentication
-      - FLOWISE_USERNAME=user
-      - FLOWISE_PASSWORD=password
-      # API Key for authentication
-      - APIKEY_STORAGE_TYPE=json
-      - APIKEY_PATH=/usr/src/.flowise
-      - FLOWISE_SECRETKEY_OVERWRITE=miniprem_demo_secret_key
       # File upload limit
       - FLOWISE_FILE_SIZE_LIMIT=50mb
       # Disable queue mode temporarily

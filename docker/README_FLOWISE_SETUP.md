@@ -1,16 +1,17 @@
 # Flowise Chatflow Setup Instructions
 
-After starting the Docker containers with `docker compose -f docker-compose.updated.yml up -d`, follow these steps to set up the Chatflow in Flowise:
+After starting the Docker containers with `docker compose -f docker-compose.full.yml up -d`, follow these steps to set up the Chatflow in Flowise:
 
 ## Access Flowise UI
 
 1. Open your browser and navigate to: http://localhost:3000
+2. Log in with the admin account credentials from `docker/flowise.env` (`FLOWISE_ADMIN_EMAIL` / `FLOWISE_ADMIN_PASSWORD`). If no account exists yet, your first visit prompts you to create one (your own email + password).
 
 ## Create a New Chatflow
 
 1. Click on "Chatflows" in the sidebar
 2. Click the "+" button to create a new Chatflow
-3. Name your Chatflow (e.g., "Ollama Gemma4 Chatflow")
+3. Name your Chatflow (e.g., "vLLM Gemma4 Chatflow")
 
 ## Add and Configure Nodes
 
@@ -20,11 +21,11 @@ After starting the Docker containers with `docker compose -f docker-compose.upda
 2. Configure the node with:
    - Prompt: "You are a helpful assistant powered by Gemma4. Provide concise and accurate responses."
 
-### 2. Add Ollama Node
+### 2. Add vLLM (OpenAI-compatible) Node
 
-1. From the nodes panel, drag and drop an "Ollama" node onto the canvas
+1. From the nodes panel, drag and drop a "ChatOpenAI Custom" (OpenAI-compatible) node onto the canvas
 2. Configure the node with:
-   - Base URL: `http://ollama:11434` (use the docker container name, not localhost)
+   - Base URL: `http://vllm:8000/v1` (use the docker container name, not localhost)
    - Model: `HuggingFaceH4/zephyr-7b-beta`
    - Temperature: `0.7`
    - Max Tokens: `1000`
@@ -53,7 +54,7 @@ After starting the Docker containers with `docker compose -f docker-compose.upda
 Connect the nodes with the following connections:
 
 1. System Prompt → Conversation Chain (from "prompt" to "systemPrompt")
-2. Ollama → Conversation Chain (from "model" to "llm")
+2. vLLM (OpenAI-compatible) → Conversation Chain (from "model" to "llm")
 3. Buffer Memory → Conversation Chain (from "memory" to "memory")
 4. Conversation Chain → Chat Trigger (from "output" to "input")
 
