@@ -37,6 +37,7 @@ import httpx
 
 from . import chunking, embeddings, llm, tracing, vectorstore
 from .config import settings
+from .http_client import close_shared_client, shared_client
 from .prompt import prompt_store
 from .rag_client import complete_chat, stream_chat
 from .sessions import store
@@ -72,6 +73,12 @@ app.add_middleware(
 async def _init_tracing() -> None:
     """Wire up OpenInference -> Phoenix tracing for the conversation proxy."""
     tracing.init()
+
+
+@app.on_event("shutdown")
+async def _close_http_pool() -> None:
+    """Drain the shared httpx connection pool (see http_client.py)."""
+    await close_shared_client()
 
 
 async def _effective_prompt() -> str:
@@ -415,10 +422,10 @@ async def caption_shim(request: Request):
 
     messages = body.get("messages") or []
     try:
-        async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-            captions = await asyncio.gather(
-                *(_caption_one(client, m.get("content")) for m in messages)
-            )
+        client = shared_client()
+        captions = await asyncio.gather(
+            *(_caption_one(client, m.get("content")) for m in messages)
+        )
     except Exception as exc:
         log.warning("caption shim failed: %s", exc)
         return JSONResponse({"error": f"caption shim: {exc}"}, status_code=502)
@@ -498,8 +505,7 @@ async def chat_completions_proxy(request: Request):
     # ---- Non-streaming: forward, capture answer + usage, return verbatim -----
     if not stream:
         try:
-            async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-                resp = await client.post(upstream, json=body)
+            resp = await shared_client().post(upstream, json=body)
         except Exception as exc:
             tracing.fail_llm_span(span, exc)
             raise
@@ -525,31 +531,30 @@ async def chat_completions_proxy(request: Request):
     async def gen():
         buf, collected, usage = "", [], None
         try:
-            async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-                async with client.stream(
-                    "POST", upstream, json=body,
-                    headers={"Accept": "text/event-stream"},
-                ) as resp:
-                    async for chunk in resp.aiter_bytes():
-                        yield chunk  # transparent passthrough to the kiosk
-                        buf += chunk.decode("utf-8", "ignore")
-                        while "\n" in buf:
-                            line, buf = buf.split("\n", 1)
-                            line = line.strip()
-                            if not line.startswith("data:"):
-                                continue
-                            payload = line[len("data:"):].strip()
-                            if not payload or payload == "[DONE]":
-                                continue
-                            try:
-                                j = json.loads(payload)
-                            except Exception:
-                                continue
-                            tok = (j.get("choices") or [{}])[0].get("delta", {}).get("content")
-                            if tok:
-                                collected.append(tok)
-                            if j.get("usage"):
-                                usage = j["usage"]
+            async with shared_client().stream(
+                "POST", upstream, json=body,
+                headers={"Accept": "text/event-stream"},
+            ) as resp:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk  # transparent passthrough to the kiosk
+                    buf += chunk.decode("utf-8", "ignore")
+                    while "\n" in buf:
+                        line, buf = buf.split("\n", 1)
+                        line = line.strip()
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[len("data:"):].strip()
+                        if not payload or payload == "[DONE]":
+                            continue
+                        try:
+                            j = json.loads(payload)
+                        except Exception:
+                            continue
+                        tok = (j.get("choices") or [{}])[0].get("delta", {}).get("content")
+                        if tok:
+                            collected.append(tok)
+                        if j.get("usage"):
+                            usage = j["usage"]
         except Exception as exc:
             log.exception("chat-completions proxy stream failed")
             tracing.fail_llm_span(span, exc)

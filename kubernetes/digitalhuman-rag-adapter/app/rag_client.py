@@ -5,9 +5,8 @@ import json
 import logging
 from typing import Any, AsyncIterator, Dict
 
-import httpx
-
 from .config import settings
+from .http_client import shared_client
 
 log = logging.getLogger("rag-adapter.rag")
 
@@ -25,33 +24,32 @@ def _url() -> str:
 
 async def stream_chat(payload: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
     """Yield parsed OpenAI/NVIDIA streaming chunks (dicts) until [DONE]."""
-    async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-        async with client.stream(
-            "POST", _url(), json=payload, headers=_headers()
-        ) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                line = line.strip()
-                if line.startswith("data:"):
-                    line = line[len("data:"):].strip()
-                if not line or line == "[DONE]":
-                    if line == "[DONE]":
-                        return
-                    continue
-                try:
-                    yield json.loads(line)
-                except json.JSONDecodeError:
-                    log.debug("Skipping non-JSON SSE line: %r", line[:120])
-                    continue
+    client = shared_client()
+    async with client.stream(
+        "POST", _url(), json=payload, headers=_headers()
+    ) as resp:
+        resp.raise_for_status()
+        async for line in resp.aiter_lines():
+            if not line:
+                continue
+            line = line.strip()
+            if line.startswith("data:"):
+                line = line[len("data:"):].strip()
+            if not line or line == "[DONE]":
+                if line == "[DONE]":
+                    return
+                continue
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                log.debug("Skipping non-JSON SSE line: %r", line[:120])
+                continue
 
 
 async def complete_chat(payload: Dict[str, Any]) -> Dict[str, Any]:
     """Non-streaming completion. Returns the full OpenAI-style response."""
     body = dict(payload)
     body["stream"] = False
-    async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-        resp = await client.post(_url(), json=body, headers=_headers())
-        resp.raise_for_status()
-        return resp.json()
+    resp = await shared_client().post(_url(), json=body, headers=_headers())
+    resp.raise_for_status()
+    return resp.json()

@@ -9,9 +9,8 @@ from __future__ import annotations
 import logging
 from typing import List
 
-import httpx
-
 from .config import settings
+from .http_client import shared_client
 
 log = logging.getLogger("rag-adapter.embed")
 
@@ -27,13 +26,12 @@ async def embed(texts: List[str], input_type: str = "passage") -> List[List[floa
         "encoding_format": "float",
     }
     url = settings.embed_url.rstrip("/") + "/v1/embeddings"
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(url, json=payload)
-        resp.raise_for_status()
-        data = resp.json().get("data", [])
-        # Preserve input order (NIM returns objects with an "index").
-        data = sorted(data, key=lambda d: d.get("index", 0))
-        return [d["embedding"] for d in data]
+    resp = await shared_client().post(url, json=payload, timeout=120.0)
+    resp.raise_for_status()
+    data = resp.json().get("data", [])
+    # Preserve input order (NIM returns objects with an "index").
+    data = sorted(data, key=lambda d: d.get("index", 0))
+    return [d["embedding"] for d in data]
 
 
 async def embed_one(text: str, input_type: str = "query") -> List[float]:

@@ -6,5 +6,5 @@ description: >-
   itself, the RAG/LLM adapter (/rag-admin, /v1), the host-helper (/host-admin),
   the MiniPrem monitor (/monitor), and the Riva STT websocket proxy (/api/asr).
 type: application
-version: 0.1.0
+version: 0.1.1
 appVersion: "1.5.0"
