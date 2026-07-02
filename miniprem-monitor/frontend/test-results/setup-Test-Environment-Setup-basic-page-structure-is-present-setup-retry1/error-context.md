@@ -1,0 +1,81 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e6]:
+        - generic [ref=e8]:
+          - img "UneeQ Logo" [ref=e10]
+          - heading "MiniPrem Monitor" [level=1] [ref=e11]
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic "Error" [ref=e15]
+            - generic [ref=e16]:
+              - img [ref=e17]
+              - generic [ref=e24]: Disconnected
+          - button "Terminal" [ref=e25] [cursor=pointer]:
+            - img [ref=e26]
+            - generic [ref=e28]: Terminal
+          - button "Switch to dark mode" [ref=e29] [cursor=pointer]:
+            - img [ref=e30]
+    - main [ref=e32]:
+      - generic [ref=e54]:
+        - generic [ref=e56]:
+          - generic [ref=e57]:
+            - heading "Docker Containers" [level=2] [ref=e58]: Docker Containers
+            - generic [ref=e60]:
+              - button "Metrics" [ref=e61] [cursor=pointer]:
+                - img [ref=e62]
+                - generic [ref=e65]: Metrics
+              - button "Refresh containers" [disabled] [ref=e66]:
+                - img [ref=e67]
+          - generic [ref=e72]:
+            - tablist "Container status filter" [ref=e73]:
+              - tab "All" [selected] [ref=e74] [cursor=pointer]
+              - tab "Running" [ref=e75] [cursor=pointer]:
+                - generic [ref=e76]: Running
+              - tab "Stopped" [ref=e78] [cursor=pointer]:
+                - generic [ref=e79]: Stopped
+            - generic [ref=e81]: Loading...
+        - generic [ref=e102]:
+          - heading "Kubernetes Pods" [level=2] [ref=e103]: Kubernetes Pods
+          - generic [ref=e105]:
+            - generic [ref=e106]:
+              - generic [ref=e107]:
+                - generic [ref=e108]:
+                  - generic [ref=e109]: "Region:"
+                  - button "us-east-1" [disabled] [ref=e111]:
+                    - img [ref=e112]
+                    - generic [ref=e115]: us-east-1
+                    - img [ref=e116]
+                - generic [ref=e120]:
+                  - generic [ref=e121]: "EKS:"
+                  - button "Setup Kubernetes" [ref=e124] [cursor=pointer]:
+                    - img [ref=e125]
+                    - generic [ref=e127]: Setup Kubernetes
+                - generic [ref=e128]:
+                  - generic [ref=e129]: "NS:"
+                  - generic [ref=e130]:
+                    - combobox [ref=e131]:
+                      - option "All Namespaces" [selected]
+                      - option "default"
+                      - option "kube-system"
+                      - option "uneeq-renderer"
+                    - img
+              - button [disabled] [ref=e133]:
+                - img [ref=e134]
+            - generic [ref=e139]:
+              - tablist "Pod status filter" [ref=e140]:
+                - tab "All" [selected] [ref=e141] [cursor=pointer]
+                - tab "Running" [ref=e142] [cursor=pointer]:
+                  - generic [ref=e143]: Running
+                - tab "Pending" [ref=e145] [cursor=pointer]:
+                  - generic [ref=e146]: Pending
+                - tab "Failed" [ref=e148] [cursor=pointer]:
+                  - generic [ref=e149]: Failed
+                - tab "Succeeded" [ref=e151] [cursor=pointer]:
+                  - generic [ref=e152]: Succeeded
+              - generic [ref=e154]: Loading...
+  - alert [ref=e174]
+```

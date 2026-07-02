@@ -1,0 +1,105 @@
+{{- if .Values.ingress.enabled }}
+{{- $ns := .Values.namespace }}
+{{- $svc := .Values.service }}
+{{- $ing := .Values.ingress }}
+{{- $up := .Values.ingress.upstreams }}
+{{- $routes := .Values.ingress.routes }}
+# ----------------------------------------------------------------------------
+# 1) Kiosk SPA + /v1 (served as-is — NO path rewrite)
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kiosk-ui
+  namespace: {{ $ns }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ $ing.proxyBodySize | quote }}
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ $ing.proxyReadTimeout | quote }}
+spec:
+  ingressClassName: {{ $ing.className }}
+  rules:
+    {{- range $h := $ing.hosts }}
+    - host: {{ $h | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: {{ $svc.name }}, port: { number: {{ $svc.port }} } }
+          {{- if $routes.v1 }}
+          - path: /v1
+            pathType: Prefix
+            backend:
+              service: { name: {{ $up.ragAdapter.service }}, port: { number: {{ $up.ragAdapter.port }} } }
+          {{- end }}
+    {{- end }}
+---
+# ----------------------------------------------------------------------------
+# 2) Proxy paths — strip the prefix before forwarding (rewrite /$2 + regex).
+#    /rag-admin → adapter, /host-admin → host-helper, /monitor → monitor,
+#    /api/asr → riva-ws-proxy (the STT websocket bridge).
+# ----------------------------------------------------------------------------
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kiosk-ui-proxies
+  namespace: {{ $ns }}
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: {{ $ing.proxyBodySize | quote }}
+    nginx.ingress.kubernetes.io/proxy-read-timeout: {{ $ing.proxyReadTimeout | quote }}
+spec:
+  ingressClassName: {{ $ing.className }}
+  rules:
+    {{- range $h := $ing.hosts }}
+    - host: {{ $h | quote }}
+      http:
+        paths:
+          {{- if $routes.ragAdmin }}
+          - path: /rag-admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service: { name: {{ $up.ragAdapter.service }}, port: { number: {{ $up.ragAdapter.port }} } }
+          {{- end }}
+          {{- if $routes.hostAdmin }}
+          - path: /host-admin(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service: { name: {{ $up.hostHelper.service }}, port: { number: {{ $up.hostHelper.port }} } }
+          {{- end }}
+          {{- if $routes.monitor }}
+          - path: /monitor(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service: { name: {{ $up.monitor.service }}, port: { number: {{ $up.monitor.port }} } }
+          {{- end }}
+    {{- end }}
+{{- if $routes.asr }}
+---
+# 3) /api/asr → riva-ws-proxy with the path PRESERVED (no /$2 strip). The proxy
+#    serves ws://…/api/asr/v1/stream, so stripping the prefix (as the proxies
+#    ingress above does) would break STT. Separate ingress, no rewrite-target,
+#    long read/send timeouts for the persistent WebSocket.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kiosk-ui-asr
+  namespace: {{ $ns }}
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: {{ $ing.className }}
+  rules:
+    {{- range $h := $ing.hosts }}
+    - host: {{ $h | quote }}
+      http:
+        paths:
+          - path: /api/asr
+            pathType: Prefix
+            backend:
+              service: { name: {{ $up.asrProxy.service }}, port: { number: {{ $up.asrProxy.port }} } }
+    {{- end }}
+{{- end }}
+{{- end }}

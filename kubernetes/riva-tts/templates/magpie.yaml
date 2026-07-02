@@ -1,0 +1,85 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: magpie-model-cache
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: {{ .Values.storage.size }} } }
+  storageClassName: {{ .Values.storage.storageClass }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: magpie-tts
+  namespace: {{ .Values.namespace }}
+  labels: { app: magpie-tts }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: magpie-tts }
+  template:
+    metadata:
+      labels: { app: magpie-tts }
+    spec:
+      {{- with .Values.runtimeClassName }}
+      runtimeClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{ toYaml . | nindent 8 }}
+      {{- end }}
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+      imagePullSecrets:
+        - name: {{ .Values.imagePullSecret }}
+      containers:
+        - name: magpie-tts
+          image: {{ .Values.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { containerPort: 50051, name: grpc }
+            - { containerPort: 9000, name: http }
+          env:
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef: { name: {{ .Values.ngcSecret }}, key: NGC_API_KEY }
+            - { name: NIM_CACHE_PATH, value: /opt/nim/.cache }
+            - { name: NIM_TAGS_SELECTOR, value: {{ .Values.tagsSelector | quote }} }
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - { name: model-cache, mountPath: /opt/nim/.cache }
+            - { name: shm, mountPath: /dev/shm }
+          startupProbe:                        # cold start = model dl + TRT compile, up to ~40 min
+            tcpSocket: { port: 50051 }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            failureThreshold: 80
+            timeoutSeconds: 5
+          readinessProbe:
+            tcpSocket: { port: 50051 }
+            periodSeconds: 15
+            failureThreshold: 3
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket: { port: 50051 }
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+      volumes:
+        - name: model-cache
+          persistentVolumeClaim: { claimName: magpie-model-cache }
+        - name: shm
+          emptyDir: { medium: Memory, sizeLimit: 2Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: magpie-tts
+  namespace: {{ .Values.namespace }}
+  labels: { app: magpie-tts }
+spec:
+  selector: { app: magpie-tts }
+  type: ClusterIP
+  ports:
+    - { name: grpc, port: 50051, targetPort: grpc }
+    - { name: http, port: 9000, targetPort: http }

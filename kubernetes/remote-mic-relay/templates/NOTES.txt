@@ -1,0 +1,27 @@
+remote-mic-relay installed into namespace "{{ .Release.Namespace }}".
+
+Point the kiosk's remote-mic relay (Settings ▸ Remote Mic ▸ Self-Hosted, or
+config.websocketUrl) at this relay:
+
+{{- if eq .Values.service.type "NodePort" }}
+
+  LAN / same-Wi-Fi phones (NodePort):
+    ws://<any-node-LAN-IP>:{{ .Values.service.nodePort | default "<assigned>" }}
+
+  Find the node IP + assigned port with:
+    kubectl -n {{ .Release.Namespace }} get svc remote-mic-relay -o wide
+    kubectl get nodes -o wide
+{{- else }}
+
+  In-cluster:
+    ws://remote-mic-relay.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+{{- end }}
+{{- if .Values.ingress.enabled }}
+
+  Via ingress (terminate TLS here for phones on cellular → wss://):
+    wss://{{ .Values.ingress.host }}{{ .Values.ingress.path }}
+{{- end }}
+
+Phones on cellular data need a secure public address (wss://) — use the ingress
+above with a TLS cert, or an HTTPS tunnel to the NodePort. Phones on the same
+Wi-Fi reach the NodePort directly.

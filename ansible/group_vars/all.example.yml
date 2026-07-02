@@ -1,0 +1,43 @@
+# Copy to group_vars/all.yml and fill in. SECRET — encrypt with `ansible-vault`.
+#
+#   bootstrap_cluster=true  → playbook builds the kubeadm cluster on the target box.
+#   bootstrap_cluster=false → you bring an existing cluster; set `kubeconfig`.
+
+bootstrap_cluster: true
+kubeconfig: /etc/kubernetes/admin.conf      # existing cluster: path on the control host
+
+# --- Cluster bootstrap (only used when bootstrap_cluster: true) --------------
+k8s_version: "1.30"
+pod_cidr: "192.168.0.0/16"
+gpu_operator_version: "v24.9.1"
+ingress_nginx_version: "4.11.3"
+single_node: true                            # untaint the control-plane so workloads schedule
+
+# --- Container registries ----------------------------------------------------
+ngc_api_key: ""                              # nvapi-...  (NIM + RAG model pulls)
+harbor_username: ""                          # robot$uneeq+...   (Renny + kiosk images)
+harbor_password: ""
+
+# --- UneeQ platform (Renny + kiosk persona) ----------------------------------
+dhop_api_key: ""                             # base64 platform key — NO "DHOP " prefix
+dhop_tenant_id: ""
+persona_id: ""                               # kiosk MiniPrem persona id
+
+# --- LLM ---------------------------------------------------------------------
+# Recommended gemma-2-9b-it; gemma-3-1b-it (tiny GPU); gemma-3-27b-it (NGC entitlement).
+gemma_model: "google/gemma-2-9b-it"
+
+# --- TTS ---------------------------------------------------------------------
+riva_server_addr: "magpie-tts.nim-models:50051"   # Renny RIVA_SERVER_ADDR (on-box Riva)
+
+# --- Kiosk -------------------------------------------------------------------
+kiosk_host: "digitalhuman.miniprem"
+kiosk_image: "cr.uneeq.io/dell-isg-containers/digitalhuman-interface:latest"
+kiosk_brand: "dell"
+
+# --- Feature toggles ---------------------------------------------------------
+enable_rag: true
+enable_phoenix: true
+
+# --- Where the repo (charts + manifests) lives on the control host -----------
+repo_dir: "/opt/uneeq/miniprem-2025"

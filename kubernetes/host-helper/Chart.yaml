@@ -1,0 +1,9 @@
+apiVersion: v2
+name: host-helper
+description: >-
+  Privileged on-box agent for the kiosk: GPU/STT/TTS/RAG health, per-process VRAM,
+  audio + display control, NIM model pull (nerdctl), and RAG enable/disable. Serves
+  /host-admin behind the kiosk ingress.
+type: application
+version: 0.2.0
+appVersion: "1.0.0"

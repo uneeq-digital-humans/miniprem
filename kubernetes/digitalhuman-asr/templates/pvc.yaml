@@ -1,3 +1,4 @@
+{{- if .Values.nemotron.enabled }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -9,4 +10,24 @@ spec:
   resources:
     requests:
       storage: {{ .Values.nemotron.modelCacheSize }}
-  storageClassName: microk8s-hostpath
+  storageClassName: {{ .Values.nemotron.storageClassName | default "local-path" }}
+{{- if .Values.nemotron.engineCache.create }}
+---
+# Persistent store for the built TensorRT engine (/data/models). Keeps the
+# 30-60 min first-build from recurring on every pod restart.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.nemotron.engineCache.claimName | default "asr-model-data" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: digitalhuman-asr
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.nemotron.engineCache.size | default "30Gi" }}
+  storageClassName: {{ .Values.nemotron.engineCache.storageClassName | default .Values.nemotron.storageClassName | default "local-path" }}
+{{- end }}
+{{- end }}

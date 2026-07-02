@@ -1,0 +1,6 @@
+apiVersion: v2
+name: phoenix
+description: Arize Phoenix — LLM/RAG OTLP tracing UI for the all-in-one (host-network :6006).
+type: application
+version: 0.1.0
+appVersion: "latest"

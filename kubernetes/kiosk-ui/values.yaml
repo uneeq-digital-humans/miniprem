@@ -1,0 +1,50 @@
+namespace: uneeq
+
+# --- Kiosk UI image (nginx that serves the built Dell SPA) -------------------
+# Production: the built kiosk image from Harbor. Until the dell-isg-containers
+# Harbor grant lands, the box runs the locally-built dist via deploy-verify-kiosk.sh
+# (nginx:alpine + hostPath); this chart is the proper artifact for once the image
+# is pullable. Override image.* to a mirror in the `uneeq` project if needed.
+image:
+  repository: cr.uneeq.io/dell-isg-containers/digitalhuman-interface
+  tag: latest
+  pullPolicy: IfNotPresent
+imagePullSecrets:
+  - harbor-credentials
+replicas: 1
+
+service:
+  name: digitalhuman-interface
+  port: 80
+
+resources:
+  requests: { cpu: "50m", memory: "64Mi" }
+  limits:   { cpu: "500m", memory: "256Mi" }
+
+# --- Front-door Ingress (the reverse proxy) ----------------------------------
+# One host fronts everything. Paths are split into two Ingress objects because
+# nginx-ingress rewrite-target is a per-Ingress annotation: the SPA + /v1 are
+# served as-is, while the admin/proxy paths strip their prefix (rewrite /$2).
+ingress:
+  enabled: true
+  className: nginx
+  hosts:
+    - digitalhuman.miniprem
+    - localhost
+  # Large bodies for idle-video / document uploads through the adapter.
+  proxyBodySize: "512m"
+  proxyReadTimeout: "600"
+  # Upstreams the proxy paths point at (service name : port in `namespace`).
+  upstreams:
+    ragAdapter:  { service: rag-adapter,      port: 8085 }   # /rag-admin + /v1
+    hostHelper:  { service: host-helper,      port: 8086 }   # /host-admin
+    monitor:     { service: miniprem-monitor, port: 3001 }   # /monitor
+    asrProxy:    { service: digitalhuman-asr, port: 8000 }   # /api/asr (riva-ws-proxy)
+  # Toggle individual proxy routes. asr is ON: the riva-ws-proxy is deployed and the
+  # /api/asr route is required for "Test Voice Transcription" + remote-mic STT.
+  routes:
+    ragAdmin: true
+    v1: true
+    hostAdmin: true
+    monitor: true
+    asr: true

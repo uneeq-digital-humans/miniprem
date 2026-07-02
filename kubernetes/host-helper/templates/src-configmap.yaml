@@ -1,0 +1,22 @@
+{{- /*
+Bundled agent source (chart >= 0.2.0). Makes `helm install` self-contained —
+required for consumers who pull the chart from a registry (OCI) and have no
+repo checkout to create the ConfigMap from (the 0.1.0 install dead-end).
+
+files/host_helper.py is a PACKAGING COPY of the canonical
+digitalhuman-host-helper/host_helper.py — refresh it before packaging
+(scripts/package-charts.sh does this). Set bundleSource=false to manage the
+ConfigMap yourself (e.g. the appliance's kubectl-from-repo workflow).
+*/ -}}
+{{- if .Values.bundleSource }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.srcConfigMap }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: host-helper
+data:
+  host_helper.py: |
+{{ .Files.Get "files/host_helper.py" | indent 4 }}
+{{- end }}

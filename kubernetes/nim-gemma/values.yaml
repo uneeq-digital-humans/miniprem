@@ -1,0 +1,53 @@
+namespace: nim-models
+name: gemma-4-26b-a4b-it
+
+image:
+  repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# The optimized NIM profile to serve. Default = the ~25 GB (≈25890 MiB) profile
+# that fits with Riva + Renny + RAG on one Blackwell. Find alternatives with:
+#   nerdctl run --rm -e NGC_API_KEY=... <image> list-model-profiles
+model:
+  profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"
+
+# --- MTP / speculative decoding ----------------------------------------------
+# VERIFIED 2026-06-29 via `list-model-profiles`: the gemma-4-26b-a4b-it NIM ships
+# NO MTP/speculative/EAGLE profile — only standard vllm nvfp4/bf16 fallback &
+# throughput profiles. So MTP is NOT available for this model on the supported
+# NIM stack (it required vLLM-nightly + the 12B "-it-assistant" drafter, which the
+# "no custom vLLM" constraint rules out). Leave disabled. If a future NIM build
+# publishes an MTP profile, set mtp.profile to its hash and enable — the template
+# already swaps NIM_MODEL_PROFILE to it, no other change needed.
+mtp:
+  enabled: false
+  profile: ""        # MTP profile hash IF a future NIM build ships one
+
+# vLLM gpu_memory_utilization injected into /opt/nim/fallback.yaml at startup so
+# the model co-exists with Riva/Renny/RAG (0.30 ≈ 25 GB of the 96 GB card).
+gpuMemoryUtilization: "0.30"
+relaxMemConstraints: true     # NIM_RELAX_MEM_CONSTRAINTS=1
+
+auth:
+  authSecret: ngc-api-secret  # generic NGC API key (model download)
+  pullSecret: ngc-secret      # docker-registry secret for nvcr.io
+
+service:
+  port: 8000
+  type: ClusterIP
+
+resources:
+  limits:
+    nvidia.com/gpu: 1
+
+replicas: 1
+
+cache:
+  pvc:
+    create: true
+    size: 100Gi
+    storageClass: nfs-client
+    accessMode: ReadWriteOnce
+
+extraEnv: {}                  # e.g. { NIM_ENABLE_KV_CACHE_REUSE: "1" }

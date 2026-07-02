@@ -1,0 +1,38 @@
+namespace: uneeq
+image: python:3.12-slim
+kubectlVersion: "1.30.0"
+
+# The ConfigMap holding host_helper.py. Since 0.2.0 the chart BUNDLES the agent
+# source (files/host_helper.py — a packaging copy of the canonical
+# digitalhuman-host-helper/host_helper.py) and creates this ConfigMap itself, so
+# `helm install` is self-contained — including charts pulled from an OCI
+# registry with no repo checkout. Set bundleSource=false to manage the
+# ConfigMap yourself from the repo (the appliance's kubectl-from-source flow):
+#   kubectl -n <ns> create configmap host-helper-src \
+#     --from-file=host_helper.py=digitalhuman-host-helper/host_helper.py --dry-run=client -o yaml | kubectl apply -f -
+bundleSource: true
+srcConfigMap: host-helper-src
+
+# Pin to the GPU node (its nvidia-smi, X, pulse, containerd live there). Single-node: leave "".
+nodeName: ""
+gpu: true
+
+# Host paths the agent needs (GPU-proc names via hostPID; audio/display control;
+# nerdctl image pulls via the node's containerd).
+hostPaths:
+  x11: /tmp/.X11-unix
+  xauth: /run/user/1000/gdm
+  pulse: /run/user/1000/pulse
+  containerdSock: /run/containerd/containerd.sock
+  nerdctl: /usr/local/bin/nerdctl
+ngcDockerSecret: ngc-registry-credentials   # mounted at /root/.docker for nerdctl nvcr.io auth
+
+env:
+  display: ":1"
+  xauthority: /host-xauth/Xauthority
+  pulseServer: "unix:/run/user/1000/pulse/native"
+
+ingress:
+  enabled: true
+  className: nginx
+  hosts: [digitalhuman.miniprem, localhost]

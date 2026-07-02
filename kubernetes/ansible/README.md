@@ -51,7 +51,7 @@ ansible/
 2. **SSH access** to target servers with key-based authentication
 
 3. **Target server requirements**:
-   - Ubuntu 22.04+ or RHEL 8.7+
+   - Ubuntu 22.04+ (validated). RHEL 8.7+: CNS playbooks run, but the digital-human appliance (renny, kiosk OS controls) is NOT validated on RHEL
    - NVIDIA GPU(s)
    - Internet connectivity
 

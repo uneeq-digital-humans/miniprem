@@ -1,0 +1,11 @@
+namespace: uneeq
+image: arizephoenix/phoenix:latest
+# hostNetwork so the appliance's localhost:6006 reaches the UI (matches Docker +
+# the kiosk "Phoenix Traces" link). Recreate strategy: only one :6006 binder.
+hostNetwork: true
+storage:
+  size: 10Gi
+  storageClass: local-path
+resources:
+  requests: { cpu: "100m", memory: "256Mi" }
+  limits:   { cpu: "1000m", memory: "1Gi" }

@@ -7,6 +7,11 @@ metadata:
     app: digitalhuman-asr
 spec:
   replicas: {{ .Values.replicas }}
+  # GPU-heavy: Recreate (not RollingUpdate) so an update/restart NEVER holds two
+  # copies of the model in VRAM at once — double-occupancy during rollouts is what
+  # starves the other services on a shared single GPU.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: digitalhuman-asr
@@ -15,14 +20,18 @@ spec:
       labels:
         app: digitalhuman-asr
     spec:
+      {{- if .Values.nemotron.enabled }}
       # GPU Operator installs the "nvidia" RuntimeClass; required for
       # libcuda.so.1 to be present in the container. Without this, NIMs
       # that use pycuda (Nemotron ASR's riva-deploy) fail to import.
+      # Only needed when the local GPU NIM runs (nemotron.enabled).
       runtimeClassName: nvidia
+      {{- end }}
       imagePullSecrets:
       {{- range .Values.imagePullSecrets }}
       - name: {{ .name }}
       {{- end }}
+      {{- if .Values.nemotron.enabled }}
       nodeSelector:
         {{- range $k, $v := .Values.nodeSelector }}
         {{ $k }}: {{ $v }}
@@ -42,10 +51,21 @@ spec:
       - name: nim-model-cache
         persistentVolumeClaim:
           claimName: nim-model-cache
+      # Persists the built TensorRT engine (/data/models). Without this, every pod
+      # restart rebuilds the engine from scratch (30-60 min); with it, restarts are
+      # instant after the first build.
+      - name: asr-model-data
+        persistentVolumeClaim:
+          claimName: {{ .Values.nemotron.engineCache.claimName | default "asr-model-data" }}
+      {{- end }}
       containers:
+      {{- if .Values.nemotron.enabled }}
       # ── Container 1: Nemotron ASR NIM ────────────────────────────────────
       - name: nemotron-asr
         image: {{ .Values.nemotron.image }}
+        # Appliance rule: boot from the LOCAL image; never require the registry to
+        # restart (K8s defaults :latest tags to pull=Always without this).
+        imagePullPolicy: IfNotPresent
         ports:
         - name: http
           containerPort: {{ .Values.nemotron.httpPort }}
@@ -77,9 +97,12 @@ spec:
         # Excludes rc/ud/rdmacm/ib/dc which require InfiniBand/RoCE hardware.
         # On a real InfiniBand fabric add ",rc,ud" via values.yaml override.
         - name: UCX_TLS
-          value: {{ .Values.nemotron.ucxTls | default "cuda_ipc,sm,tcp" | quote }}
+          value: {{ .Values.nemotron.ucxTls | default "tcp" | quote }}
         - name: UCX_LOG_LEVEL
-          value: {{ .Values.nemotron.ucxLogLevel | default "warn" | quote }}
+          value: {{ .Values.nemotron.ucxLogLevel | default "error" | quote }}
+        # Stops the libucs.so segfault-in-error-handler from killing tritonserver.
+        - name: UCX_HANDLE_ERRORS
+          value: {{ .Values.nemotron.ucxHandleErrors | default "none" | quote }}
         resources:
           requests:
             cpu: {{ .Values.nemotron.resources.requests.cpu }}
@@ -94,14 +117,25 @@ spec:
           mountPath: /dev/shm
         - name: nim-model-cache
           mountPath: /opt/nim/.cache
+        - name: asr-model-data
+          mountPath: /data
+        # The first-start TensorRT engine build can take 30-60 min on a contended
+        # GPU. The startupProbe gates liveness/readiness until the build completes
+        # so it is NEVER killed mid-build; once startup succeeds, liveness takes
+        # over. failureThreshold * periodSeconds = max build window (default 2h).
+        startupProbe:
+          httpGet:
+            path: /v1/health/ready
+            port: {{ .Values.nemotron.httpPort }}
+          periodSeconds: {{ .Values.nemotron.startupProbe.periodSeconds | default 30 }}
+          failureThreshold: {{ .Values.nemotron.startupProbe.failureThreshold | default 240 }}
         livenessProbe:
           httpGet:
             path: /v1/health/ready
             port: {{ .Values.nemotron.httpPort }}
-          initialDelaySeconds: 600
           periodSeconds: 30
           timeoutSeconds: 10
-          failureThreshold: 3
+          failureThreshold: 6
         readinessProbe:
           httpGet:
             path: /v1/health/ready
@@ -110,16 +144,21 @@ spec:
           periodSeconds: 15
           timeoutSeconds: 5
           failureThreshold: 3
-      # ── Container 2: RIVA WebSocket proxy (sidecar) ───────────────────────
+      {{- end }}
+      # ── Container 2: RIVA WebSocket proxy (browser-facing WS bridge) ──────
+      # mode=local    → sidecar to the NIM above, talks to it on localhost.
+      # mode=external → runs alone, talks to a SEPARATE Riva cluster via
+      #                 proxy.rivaGrpcUrl (set nemotron.enabled=false).
       - name: riva-ws-proxy
         image: {{ .Values.proxy.image }}
+        imagePullPolicy: IfNotPresent
         ports:
         - name: ws
           containerPort: {{ .Values.proxy.port }}
         env:
-        # Sidecar shares pod network — NIM gRPC is on localhost
+        # Local NIM → localhost (shared pod network). External Riva → proxy.rivaGrpcUrl.
         - name: RIVA_GRPC_URL
-          value: "localhost:{{ .Values.nemotron.grpcPort }}"
+          value: {{ .Values.proxy.rivaGrpcUrl | default (printf "localhost:%v" .Values.nemotron.grpcPort) | quote }}
         - name: PORT
           value: {{ .Values.proxy.port | quote }}
         - name: PROTO_DIR
