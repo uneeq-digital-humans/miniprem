@@ -3,7 +3,7 @@
 image:
   # Published kiosk-stack build (dell-isg-containers project, robot A).
   repository: cr.uneeq.io/dell-isg-containers/rag-adapter
-  tag: "v14"
+  tag: "0.549-6844d"
   pullPolicy: IfNotPresent
 
 imagePullSecrets:

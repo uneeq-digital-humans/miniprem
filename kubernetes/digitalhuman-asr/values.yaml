@@ -7,7 +7,7 @@ nemotron:
   #                               no node selector, no model PVCs are created. This is
   #                               how the kiosk consumes Riva STT hosted elsewhere.
   enabled: true
-  image: "nvcr.io/nim/nvidia/nemotron-asr-streaming:latest"
+  image: "nvcr.io/nim/nvidia/nemotron-asr-streaming:1.2.0"
   httpPort: 9000
   grpcPort: 50051
   resources:
@@ -49,7 +49,7 @@ nemotron:
   ucxHandleErrors: "none"
 
 proxy:
-  image: "cr.uneeq.io/dell-isg-containers/riva-ws-proxy:latest"
+  image: "cr.uneeq.io/dell-isg-containers/riva-ws-proxy:0.549-6844d"
   # Riva gRPC endpoint the browser-facing WS proxy dials.
   #   ""  → local sidecar: "localhost:<nemotron.grpcPort>" (LOCAL mode default).
   #   set → a SEPARATE Riva cluster, e.g. "riva.datacenter.example:50051"

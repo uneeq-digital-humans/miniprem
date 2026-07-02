@@ -1,5 +1,5 @@
 namespace: nim-models
-image: nvcr.io/nim/nvidia/magpie-tts-multilingual:latest
+image: nvcr.io/nim/nvidia/magpie-tts-multilingual:1.8.0
 imagePullSecret: ngc-registry-credentials
 ngcSecret: nim-credentials            # secret holding NGC_API_KEY
 # batch_size=8 ≈ 11 GB; raise to 32 (~31 GB) if the GPU has room.
