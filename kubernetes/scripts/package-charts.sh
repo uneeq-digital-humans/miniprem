@@ -24,6 +24,7 @@ CHARTS=(
   digitalhuman-websocket-api
   remote-mic-relay
   host-helper
+  kiosk-ui
   nim-gemma
   riva-tts
   phoenix

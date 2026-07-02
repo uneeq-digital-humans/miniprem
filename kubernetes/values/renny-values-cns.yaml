@@ -11,11 +11,14 @@
 # UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
 # from DHOP based on persona configuration.
 
-# Rolling UneeQ enterprise build. imagePullPolicy: Always ensures each rollout
-# re-pulls the newest enterprise-latest. To freeze, pin e.g. 0.1184-2f3b7 +
-# set imagePullPolicy: IfNotPresent.
-image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
-imagePullPolicy: Always
+# PINNED release build + IfNotPresent — the CNS overlay targets the field
+# appliance, so the APPLIANCE RULE from renny/values.yaml applies: a kiosk
+# restart must come up from its LOCAL image and never depend on registry
+# reachability (with Always, a reboot after kubelet image-GC forced a 12 GB
+# re-download — or bricked the kiosk offline). To track the rolling build on a
+# CONNECTED dev box, override with enterprise-latest + imagePullPolicy: Always.
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1294-2a117"
+imagePullPolicy: IfNotPresent
 
 # Image pull secret for Harbor registry authentication
 imagePullSecrets:
