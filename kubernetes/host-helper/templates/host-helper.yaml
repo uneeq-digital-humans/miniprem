@@ -6,9 +6,11 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata: { name: host-helper }
 rules:
-  - { apiGroups: [""], resources: ["pods","pods/log"], verbs: ["get","list"] }
-  - { apiGroups: [""], resources: ["services"], verbs: ["get","list"] }            # rag-frontend NodePort
-  - { apiGroups: ["apps"], resources: ["deployments"], verbs: ["get","list","patch","update"] }
+  - { apiGroups: [""], resources: ["pods","pods/log"], verbs: ["get","list","delete"] }   # delete: /llm/stop-all force-deletes NIM pods
+  - { apiGroups: [""], resources: ["nodes"], verbs: ["get","list"] }                       # /node-ip -> remote-mic QR URL
+  - { apiGroups: [""], resources: ["services"], verbs: ["get","list","create","update","patch","delete"] }  # rag-frontend NodePort + /mic-proxy/install NodePort
+  - { apiGroups: [""], resources: ["configmaps"], verbs: ["get","list","create","update","patch","delete"] }  # /mic-proxy/install (mic-relay-src)
+  - { apiGroups: ["apps"], resources: ["deployments"], verbs: ["get","list","create","update","patch","delete"] }  # RAG toggle + /mic-proxy/install
   - { apiGroups: ["apps"], resources: ["deployments/scale"], verbs: ["get","patch","update"] }  # RAG enable/disable
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -16,6 +18,23 @@ kind: ClusterRoleBinding
 metadata: { name: host-helper }
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: host-helper }
 subjects: [ { kind: ServiceAccount, name: host-helper, namespace: {{ .Values.namespace }} } ]
+{{- if .Values.nim.enabled }}
+---
+# In-kiosk LLM switching: host_helper.py provisions/patches a NIMCache + NIMService
+# in the NIM namespace ("Set as active LLM" / reload / stop). Without this Role the
+# kiosk returns "model switching not enabled" (403). Mirrors digitalhuman-host-helper/k8s-deploy.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: host-helper-nim, namespace: {{ .Values.nim.namespace }} }
+rules:
+  - { apiGroups: ["apps.nvidia.com"], resources: ["nimcaches","nimservices"], verbs: ["get","list","create","update","patch","delete"] }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: host-helper-nim, namespace: {{ .Values.nim.namespace }} }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: host-helper-nim }
+subjects: [ { kind: ServiceAccount, name: host-helper, namespace: {{ .Values.namespace }} } ]
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment

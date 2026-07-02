@@ -17,7 +17,7 @@ metadata:
 spec:
   source:
     ngc:
-      modelPuller: nvcr.io/nim/meta/llama-3.1-8b-instruct:latest
+      modelPuller: nvcr.io/nim/google/gemma-4-26b-a4b-it:1.7.0-variant
       pullSecret: ngc-registry-credentials
       authSecret: nim-credentials
       # No precision filter: let the operator auto-select the GPU-optimal profile.
@@ -38,8 +38,8 @@ metadata:
   namespace: nim-models
 spec:
   image:
-    repository: nvcr.io/nim/meta/llama-3.1-8b-instruct
-    tag: latest
+    repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
+    tag: 1.7.0-variant
     pullPolicy: IfNotPresent
     pullSecrets:
       - ngc-registry-credentials

@@ -56,7 +56,8 @@ spec:
     metadata: { labels: { app: host-helper } }
     spec:
       serviceAccountName: host-helper
-      nodeName: dell-test-0udaxtn8
+      # Single-node appliance: scheduler lands this on the only node (GPU + hostPath
+      # sockets). Multi-node: pin with a nodeSelector/nodeName — never a fixed host name.
       hostPID: true   # so nvidia-smi --query-compute-apps resolves host process NAMES
       containers:
         - name: host-helper
