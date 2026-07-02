@@ -17,6 +17,13 @@ srcConfigMap: host-helper-src
 nodeName: ""
 gpu: true
 
+# In-kiosk LLM switching (host-helper-nim Role/RoleBinding). Grants the SA rights to
+# manage NIMCache/NIMService in the NIM namespace so "Set as active LLM" works. Set
+# enabled=false on boxes with no NIM operator (e.g. vLLM-only) to skip the Role.
+nim:
+  enabled: true
+  namespace: nim-models
+
 # Host paths the agent needs (GPU-proc names via hostPID; audio/display control;
 # nerdctl image pulls via the node's containerd).
 hostPaths:

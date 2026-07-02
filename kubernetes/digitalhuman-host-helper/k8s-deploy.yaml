@@ -90,8 +90,10 @@ spec:
       serviceAccountName: host-helper
       imagePullSecrets:
         - name: harbor-credentials
-      # Pin to the GPU node (single-node appliance) so the hostPath sockets resolve.
-      nodeName: dell-test-0udaxtn8
+      # Single-node appliance: the scheduler places this on the only node, where the
+      # hostPath sockets (X11/pulse/containerd) and the GPU live. For a MULTI-node
+      # box, pin it to the GPU/console node with a nodeSelector or an explicit
+      # `nodeName: <node>` — do NOT hardcode a specific host's name here.
       containers:
         - name: host-helper
           image: cr.uneeq.io/dell-isg-containers/host-helper:latest

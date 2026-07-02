@@ -160,9 +160,15 @@ stage_nim() {
   if [ "$GEMMA_BACKEND" = "nim" ]; then
     log "Deploying LLM via NIM operator (image: $NIM_LLM_IMAGE)"
     # Substitute the seed-chosen NIM image so any NVIDIA NIM model can be used.
-    sed -e "s#nvcr.io/nim/google/gemma-4-31b-it:latest#${NIM_LLM_IMAGE}#g" \
-        -e "s#repository: nvcr.io/nim/google/gemma-4-31b-it#repository: ${NIM_LLM_IMAGE%:*}#" \
-        -e "s#tag: latest#tag: ${NIM_LLM_IMAGE##*:}#" \
+    # Anchor on the YAML keys (modelPuller/repository/tag) rather than a literal
+    # image value: the manifest's placeholder image can change without silently
+    # breaking this substitution (the old literal no longer matched, so the seed
+    # image was ignored and only the bare `tag:` got rewritten onto the wrong repo).
+    local _repo="${NIM_LLM_IMAGE%:*}" _tag="${NIM_LLM_IMAGE##*:}"
+    if [ "$_repo" = "$NIM_LLM_IMAGE" ] || [ -z "$_tag" ]; then _repo="$NIM_LLM_IMAGE"; _tag="latest"; fi
+    sed -e "s#^\([[:space:]]*\)modelPuller: .*#\1modelPuller: ${_repo}:${_tag}#" \
+        -e "s#^\([[:space:]]*\)repository: .*#\1repository: ${_repo}#" \
+        -e "s#^\([[:space:]]*\)tag: .*#\1tag: ${_tag}#" \
         "$K8S_DIR/manifests/nim-gemma.yaml" | $KUBECTL apply -n "$NIM_NAMESPACE" -f -
   else
     log "Deploying Gemma via vLLM (model=$GEMMA_MODEL gpu-util=$VLLM_GPU_UTIL max-len=$VLLM_MAX_LEN)"

@@ -1,5 +1,14 @@
 namespace: uneeq
 
+# --- SPA workload toggle -----------------------------------------------------
+# OFF by default: kiosk-ui is the front-door router (ingresses only), and the SPA
+# Deployment/Service `digitalhuman-interface` are owned by the digitalhuman-interface
+# chart (installed by deploy-allinone.sh). Enabling both makes two releases claim the
+# same resources and Helm rejects the second ("invalid ownership metadata"). Set true
+# ONLY when running kiosk-ui standalone without the digitalhuman-interface chart.
+spa:
+  enabled: false
+
 # --- Kiosk UI image (nginx that serves the built Dell SPA) -------------------
 # Production: the built kiosk image from Harbor. Until the dell-isg-containers
 # Harbor grant lands, the box runs the locally-built dist via deploy-verify-kiosk.sh
