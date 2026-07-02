@@ -258,7 +258,8 @@ async def _handle(body: dict):
 
     # ---- Blueprint path: proxy to a full NVIDIA RAG server --------------------
     payload = build_rag_payload(
-        question, remembered, inline_history, streaming, override, system_prompt
+        question, remembered, inline_history, streaming, override, system_prompt,
+        use_kb_default=_effective_use_kb(),
     )
     log.info(
         "prompt session=%s stream=%s kb=%s coll=%s q=%r",
@@ -967,18 +968,41 @@ async def verify_settings_password(body: dict):
             stored = None
     ok = (_pw_hash(pw) == stored) if stored else (pw == _PW_DEFAULT)
     if not ok:
-        _time.sleep(0.4)
+        # Throttle guesses WITHOUT blocking the event loop: time.sleep() here
+        # froze every in-flight SSE stream/health probe for 0.4s per bad attempt.
+        await asyncio.sleep(0.4)
         raise HTTPException(401, "invalid password")
     return {"ok": True, "isDefault": stored is None}
 
 
 @app.post("/admin/settings-password")
-async def set_settings_password(body: dict):
-    """Set the kiosk Settings password (called from Settings, already unlocked)."""
+async def set_settings_password(
+    body: dict, authorization: str | None = Header(default=None)
+):
+    """Set the kiosk Settings password (called from Settings, already unlocked).
+
+    Gated by _check_admin like every other /admin mutation: when ADMIN_API_KEY is
+    set, a LAN client without the bearer must not be able to overwrite the
+    password through the catch-all ingress and lock the operator out. If the
+    caller provides currentPassword we verify it too (defense in depth; the
+    kiosk UI may omit it, so absence is not an error)."""
     import os as _os, json as _json
+    _check_admin(authorization)
     pw = (body or {}).get("password", "")
     if len(pw) < 4:
         raise HTTPException(400, "password must be at least 4 characters")
+    current = (body or {}).get("currentPassword")
+    if current is not None:
+        stored = None
+        if _os.path.exists(_PW_FILE):
+            try:
+                stored = _json.load(open(_PW_FILE)).get("hash")
+            except Exception:
+                stored = None
+        current_ok = (_pw_hash(current) == stored) if stored else (current == _PW_DEFAULT)
+        if not current_ok:
+            await asyncio.sleep(0.4)
+            raise HTTPException(401, "current password incorrect")
     _os.makedirs("/data", exist_ok=True)
     with open(_PW_FILE, "w") as f:
         _json.dump({"hash": _pw_hash(pw)}, f)

@@ -58,11 +58,17 @@ def build_rag_payload(
     streaming: bool,
     override: Dict[str, Any],
     system_prompt: str | None = None,
+    use_kb_default: bool | None = None,
 ) -> Dict[str, Any]:
     """Assemble the OpenAI-style payload for the NVIDIA RAG server.
 
     `system_prompt` is the effective persona prompt (a kiosk-edited override if
     present, else the ConfigMap default). Falls back to the file-backed prompt.
+
+    `use_kb_default` is the EFFECTIVE knowledge-base toggle (the kiosk's persisted
+    /admin/use-kb override when set, else the env default). The caller supplies it
+    so the runtime switch drives /prompt traffic too; falling back to the static
+    env setting here would silently ignore the kiosk toggle for voice turns.
     """
     messages: List[Message] = [
         {"role": "system", "content": system_prompt or prompt_store.text}
@@ -81,7 +87,9 @@ def build_rag_payload(
         "stream": streaming,
         # NVIDIA RAG extensions
         "use_knowledge_base": override.get(
-            "useKnowledgeBase", settings.use_knowledge_base
+            "useKnowledgeBase",
+            use_kb_default if use_kb_default is not None
+            else settings.use_knowledge_base,
         ),
         "collection_name": override.get(
             "collectionName", settings.collection_name
