@@ -5,9 +5,8 @@ import json
 import logging
 from typing import Any, AsyncIterator, Dict, List
 
-import httpx
-
 from .config import settings
+from .http_client import shared_client
 
 log = logging.getLogger("rag-adapter.llm")
 
@@ -30,32 +29,31 @@ def _body(messages: List[Message], stream: bool) -> Dict[str, Any]:
 
 
 async def generate(messages: List[Message]) -> str:
-    async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-        resp = await client.post(_url(), json=_body(messages, False))
-        resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"] or ""
+    resp = await shared_client().post(_url(), json=_body(messages, False))
+    resp.raise_for_status()
+    return resp.json()["choices"][0]["message"]["content"] or ""
 
 
 async def stream(messages: List[Message]) -> AsyncIterator[str]:
     """Yield content token deltas from the local LLM."""
-    async with httpx.AsyncClient(timeout=settings.request_timeout_s) as client:
-        async with client.stream("POST", _url(), json=_body(messages, True)) as resp:
-            resp.raise_for_status()
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                line = line.strip()
-                if line.startswith("data:"):
-                    line = line[len("data:"):].strip()
-                if not line or line == "[DONE]":
-                    if line == "[DONE]":
-                        return
-                    continue
-                try:
-                    chunk = json.loads(line)
-                    delta = (chunk.get("choices") or [{}])[0].get("delta", {})
-                    tok = delta.get("content")
-                    if tok:
-                        yield tok
-                except json.JSONDecodeError:
-                    continue
+    client = shared_client()
+    async with client.stream("POST", _url(), json=_body(messages, True)) as resp:
+        resp.raise_for_status()
+        async for line in resp.aiter_lines():
+            if not line:
+                continue
+            line = line.strip()
+            if line.startswith("data:"):
+                line = line[len("data:"):].strip()
+            if not line or line == "[DONE]":
+                if line == "[DONE]":
+                    return
+                continue
+            try:
+                chunk = json.loads(line)
+                delta = (chunk.get("choices") or [{}])[0].get("delta", {})
+                tok = delta.get("content")
+                if tok:
+                    yield tok
+            except json.JSONDecodeError:
+                continue
