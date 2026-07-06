@@ -1,5 +1,13 @@
 nemotron:
-  image: "nvcr.io/nim/nvidia/nemotron-asr-streaming:latest"
+  # STT mode toggle:
+  #   enabled: true  (LOCAL)    → run the GPU Nemotron ASR NIM in-pod; the proxy
+  #                               sidecar talks to it on localhost. (default)
+  #   enabled: false (EXTERNAL) → deploy ONLY the WebSocket proxy and point it at a
+  #                               SEPARATE Riva cluster via proxy.rivaGrpcUrl. No GPU,
+  #                               no node selector, no model PVCs are created. This is
+  #                               how the kiosk consumes Riva STT hosted elsewhere.
+  enabled: true
+  image: "nvcr.io/nim/nvidia/nemotron-asr-streaming:1.2.0"
   httpPort: 9000
   grpcPort: 50051
   resources:
@@ -13,16 +21,44 @@ nemotron:
       nvidia.com/gpu: 1
   shmSize: "8Gi"
   modelCacheSize: "50Gi"
-  # UCX transport whitelist for the embedded HPC-X stack. Default works on
-  # single-GPU, multi-GPU same-host (cuda_ipc), and multi-host TCP fabrics.
-  # On real InfiniBand: override to e.g. "cuda_ipc,sm,tcp,rc,ud".
+  # Persistent store for the built TensorRT engine (/data). The first-start build
+  # takes 30-60 min on a contended GPU; persisting it makes every later restart
+  # instant instead of rebuilding. create:false to use a pre-existing PVC.
+  engineCache:
+    create: true
+    claimName: "asr-model-data"
+    size: "30Gi"
+    storageClassName: ""   # falls back to nemotron.storageClassName / local-path
+  # The startupProbe gates liveness until the first TensorRT build finishes, so the
+  # build is never killed mid-flight. failureThreshold * periodSeconds = max build
+  # window (240 * 30s = 2h).
+  startupProbe:
+    periodSeconds: 30
+    failureThreshold: 240
+  # UCX transport whitelist for the embedded HPC-X stack. On the Dell all-in-one
+  # (no RDMA/IB hardware) the cuda_ipc/sm probes can SEGFAULT inside libucs.so and
+  # crash tritonserver at serve time, so we default to tcp-only. On a real
+  # InfiniBand fabric override to e.g. "cuda_ipc,sm,tcp,rc,ud".
   # See docs/troubleshooting.md "Riva/Triton segfault inside libucs.so".
-  ucxTls: "cuda_ipc,sm,tcp"
-  ucxLogLevel: "warn"
+  ucxTls: "tcp"
+  ucxLogLevel: "error"
+  # Disable UCX's own crash/signal handler — the segfault was occurring INSIDE
+  # ucs_handle_error (UCX's backtrace printer) while probing transports. "none"
+  # stops UCX from installing that handler so a transport probe can't take down
+  # the process.
+  ucxHandleErrors: "none"
 
 proxy:
-  image: "cr.uneeq.io/dell-isg-containers/riva-ws-proxy:latest"
-  port: 8000
+  image: "cr.uneeq.io/dell-isg-containers/riva-ws-proxy:0.549-6844d"
+  # Riva gRPC endpoint the browser-facing WS proxy dials.
+  #   ""  → local sidecar: "localhost:<nemotron.grpcPort>" (LOCAL mode default).
+  #   set → a SEPARATE Riva cluster, e.g. "riva.datacenter.example:50051"
+  #         (use with nemotron.enabled=false for EXTERNAL STT).
+  rivaGrpcUrl: ""
+  # MUST NOT be 8000: the embedded Triton in nemotron-asr binds 8000 in the shared
+  # pod network, so a proxy on 8000 causes "Socket 0.0.0.0:8000 already in use" and
+  # tritonserver exits. The service still exposes service.port (8000) → targetPort 8090.
+  port: 8090
   resources:
     requests:
       cpu: "200m"

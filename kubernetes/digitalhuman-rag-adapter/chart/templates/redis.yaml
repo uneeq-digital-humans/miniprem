@@ -1,0 +1,44 @@
+{{- if and .Values.redis.enabled (not .Values.redis.url) }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    app: digitalhuman-rag-adapter-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: digitalhuman-rag-adapter-redis
+  template:
+    metadata:
+      labels:
+        app: digitalhuman-rag-adapter-redis
+    spec:
+      containers:
+        - name: redis
+          image: {{ .Values.redis.image | quote }}
+          args: ["--save", "", "--appendonly", "no"]  # ephemeral session cache
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-redis
+  labels:
+    app: digitalhuman-rag-adapter-redis
+spec:
+  selector:
+    app: digitalhuman-rag-adapter-redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+{{- end }}

@@ -1,0 +1,264 @@
+# UneeQ + NVIDIA all-in-one — single-box Docker Compose appliance.
+#
+# Everything runs on ONE box; the kiosk's Chrome runs locally too, so every
+# service is reachable at localhost on a fixed port (zero endpoint config, and
+# localhost is a Chrome "secure context" so streaming works over plain http).
+#
+# Profiles:
+#   (default)         renny + gemma + riva-tts + riva-stt + kiosk
+#                     -> conversation works in NIM-direct mode (LLM + buffer
+#                        memory + gestures), no document retrieval.
+#   --profile rag     adds the NVIDIA RAG blueprint (rag-server + nv-ingest +
+#                        milvus + elasticsearch + embed + rerank) for grounded
+#                        answers over uploaded documents.
+#
+# Secrets/keys come from .env (copy .env.example). Bring up with ./up.sh.
+#
+# Fixed localhost port map (what the kiosk config points at):
+#   Gemma NIM (OpenAI chat)      :8000
+#   LLM proxy + tracing (adapter):8085   <- kiosk conversation calls go HERE
+#   Phoenix (LLM trace UI/OTLP)  :6006 (+:4317 gRPC)
+#   RAG server (generate/search) :8081   [rag profile]
+#   nv-ingest                    :7670   [rag profile]
+#   Embedding NIM                :8002   [rag profile]
+#   Reranker NIM                 :8004   [rag profile]
+#   Riva TTS (http/grpc)         :9000 / :50051
+#   Riva STT ws-proxy            :8009
+#   Kiosk (nginx)                :80
+#   Renny: no published ports — dials OUT to UneeQ DHOP (cloud signalling)
+#
+# Conversation tracing: the kiosk calls the LLM via the adapter (:8085), which
+# proxies to the model (adapter LLM_URL) and exports OpenInference spans to Phoenix.
+# Open Phoenix at http://localhost:6006 -> project "kiosk-conversations".
+
+x-gpu: &gpu
+  deploy:
+    resources:
+      reservations:
+        devices:
+          - driver: nvidia
+            count: all
+            capabilities: [gpu]
+
+networks:
+  uneeq:
+    driver: bridge
+
+services:
+  # ----------------------------------------------------------------------- #
+  # LLM — Gemma NIM (OpenAI-compatible chat completions on :8000)
+  # ----------------------------------------------------------------------- #
+  gemma:
+    # VRAM-aware: up.sh detects the GPU and sets GEMMA_IMAGE to the right Gemma NIM.
+    # Default = gemma-2-9b-it (RECOMMENDED; pullable with a standard NGC key, fits
+    # alongside Riva STT/TTS + Renny + RAG). No public "gemma-4" NIM exists.
+    image: ${GEMMA_IMAGE:-nvcr.io/nim/google/gemma-2-9b-it:latest}
+    container_name: gemma
+    <<: *gpu
+    networks: [uneeq]
+    ports: ["8000:8000"]
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY:?set in .env}
+      - NIM_MODEL_PROFILE=${GEMMA_NIM_PROFILE:-}
+      - NIM_RELAX_MEM_CONSTRAINTS=1
+    shm_size: "8gb"
+    volumes:
+      - nim-cache:/opt/nim/.cache
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "curl -sf http://localhost:8000/v1/health/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 40
+      start_period: 600s   # cold model load
+
+  # ----------------------------------------------------------------------- #
+  # Riva TTS — magpie multilingual (Renny can also use ElevenLabs/Azure)
+  # ----------------------------------------------------------------------- #
+  riva-tts:
+    image: nvcr.io/nim/nvidia/magpie-tts-multilingual:latest
+    container_name: riva-tts
+    <<: *gpu
+    networks: [uneeq]
+    ports: ["9000:9000", "50051:50051"]
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY:?set in .env}
+    shm_size: "4gb"
+    volumes:
+      - nim-cache:/opt/nim/.cache
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------- #
+  # Riva STT — nemotron streaming ASR + browser WebSocket proxy (:8009)
+  # The kiosk's RivaStreamService connects to ws://localhost:8009/api/asr/v1/stream
+  # ----------------------------------------------------------------------- #
+  riva-asr:
+    image: nvcr.io/nim/nvidia/nemotron-asr-streaming:latest
+    container_name: riva-asr
+    <<: *gpu
+    networks: [uneeq]
+    environment:
+      - NGC_API_KEY=${NGC_API_KEY:?set in .env}
+    shm_size: "4gb"
+    volumes:
+      - nim-cache:/opt/nim/.cache
+    restart: unless-stopped
+
+  riva-ws-proxy:
+    image: cr.uneeq.io/dell-isg-containers/riva-ws-proxy:latest
+    container_name: riva-ws-proxy
+    networks: [uneeq]
+    ports: ["8009:8000"]
+    environment:
+      - RIVA_GRPC_URL=riva-asr:50051
+    depends_on: [riva-asr]
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------- #
+  # Renny — UneeQ digital-human renderer. Dials OUT to DHOP (cloud), so no
+  # published ports. GPU + host IPC for Unreal pixel-streaming.
+  # ----------------------------------------------------------------------- #
+  renny:
+    image: ${RENNY_IMAGE:-cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7}
+    container_name: renny
+    <<: *gpu
+    networks: [uneeq]
+    ipc: host
+    environment:
+      - DHOP_APIKEY=${PLATFORM_KEY:?set in .env}
+      - DHOP_TENANTID=${TENANT_ID:?set in .env}
+      - DHOP_ADDRESS=${DHOP_ADDRESS:-wss://api.enterprise.uneeq.io/signalling-service/v2/ws/renderer}
+      - DHOP_PIXELSTREAMING_ADDRESS=${DHOP_PIXELSTREAMING_ADDRESS:-wss://api.enterprise.uneeq.io:443/signalling-service/v1/ws/pixelstreaming}
+      # TTS: ElevenLabs by default (gestures animate; Riva TTS has a tag-drop bug).
+      # If the persona's Admin-Portal TTS is NVIDIA Riva, Renny dials this gRPC
+      # address — without it Renny falls back to localhost:50051 (nothing in its
+      # container) → "connection refused" → SILENT DH. Points at the riva-tts svc.
+      - RIVA_SERVER_ADDR=${RIVA_SERVER_ADDR:-riva-tts:50051}
+      - ELEVEN_LABS_API_KEY=${ELEVEN_LABS_API_KEY:-}
+      - ELEVEN_LABS_MODEL_ID=${ELEVEN_LABS_MODEL_ID:-eleven_flash_v2_5}
+      - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY:-}
+      - AZURE_REGION=${AZURE_REGION:-}
+      - RENNY_TTS_USE_PROTO_API_KEY=${RENNY_TTS_USE_PROTO_API_KEY:-}
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------- #
+  # Kiosk — Dell-branded UneeQ kiosk (built from uneeq-kiosk, served by nginx)
+  # Conversation config baked in at build (localhost endpoints). Served on :80.
+  # ----------------------------------------------------------------------- #
+  kiosk:
+    # Dell-branded kiosk image, built from uneeq-kiosk (run kiosk/build-and-push.sh
+    # to bake VITE_BRAND + our conversation features into the image once).
+    image: ${KIOSK_IMAGE:-cr.uneeq.io/dell-isg-containers/digitalhuman-interface:latest}
+    container_name: kiosk
+    networks: [uneeq]
+    ports: ["80:80"]
+    # Override the SPA's runtime config.yaml with localhost endpoints + the
+    # conversation wiring (zero-config on the box). Edit kiosk/config.yaml to
+    # set the persona ID + brand specifics.
+    volumes:
+      - ./kiosk/config.yaml:/usr/share/nginx/html/config.yaml:ro
+    restart: unless-stopped
+    depends_on: [rag-adapter]
+
+  # ----------------------------------------------------------------------- #
+  # rag-adapter — instrumented LLM proxy + kiosk admin API (:8085).
+  # The kiosk's conversation calls hit /v1/chat/completions HERE (see
+  # kiosk/config.yaml conversation.nim.endpoint); the adapter proxies them to the
+  # model (LLM_URL, OpenAI-compatible: the Gemma NIM by default, or any vLLM/NIM)
+  # AND records each call as an OpenInference span to Phoenix so the conversation
+  # history is readable in the Phoenix UI. Also powers the in-kiosk Settings panel
+  # (persona prompt, documents, system metrics).
+  # ----------------------------------------------------------------------- #
+  rag-adapter:
+    build:
+      context: ../../kubernetes/digitalhuman-rag-adapter
+      dockerfile: Dockerfile
+    image: ${RAG_ADAPTER_IMAGE:-rag-adapter:local}
+    container_name: rag-adapter
+    networks: [uneeq]
+    ports: ["8085:8085"]
+    environment:
+      # The model to proxy + trace. Point at ANY OpenAI-compatible chat backend:
+      #   Gemma NIM (default)  http://gemma:8000
+      #   a local vLLM         http://<host-or-service>:<port>
+      #   another NVIDIA NIM   http://<nim>:<port>
+      - LLM_URL=${ADAPTER_LLM_URL:-http://gemma:8000}
+      - LLM_MODEL=${ADAPTER_LLM_MODEL:-google/gemma-2-9b-it}
+      - REDIS_URL=redis://redis:6379
+      # Conversation tracing -> Phoenix (OpenInference). Disable with PHOENIX_TRACING_ENABLED=false.
+      - PHOENIX_TRACING_ENABLED=true
+      - PHOENIX_OTLP_ENDPOINT=http://phoenix:6006/v1/traces
+      - PHOENIX_PROJECT=kiosk-conversations
+      # Local-RAG retrieval (only used on the /prompt path with --profile rag).
+      - RAG_MODE=local
+      - EMBED_URL=${ADAPTER_EMBED_URL:-http://localhost:8002}
+      - MILVUS_DB_PATH=/data/milvus.db
+      # Optional: lock the kiosk Settings panel (default 'digitalhuman').
+      - KIOSK_SETTINGS_PASSWORD=${KIOSK_SETTINGS_PASSWORD:-}
+    volumes:
+      - rag-adapter-data:/data
+    restart: unless-stopped
+    depends_on: [phoenix]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8085/health',timeout=5).status==200 else 1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  # ----------------------------------------------------------------------- #
+  # Redis — session memory + kiosk server-side config/password for the adapter.
+  # ----------------------------------------------------------------------- #
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    networks: [uneeq]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ----------------------------------------------------------------------- #
+  # Arize Phoenix — LLM observability/tracing UI (:6006). Receives OpenInference
+  # spans from the rag-adapter; the kiosk Settings -> Advanced links to it. OTLP
+  # collectors: HTTP on :6006 (/v1/traces) and gRPC on :4317. Traces persist in the
+  # mounted volume across restarts/recreation.
+  # ----------------------------------------------------------------------- #
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: phoenix
+    networks: [uneeq]
+    ports: ["6006:6006", "4317:4317"]
+    environment:
+      - PHOENIX_WORKING_DIR=/phoenix
+    volumes:
+      - phoenix-data:/phoenix
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:6006/',timeout=5).status==200 else 1)\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ======================================================================= #
+  # NVIDIA RAG blueprint (profile: rag) — document retrieval/grounding.
+  # Pulled in from NVIDIA's official compose so we don't reinvent it; it brings
+  # rag-server (:8081), nv-ingest (:7670), milvus, elasticsearch, embed (:8002),
+  # rerank (:8004). Clone the blueprint and set RAG_COMPOSE in .env, or replace
+  # this include with the blueprint's compose path.
+  # ======================================================================= #
+  # See README "RAG profile" — enabled via `include:` below + --profile rag.
+
+volumes:
+  nim-cache:
+  rag-adapter-data:
+  phoenix-data:
+
+# NVIDIA RAG blueprint services (validated against blueprint v2.5/2.2.x compose).
+# Uncomment `include` after cloning the blueprint; configure it to use the local
+# Gemma (http://gemma:8000/v1), embed and rerank NIMs.
+# include:
+#   - path: ${RAG_COMPOSE:-./nvidia-rag/deploy/compose/docker-compose-rag-server.yaml}

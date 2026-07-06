@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remote-mic-relay
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: remote-mic-relay
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: remote-mic-relay
+  template:
+    metadata:
+      labels:
+        app: remote-mic-relay
+      annotations:
+        # Roll the pod when server.js changes (ConfigMap content hash).
+        checksum/src: {{ .Files.Get "server.js" | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      containers:
+        - name: relay
+          image: {{ .Values.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          command: ["node", "/app/server.js"]
+          env:
+            - name: PORT
+              value: {{ .Values.port | quote }}
+          ports:
+            - containerPort: {{ .Values.port }}
+              name: ws
+          volumeMounts:
+            - name: src
+              mountPath: /app
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.port }}
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.port }}
+            periodSeconds: 30
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: src
+          configMap:
+            name: remote-mic-relay-src

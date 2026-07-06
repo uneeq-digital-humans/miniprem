@@ -1,0 +1,22 @@
+{
+  "_comment": "T2 tower test config. Import in kiosk Settings > Brain (Import config), review endpoints, Save & apply. Uses Option B: retrieve from NVIDIA RAG, generate with the Gemma-4-26B NIM. IN-CLUSTER URLs (svc.cluster.local) — only resolve when the kiosk runs as the digitalhuman-interface pod. For a laptop/browser test, replace each host with the box IP + NodePort (e.g. http://10.0.2.159:<port>/...).",
+  "provider": "rag",
+  "generation": "nim",
+  "memory": "inline",
+  "streaming": false,
+  "historyTurns": 8,
+  "systemPrompt": "You are a friendly digital human at a kiosk, rendered as a live CGI face. Speak in short, natural, spoken sentences (1-3 sentences) — never markdown or lists. Use the retrieved context to answer; if it doesn't cover the question, say so briefly. Remember names and details the user gives you during the conversation. Express yourself with UneeQ inline tags instead of emoji, e.g. greet with <uneeq:action_wavehello /> and show warmth with <uneeq:emotion_joy_normal />. Never read tags or URLs aloud.",
+  "rag": {
+    "searchEndpoint": "http://rag-server.advanced-rag.svc.cluster.local:8081/v1/search",
+    "endpoint": "http://rag-server.advanced-rag.svc.cluster.local:8081/v1/generate",
+    "collectionNames": ["multimodal_data"],
+    "useKnowledgeBase": true,
+    "enableReranker": true,
+    "enableCitations": true,
+    "vdbEndpoint": "http://rag-eck-elasticsearch-es-http:9200"
+  },
+  "nim": {
+    "endpoint": "http://gemma-4-26b-a4b-it.nim-models.svc.cluster.local:8000/v1/chat/completions",
+    "model": "google/gemma-4-26B-A4B-it"
+  }
+}

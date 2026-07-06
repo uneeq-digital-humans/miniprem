@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    app: digitalhuman-rag-adapter
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: digitalhuman-rag-adapter
+  template:
+    metadata:
+      labels:
+        app: digitalhuman-rag-adapter
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: rag-adapter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8085
+          env:
+            - name: PORT
+              value: "8085"
+            {{- if .Values.settingsPassword }}
+            # Deployment-set kiosk Settings password (replaces the factory
+            # default 'digitalhuman'). Operators can still change it later in
+            # Settings; deleting /data/settings-password.json reverts to THIS.
+            - name: KIOSK_SETTINGS_PASSWORD
+              value: {{ .Values.settingsPassword | quote }}
+            {{- end }}
+            - name: RAG_BASE_URL
+              value: {{ .Values.rag.baseUrl | quote }}
+            - name: RAG_CHAT_PATH
+              value: {{ .Values.rag.chatPath | quote }}
+            - name: RAG_MODEL
+              value: {{ .Values.rag.model | quote }}
+            - name: RAG_MODE
+              value: {{ .Values.ragMode | quote }}
+            # LLM the conversation proxy (/v1/chat/completions) forwards to + traces.
+            - name: LLM_URL
+              value: {{ .Values.llm.url | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.llm.model | quote }}
+            # Phoenix OpenInference tracing for the conversation proxy.
+            - name: PHOENIX_TRACING_ENABLED
+              value: {{ .Values.phoenix.enabled | quote }}
+            - name: PHOENIX_OTLP_ENDPOINT
+              value: {{ .Values.phoenix.otlpEndpoint | quote }}
+            - name: PHOENIX_PROJECT
+              value: {{ .Values.phoenix.project | quote }}
+            - name: DEPLOYMENT_KIND
+              value: {{ .Values.phoenix.deploymentKind | quote }}
+            - name: SITE_ALIAS
+              value: {{ .Values.phoenix.siteAlias | quote }}
+            - name: MACHINE_ID
+              value: {{ .Values.phoenix.machineId | quote }}
+            - name: RAG_API_KEY
+              value: {{ .Values.rag.apiKey | quote }}
+            - name: USE_KNOWLEDGE_BASE
+              value: {{ .Values.rag.useKnowledgeBase | quote }}
+            - name: COLLECTION_NAME
+              value: {{ .Values.rag.collectionName | quote }}
+            - name: RAG_TEMPERATURE
+              value: {{ .Values.rag.temperature | quote }}
+            - name: RAG_TOP_P
+              value: {{ .Values.rag.topP | quote }}
+            - name: RAG_MAX_TOKENS
+              value: {{ .Values.rag.maxTokens | quote }}
+            - name: RAG_TIMEOUT_S
+              value: {{ .Values.rag.timeoutSeconds | quote }}
+            - name: STREAM_FORMAT
+              value: {{ .Values.streamFormat | quote }}
+            - name: NV_INGEST_URL
+              value: {{ .Values.nvIngest.url | quote }}
+            - name: ADMIN_API_KEY
+              value: {{ .Values.admin.apiKey | quote }}
+            - name: REDIS_URL
+              value: {{ if .Values.redis.url }}{{ .Values.redis.url | quote }}{{ else if .Values.redis.enabled }}"redis://{{ .Release.Name }}-redis:6379/0"{{ else }}""{{ end }}
+            - name: SESSION_TTL_S
+              value: {{ .Values.redis.sessionTtlSeconds | quote }}
+            - name: MAX_HISTORY_TURNS
+              value: {{ .Values.redis.maxHistoryTurns | quote }}
+            - name: PROMPT_FILE
+              value: "{{ .Values.prompt.mountPath }}/{{ .Values.prompt.fileName }}"
+          volumeMounts:
+            - name: persona-prompt
+              mountPath: {{ .Values.prompt.mountPath | quote }}
+            # /data holds the server-side kiosk-config.json (persona IDs, langs,
+            # FAQs, etc.), the prompt override, and the knowledge base. Persisted
+            # so it survives pod restarts (otherwise the kiosk loses its config).
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8085
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8085
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: persona-prompt
+          configMap:
+            name: {{ .Values.prompt.configMapName }}
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

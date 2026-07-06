@@ -23,7 +23,7 @@ CNS MiniPrem is an on-premises deployment option that installs the full MiniPrem
 │                    CNS MiniPrem Stack                           │
 ├─────────────────────────────────────────────────────────────────┤
 │  Layer 1: Operating System                                      │
-│    └── Ubuntu 22.04+ or RHEL 8.7+                              │
+│    └── Ubuntu 22.04+ (validated appliance OS)                              │
 ├─────────────────────────────────────────────────────────────────┤
 │  Layer 2: Prerequisites (auto-installed)                        │
 │    ├── curl, gpg (for apt key imports)                         │
@@ -73,7 +73,7 @@ CNS MiniPrem is an on-premises deployment option that installs the full MiniPrem
 
 | Requirement | Details |
 |-------------|---------|
-| OS | Ubuntu 22.04+, Ubuntu 24.04, or RHEL 8.7+ |
+| OS | **Ubuntu 22.04+ / 24.04 (validated)** — RHEL is CNS-compatible but not validated for the appliance (renny, kiosk audio/display controls) |
 | GPU | NVIDIA datacenter GPU (A100, H100, L40, T4, A10G) |
 | RAM | 16GB minimum, 32GB+ recommended |
 | Storage | 100GB+ SSD |

@@ -1,0 +1,11 @@
+---
+- name: load k8s modules
+  ansible.builtin.shell: "modprobe overlay; modprobe br_netfilter"
+  changed_when: false
+
+- name: reload sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: false
+
+- name: restart containerd
+  ansible.builtin.service: { name: containerd, state: restarted, enabled: true }

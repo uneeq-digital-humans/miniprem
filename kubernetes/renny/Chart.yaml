@@ -5,4 +5,4 @@ type: application
 # Version is dynamically set during deployment using --set or generated from date
 # Format: YYYY.MM.DD (e.g., 2025.04.16)
 # The deploy scripts will override this with: --set version=$(date +%Y.%m.%d)
-version: "0.0.0"
+version: "0.1.1"

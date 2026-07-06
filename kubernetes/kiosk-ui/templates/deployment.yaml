@@ -1,0 +1,49 @@
+{{- if .Values.spa.enabled }}
+# SPA workload. OFF by default: this chart is the front-door router, and the SPA
+# Deployment/Service are normally owned by the `digitalhuman-interface` chart
+# (which deploy-allinone.sh installs). Enabling both would make two Helm releases
+# claim Deployment/Service `digitalhuman-interface` — Helm rejects the second with
+# "invalid ownership metadata". Set spa.enabled=true ONLY when installing kiosk-ui
+# standalone WITHOUT the digitalhuman-interface chart.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digitalhuman-interface
+  namespace: {{ .Values.namespace }}
+  labels: { app: digitalhuman-interface }
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels: { app: digitalhuman-interface }
+  template:
+    metadata:
+      labels: { app: digitalhuman-interface }
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: kiosk
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [ { containerPort: 80 } ]
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /, port: 80 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.service.name }}
+  namespace: {{ .Values.namespace }}
+  labels: { app: digitalhuman-interface }
+spec:
+  selector: { app: digitalhuman-interface }
+  ports:
+    - { port: {{ .Values.service.port }}, targetPort: 80 }
+{{- end }}

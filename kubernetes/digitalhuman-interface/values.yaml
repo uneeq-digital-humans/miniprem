@@ -1,7 +1,16 @@
-image: "cr.uneeq.io/dell-isg-containers/digitalhuman-interface:latest"
+image: "cr.uneeq.io/dell-isg-containers/digitalhuman-interface:0.11-b7693"
 
 imagePullSecrets:
   - name: harbor-credentials
+
+# Container env overrides for the image's nginx upstreams. The image defaults
+# assume sibling charts in the SAME namespace (rag-adapter, host-helper,
+# digitalhuman-asr) plus an on-box RAG blueprint. For BYO/distributed deploys:
+#   env:
+#     KIOSK_RAG_URL: "http://<your-rag-server>:8081"
+# Since image nvidia-1.0.4 a missing/unset upstream only 502s its own route —
+# it can no longer prevent the kiosk from starting.
+env: {}
 
 replicas: 1
 
@@ -12,6 +21,9 @@ service:
 ingress:
   enabled: true
   host: "digitalhuman.miniprem"
+  # Appliance: also answer on a catch-all (any host) so the LAN IP works, not just
+  # the hostname/localhost. This chart is on-box only, so true is safe here.
+  catchAll: true
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
 
@@ -69,6 +81,39 @@ config:
     provider: "riva"
     rivaUrl: "http://digitalhuman-asr.miniprem"
     language: "en-US"
+
+  # RAG adapter admin API, used by the kiosk Settings "Brain" tab to edit the
+  # persona prompt and manage documents. adminUrl is a path on the kiosk host
+  # routed to the rag-adapter by its ingress (see digitalhuman-rag-adapter).
+  rag:
+    adminUrl: "/rag-admin"
+    adminKey: ""
+
+  # Conversation ownership. On the all-in-one box the KIOSK owns the call:
+  # it POSTs the native NVIDIA RAG payload directly to the RAG server and
+  # Direct-Speaks the answer, bypassing UneeQ's persona conversation endpoint.
+  # Operators can change all of this in the kiosk Settings ▸ Brain tab.
+  #   provider: "rag" | "uneeq"
+  conversation:
+    provider: "rag"
+    generation: "nim"   # retrieve from RAG, generate with the Gemma NIM directly (full control)
+    streaming: false
+    memory: "inline"    # fold recent turns into the question so context is never lost
+    # ALL-IN-ONE DEFAULTS = localhost. The kiosk's Chrome runs ON the box, so
+    # every service is reachable at localhost on its fixed port — zero config,
+    # and localhost is a Chrome "secure context" so even streaming works over
+    # plain http. Operators normally never touch these; the Brain tab can
+    # override only for the unusual case of a remote/separate RAG cluster.
+    rag:
+      endpoint: "http://localhost:8081/v1/generate"      # RAG blueprint generate (generation=rag)
+      searchEndpoint: "http://localhost:8081/v1/search"  # RAG retriever (generation=nim)
+      collectionNames: ["multimodal_data"]
+      useKnowledgeBase: true
+      enableReranker: true
+      enableCitations: true
+    nim:
+      endpoint: "http://localhost:8000/v1/chat/completions"  # Gemma NIM (generation=nim)
+      model: "google/gemma-4-26B-A4B-it"   # turnkey Dell default — EXACT id the NIM serves (/v1/models)
 
   # When true, the mic button is rendered directly on the kiosk page (no QR
   # code / phone-as-remote flow).

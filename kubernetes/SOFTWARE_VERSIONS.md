@@ -48,7 +48,8 @@ All versions below are enforced by the deployment automation in `kubernetes/ansi
 |---|---|---|---|
 | Ubuntu LTS | 22.04 | Supported (primary) | Recommended for production |
 | Ubuntu LTS | 24.04 | Supported | Required for newer GPU SKUs |
-| RHEL | 8.7+ | Supported | Snap not available; MicroK8s path unsupported |
+| Ubuntu | 22.04 / 24.04 | **Supported (validated)** | The digital-human appliance target |
+| RHEL | 8.7+ | CNS-compatible, **not validated** | Cluster layer only — renny + kiosk OS controls (audio/display) are Ubuntu-validated; MicroK8s path unsupported |
 | Kernel | 5.15+ (Ubuntu 22.04) / 6.8+ (Ubuntu 24.04) | Required | Required for containerd cgroup v2 and current NVIDIA driver |
 
 Hardware floor: x86_64, 8 GB RAM minimum (16 GB+ recommended), 100 GB SSD, one or more NVIDIA datacenter GPUs (A10G, A100, H100, L4, L40, T4, RTX PRO 6000 / Blackwell on driver 580.82+).

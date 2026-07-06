@@ -1,0 +1,6 @@
+apiVersion: v2
+name: riva-tts
+description: NVIDIA Magpie TTS Multilingual (Riva NIM) — gRPC :50051 (Renny) + HTTP :9000.
+type: application
+version: 0.1.0
+appVersion: "magpie-tts-multilingual"

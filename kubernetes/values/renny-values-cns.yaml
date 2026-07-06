@@ -11,7 +11,14 @@
 # UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
 # from DHOP based on persona configuration.
 
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
+# PINNED release build + IfNotPresent — the CNS overlay targets the field
+# appliance, so the APPLIANCE RULE from renny/values.yaml applies: a kiosk
+# restart must come up from its LOCAL image and never depend on registry
+# reachability (with Always, a reboot after kubelet image-GC forced a 12 GB
+# re-download — or bricked the kiosk offline). To track the rolling build on a
+# CONNECTED dev box, override with enterprise-latest + imagePullPolicy: Always.
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1294-2a117"
+imagePullPolicy: IfNotPresent
 
 # Image pull secret for Harbor registry authentication
 imagePullSecrets:
@@ -86,8 +93,14 @@ renderer:
     # Veritone
     veritoneApiKey: ""
 
-    # Custom TTS proxy
+    # Custom TTS proxy (HTTP) → renderer env TTS_ADDRESS. Not used for Riva.
     proxyUrl: ""
+
+    # Riva TTS gRPC server (env RIVA_SERVER_ADDR). REQUIRED when the persona's
+    # Admin-Portal TTS is NVIDIA Riva, or the renderer falls back to localhost:50051
+    # (nothing there) → "Riva TTS synthesis failed: connection refused" → SILENT DH.
+    # In-cluster Riva TTS (magpie) service:
+    rivaServerAddr: "magpie-tts.nim-models:50051"
 
   unrealEngine:
     config: ""  # Base64 encoded configuration.dat
@@ -100,6 +113,15 @@ renderer:
 
   health:
     url: "http://0.0.0.0:8081/health"
+
+  # All-in-one kiosk: keep an idle session alive effectively all day. A walk-up
+  # Renny must stay rendering when idle (no blank screen). The kiosk app decides
+  # when a session starts/ends; with eco standby video it ends Renny itself to
+  # save GPU.
+  # NOTE: -1 is NOT honored as "infinite" by the renderer (>=0.1294 ends idle
+  # sessions at ~10s with EEndReason::UserInactivity when negative). Use a large
+  # POSITIVE value (24h) instead — positive values are honored (cloud uses 600.0).
+  inactivityTimeoutSecs: 86400.0
 
   # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
   sdlAudioDriver: "dummy"
@@ -192,7 +214,11 @@ telemetry:
   enabled: true
   backendUrl: "https://renny.services.uneeq.io"
   heartbeatInterval: 900
-  platform: "cns"  # Identifies this as on-premises deployment
+  # The telemetry backend validates platform against
+  # ^(docker|docker-ubuntu|kubernetes|eks|aks|gke)$ — "cns" is rejected (HTTP 400),
+  # so kubeadm/CNS reports as the generic "kubernetes" (it IS a vanilla k8s cluster;
+  # eks/aks/gke are the managed clouds). node_name + deploymentId still distinguish it.
+  platform: "kubernetes"
   deploymentId: ""  # Auto-generated during install
 
 # --- CNS-Specific: Local LLM via NIM (Full Stack Mode Only) ---

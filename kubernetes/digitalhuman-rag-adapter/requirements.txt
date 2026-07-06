@@ -1,0 +1,19 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+redis==5.2.1
+python-multipart==0.0.20
+markitdown[docx,pdf,pptx]==0.0.1a3
+# 2.4.x keeps the client in lockstep with the bundled Milvus Lite engine; the
+# 2.5 client sends a "function_score" search field Milvus Lite can't handle.
+pymilvus==2.4.9
+# pymilvus 2.4.x -> environs expects marshmallow 3.x (4.x dropped __version_info__).
+marshmallow<4
+setuptools<80
+psutil==6.1.1
+# LLM conversation tracing -> Arize Phoenix (OpenInference spans over OTLP/HTTP).
+# HTTP (not gRPC) exporter on purpose: the gRPC exporter needs a newer grpcio
+# than pymilvus 2.4.9 allows. HTTP uses `requests` -> no dependency conflict.
+# Lets operators read kiosk conversation history in Phoenix; see app/tracing.py.
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-http==1.29.0

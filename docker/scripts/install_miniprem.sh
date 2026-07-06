@@ -34,6 +34,7 @@ source "$PROJECT_ROOT/scripts/environment.sh"
 source "$PROJECT_ROOT/scripts/seed.sh"
 source "$PROJECT_ROOT/scripts/prompts.sh"
 source "$PROJECT_ROOT/scripts/prerequisites.sh"
+source "$PROJECT_ROOT/scripts/allinone.sh"
 
 # Enable debugging
 #set -x
@@ -2515,6 +2516,18 @@ main() {
             fi
         done
         seed_apply_to_vars
+    fi
+
+    # NVIDIA all-in-one (Kubernetes) path: a distinct deploy that bypasses the
+    # Docker-Compose stack entirely. When the seed set MINIPREM_SEED_ALLINONE=yes,
+    # hand off to the Kubernetes orchestrator (NIM + Riva + NVIDIA RAG + adapter
+    # + kiosk) and exit. Requires a kubeadm/MicroK8s cluster + NGC API key.
+    if [ "${ALLINONE:-no}" = "yes" ]; then
+        print_logo
+        info "MINIPREM_SEED_ALLINONE=yes — deploying the NVIDIA all-in-one stack (Kubernetes)."
+        maybe_deploy_allinone
+        seed_check_required   # surface NGC_API_KEY/etc. if the deploy recorded any
+        exit 0
     fi
 
     print_logo

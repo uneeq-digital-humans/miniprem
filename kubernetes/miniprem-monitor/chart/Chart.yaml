@@ -1,0 +1,9 @@
+apiVersion: v2
+name: miniprem-monitor
+description: >-
+  Cluster monitor UI for the MiniPrem / kiosk appliance — pods, nodes, GPU and
+  deployment health via the in-cluster Kubernetes API (no docker.sock). Install
+  standalone into any cluster; the kiosk Advanced tab links to it at /monitor.
+type: application
+version: 0.1.1
+appVersion: "1.0.0"

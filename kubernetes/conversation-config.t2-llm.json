@@ -1,0 +1,20 @@
+{
+  "_comment": "T2 tower (10.0.2.81) REALITY config: no RAG blueprint on this box, so generation=nim with NO searchEndpoint -> retrieval is skipped and the kiosk generates directly against the box's Gemma vLLM (gemma4-12b on :11438, --network host => LAN-reachable). Validates the conversation engine + inline buffer memory + Direct-Speak gestures against the live Renny (ElevenLabs TTS). Import in kiosk Settings > Brain > Import config, then Save & apply. STT: use Deepgram (no Riva on this box).",
+  "provider": "rag",
+  "generation": "nim",
+  "memory": "inline",
+  "streaming": false,
+  "historyTurns": 8,
+  "systemPrompt": "You are a friendly digital human at a kiosk, rendered as a live CGI face. Speak in short, natural, spoken sentences (1-2 sentences) — never markdown or lists. Remember names and details the user gives you during the conversation and use them. Express yourself with UneeQ inline tags instead of emoji, e.g. greet with <uneeq:action_wavehello /> and show warmth with <uneeq:emotion_joy_normal />. Keep it warm and concise. Never read tags or URLs aloud.",
+  "rag": {
+    "searchEndpoint": "",
+    "collectionNames": ["multimodal_data"],
+    "useKnowledgeBase": false
+  },
+  "nim": {
+    "endpoint": "http://10.0.2.81:11438/v1/chat/completions",
+    "model": "gemma4-12b",
+    "temperature": 0.3,
+    "maxTokens": 256
+  }
+}

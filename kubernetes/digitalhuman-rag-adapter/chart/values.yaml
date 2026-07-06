@@ -1,0 +1,135 @@
+# digitalhuman-rag-adapter Helm values
+
+image:
+  # Published kiosk-stack build (dell-isg-containers project, robot A).
+  repository: cr.uneeq.io/dell-isg-containers/rag-adapter
+  tag: "0.549-6844d"
+  pullPolicy: IfNotPresent
+
+imagePullSecrets:
+  - name: harbor-credentials
+
+replicaCount: 1
+
+# Kiosk Settings gate password for THIS deployment. Empty -> factory default
+# ('digitalhuman') — CHANGE IT for anything customer-facing. Operators can
+# also change it later in Settings; deleting /data/settings-password.json on
+# the adapter volume reverts to this value.
+settingsPassword: ""
+
+service:
+  type: ClusterIP
+  port: 8085
+
+# Ingress that exposes the adapter's /admin API to the kiosk browser under a
+# path on the kiosk host. The kiosk's RagAdminPanel calls "/rag-admin/admin/*";
+# this strips the /rag-admin prefix so the adapter sees "/admin/*".
+# Host should match the kiosk's ingress host (digitalhuman-interface).
+ingress:
+  enabled: true
+  host: "digitalhuman.miniprem"
+  catchAll: true   # appliance: also answer on any host (LAN IP), not just hostname/localhost
+  pathPrefix: "/rag-admin"
+  # Also expose the conversation proxy same-origin on the kiosk host so the
+  # browser's /v1/chat/completions calls reach the adapter (and get traced).
+  # Empty to disable. No rewrite: the adapter serves /v1/chat/completions directly.
+  conversationPath: "/v1"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # Idle-video + document uploads go through /rag-admin; the ingress-nginx
+    # default body limit is 1 MB, which silently 413s any real video. Lift it.
+    nginx.ingress.kubernetes.io/proxy-body-size: "512m"
+
+# --- NVIDIA RAG backend the adapter proxies to ---
+rag:
+  baseUrl: "http://rag-server.advanced-rag.svc.cluster.local:8081"
+  chatPath: "/v1/chat/completions"   # alias: /v1/generate
+  model: "google/gemma-3-27b-it"     # match the NIM deployed in manifests/nim-gemma.yaml
+  apiKey: ""                          # optional bearer for the RAG server
+  useKnowledgeBase: true
+  collectionName: "multimodal_data"
+  temperature: 0.2
+  topP: 0.7
+  maxTokens: 1024
+  timeoutSeconds: 120
+
+streamFormat: "flowise"   # "flowise" (Renny-compatible) or "openai"
+
+# --- LLM the kiosk conversation proxy (/v1/chat/completions) targets + traces ---
+# The kiosk's "Local/NVIDIA" path calls the adapter's /v1/chat/completions; the
+# adapter proxies to this OpenAI-compatible backend (the Gemma NIM by default; any
+# vLLM/NIM works) and records each call as an OpenInference span to Phoenix.
+llm:
+  url: "http://gemma.nim-models.svc.cluster.local:8000"
+  model: "google/gemma-3-27b-it"
+# ragMode: "blueprint" proxies the /prompt path to the NVIDIA RAG server; "local"
+# uses the adapter's own Milvus-Lite retrieval. The /v1/chat/completions tracing
+# proxy is independent of this.
+ragMode: "blueprint"
+
+# --- Phoenix LLM observability (OpenInference traces from the conversation proxy) ---
+phoenix:
+  enabled: true
+  otlpEndpoint: "http://phoenix.uneeq.svc.cluster.local:6006/v1/traces"
+  # The Phoenix project = the dashboard you open (the app identity). Machine-prefixed
+  # on fleets (see machineId). Span names inside it are the operation ("chat", …).
+  project: "Digital Human Kiosk"
+  # Stamped on every span so a Phoenix viewer knows which box a conversation is
+  # from (works the same on Docker and kubeadm). siteAlias is seed-driven for Dell.
+  deploymentKind: "kubeadm"
+  siteAlias: ""
+  # Machine id. EMPTY = single local install (project stays "kiosk-conversations").
+  # Set per box on fleets (seed "machine number" or node name) -> project becomes
+  # "<machineId>-kiosk-conversations" + every span carries machine.id.
+  machineId: ""
+
+# --- Document ingestion (kiosk document manager proxies here) ---
+nvIngest:
+  url: "http://nv-ingest.advanced-rag.svc.cluster.local:7670"
+
+# --- Admin endpoints (/admin/*) used by the kiosk Settings panel ---
+admin:
+  # Optional shared secret. Empty = open (fine for an on-box kiosk reachable
+  # only from the local UI). Set to require `Authorization: Bearer <key>`.
+  apiKey: ""
+
+# --- Session memory ---
+redis:
+  # Built-in lightweight Redis for short-term session memory.
+  enabled: true
+  image: "redis:7-alpine"
+  # If you point at an external Redis, set url and disable the built-in one.
+  url: ""                 # e.g. redis://my-redis:6379/0 ; empty => use built-in
+  sessionTtlSeconds: 1800
+  maxHistoryTurns: 12
+
+# --- Persona prompt (mounted from a ConfigMap, editable via kiosk settings) ---
+prompt:
+  # Set to a file's contents at install time, or leave to use the baked default.
+  # The kiosk settings panel patches this ConfigMap and the pod hot-reloads it.
+  configMapName: "rag-adapter-persona-prompt"
+  mountPath: "/etc/rag-adapter"
+  fileName: "digital-human-system-prompt.md"
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    # Idle-video upload reads the file into memory + runs ffmpeg — 256Mi OOM-killed
+    # the pod (exit 137 → 502 on upload). 2Gi gives ample headroom.
+    memory: "2Gi"
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# Persist /data (server-side kiosk-config.json, prompt override, knowledge base)
+# so it survives adapter pod restarts. On the single-node kubeadm appliance the
+# local-path provisioner satisfies this. Set enabled:false for an ephemeral pod.
+persistence:
+  enabled: true
+  size: 2Gi
+  storageClass: ""   # "" = cluster default (local-path on the kubeadm box)

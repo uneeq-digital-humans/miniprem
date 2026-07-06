@@ -1,0 +1,17 @@
+miniprem-monitor installed into namespace "{{ .Release.Namespace }}" (mode={{ .Values.mode }}).
+{{- if .Values.ingress.enabled }}
+
+Reachable at:
+{{- range .Values.ingress.hosts }}
+  http://{{ . }}{{ $.Values.ingress.path }}/
+{{- end }}
+{{- else }}
+
+In-cluster: http://miniprem-monitor.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}
+{{- end }}
+{{- if not .Values.rbac.create }}
+
+NOTE: rbac.create=false — ensure the "miniprem-monitor" ServiceAccount in this
+namespace is granted cluster read on pods/nodes/deployments/metrics, or the
+monitor will show empty/forbidden.
+{{- end }}

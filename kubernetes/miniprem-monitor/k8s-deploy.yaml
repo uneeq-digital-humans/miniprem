@@ -1,0 +1,104 @@
+# MiniPrem Monitor on KUBEADM (kube-mode, NOT docker-mode).
+#
+# On the Docker box the monitor read /var/run/docker.sock (`docker ps`). On
+# kubeadm there's no docker — so we run it with an in-cluster ServiceAccount and
+# cluster-read RBAC, and it monitors the KUBEADM cluster via the Kubernetes API
+# (the image already ships kubectl + k8s monitoring). No docker.sock mount.
+#
+# Image lives in the Harbor PUBLIC project (cr.uneeq.io/public/...), so it pulls
+# with the same harbor-credentials secret already in the namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: miniprem-monitor
+  namespace: uneeq
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: miniprem-monitor-read
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "nodes", "nodes/metrics", "services", "events", "namespaces"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "daemonsets", "statefulsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: miniprem-monitor-read
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: miniprem-monitor-read
+subjects:
+  - kind: ServiceAccount
+    name: miniprem-monitor
+    namespace: uneeq
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: miniprem-monitor
+  namespace: uneeq
+  labels: { app: miniprem-monitor }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: miniprem-monitor }
+  template:
+    metadata:
+      labels: { app: miniprem-monitor }
+    spec:
+      serviceAccountName: miniprem-monitor
+      imagePullSecrets:
+        - name: harbor-credentials
+      containers:
+        - name: monitor
+          image: cr.uneeq.io/public/miniprem-monitor:patched
+          imagePullPolicy: IfNotPresent
+          env:
+            # Tell the monitor to use the in-cluster Kubernetes API, not docker.sock.
+            - { name: MONITOR_MODE, value: "kubernetes" }
+            - { name: KUBE_IN_CLUSTER, value: "true" }
+          ports:
+            - { containerPort: 3001 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: miniprem-monitor
+  namespace: uneeq
+spec:
+  selector: { app: miniprem-monitor }
+  ports:
+    - { port: 3001, targetPort: 3001 }
+---
+# Reachable at http://<kiosk-host>:?/  → expose via the ingress at /monitor, and
+# also on localhost. The kiosk's Advanced tab links to it.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: miniprem-monitor
+  namespace: uneeq
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: digitalhuman.miniprem
+      http: &mpaths
+        paths:
+          - path: /monitor(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: miniprem-monitor
+                port: { number: 3001 }
+    - host: localhost
+      http: *mpaths

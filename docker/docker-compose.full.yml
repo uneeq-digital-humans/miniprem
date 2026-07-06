@@ -156,14 +156,13 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # === Phoenix LLM Observability (Optional) ===
-  # Arize Phoenix for LLM tracing and debugging
-  # Enable by setting PHOENIX_ENABLED=true in your environment
+  # === Phoenix LLM Observability ===
+  # Arize Phoenix for LLM tracing and debugging. Included by default in the full
+  # install; Flowise exports OpenInference traces to it (PHOENIX_ENABLED, below).
+  # View conversations at http://localhost:6006. Set PHOENIX_ENABLED=false to opt out.
   phoenix:
     image: arizephoenix/phoenix:latest
     container_name: phoenix
-    profiles:
-      - phoenix  # Only starts with --profile phoenix or COMPOSE_PROFILES=phoenix
     ports:
       - "6006:6006"    # Phoenix UI
       - "4317:4317"    # OTLP gRPC collector
@@ -220,8 +219,9 @@ services:
       - FLOWISE_FILE_SIZE_LIMIT=50mb
       # Disable queue mode temporarily
       - MODE=local
-      # Phoenix LLM observability (set PHOENIX_ENABLED=true when using --profile phoenix)
-      - PHOENIX_ENABLED=${PHOENIX_ENABLED:-false}
+      # Phoenix LLM observability — on by default; Flowise exports OpenInference
+      # LangChain traces to Phoenix (set PHOENIX_ENABLED=false to disable).
+      - PHOENIX_ENABLED=${PHOENIX_ENABLED:-true}
       - NODE_OPTIONS=--require /otel/otel-init.js --max-old-space-size=8192
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
       - OTEL_SERVICE_NAME=flowise

@@ -24,7 +24,9 @@ spec:
   resources:
     requests:
       storage: 30Gi
-  storageClassName: microk8s-hostpath
+  # local-path = the default StorageClass the kubeadm/CNS box installs. (Was
+  # microk8s-hostpath, which only exists on MicroK8s and left this PVC Pending.)
+  storageClassName: local-path
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -62,7 +64,8 @@ spec:
             - name: NGC_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: ngc-api-key
+                  # deploy-allinone.sh preflight creates 'nim-credentials' (not 'ngc-api-key').
+                  name: nim-credentials
                   key: NGC_API_KEY
             - name: NIM_CACHE_PATH
               value: /opt/nim/.cache

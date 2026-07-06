@@ -1,0 +1,66 @@
+{{- $profile := .Values.model.profile -}}
+{{- if and .Values.mtp.enabled .Values.mtp.profile -}}
+{{-   $profile = .Values.mtp.profile -}}
+{{- end -}}
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMCache
+metadata:
+  name: {{ .Values.name }}-cache
+  namespace: {{ .Values.namespace }}
+spec:
+  resources: {}
+  source:
+    ngc:
+      authSecret: {{ .Values.auth.authSecret }}
+      model:
+        profiles:
+          - {{ $profile | quote }}
+      modelPuller: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+      pullSecret: {{ .Values.auth.pullSecret }}
+  storage:
+    pvc:
+      create: {{ .Values.cache.pvc.create }}
+      size: {{ .Values.cache.pvc.size }}
+      storageClass: {{ .Values.cache.pvc.storageClass }}
+      volumeAccessMode: {{ .Values.cache.pvc.accessMode }}
+---
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMService
+metadata:
+  name: {{ .Values.name }}
+  namespace: {{ .Values.namespace }}
+spec:
+  authSecret: {{ .Values.auth.authSecret }}
+  # Lower vLLM gpu_memory_utilization so the model shares the GPU with Riva/Renny/RAG.
+  command:
+    - /bin/sh
+    - -c
+    - "sed -i 's/gpu_memory_utilization: 0.9/gpu_memory_utilization: {{ .Values.gpuMemoryUtilization }}/g' /opt/nim/fallback.yaml && /usr/local/bin/start_server"
+  env:
+    - name: NIM_MODEL_PROFILE
+      value: {{ $profile | quote }}
+    {{- if .Values.relaxMemConstraints }}
+    - name: NIM_RELAX_MEM_CONSTRAINTS
+      value: "1"
+    {{- end }}
+    {{- range $k, $v := .Values.extraEnv }}
+    - name: {{ $k }}
+      value: {{ $v | quote }}
+    {{- end }}
+  expose:
+    service:
+      port: {{ .Values.service.port }}
+      type: {{ .Values.service.type }}
+  image:
+    pullPolicy: {{ .Values.image.pullPolicy }}
+    pullSecrets:
+      - {{ .Values.auth.pullSecret }}
+    repository: {{ .Values.image.repository }}
+    tag: {{ .Values.image.tag }}
+  replicas: {{ .Values.replicas }}
+  resources:
+    limits:
+      nvidia.com/gpu: {{ index .Values.resources.limits "nvidia.com/gpu" | default 1 }}
+  storage:
+    nimCache:
+      name: {{ .Values.name }}-cache

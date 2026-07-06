@@ -1,0 +1,95 @@
+# Gemma LLM via the NVIDIA NIM Operator (preferred on Blackwell / RTX 6000:
+# NV-FP4 quantization fits ~28 GB VRAM and shares the GPU via time-slicing).
+#
+# Prerequisites (installed by the GPU/NIM stack in deploy-allinone.sh):
+#   - NIM Operator CRDs (apps.nvidia.com/v1alpha1: NIMCache, NIMService)
+#   - Secrets in namespace nim-models: ngc-registry-credentials (image pull),
+#     nim-credentials (NGC_API_KEY)
+#
+# This is the NIM-operator alternative to manifests/vllm-gemma4.yaml. Select it
+# with GEMMA_BACKEND=nim in deploy-allinone.sh. Validate the image tag/profile
+# against NGC for your GPU.
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMCache
+metadata:
+  name: gemma-cache
+  namespace: nim-models
+spec:
+  source:
+    ngc:
+      modelPuller: nvcr.io/nim/google/gemma-4-26b-a4b-it:1.7.0-variant
+      pullSecret: ngc-registry-credentials
+      authSecret: nim-credentials
+      # No precision filter: let the operator auto-select the GPU-optimal profile.
+      # On Blackwell (RTX PRO 6000) this resolves to NV-FP4 automatically. A forced
+      # `model.precision: fp4` matched no tagged profile ("no profiles selected").
+  storage:
+    pvc:
+      create: true
+      storageClass: ""        # default storage class
+      size: "50Gi"
+      volumeAccessMode: ReadWriteOnce
+  resources: {}
+---
+apiVersion: apps.nvidia.com/v1alpha1
+kind: NIMService
+metadata:
+  name: gemma
+  namespace: nim-models
+spec:
+  image:
+    repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
+    tag: 1.7.0-variant
+    pullPolicy: IfNotPresent
+    pullSecrets:
+      - ngc-registry-credentials
+  authSecret: nim-credentials
+  storage:
+    nimCache:
+      name: gemma-cache
+      profile: ""             # auto-select the cached NV-FP4 profile
+  replicas: 1
+  resources:
+    limits:
+      nvidia.com/gpu: 1
+  expose:
+    service:
+      type: ClusterIP
+      port: 8000
+  # MCP / tool-calling enabled for agentic RAG flows.
+  env:
+    - name: NIM_ENABLE_KV_CACHE_REUSE
+      value: "1"
+    # Shared (time-sliced) GPU: the NIM's default 0.85 GPU-mem-utilization check
+    # fails when Renny/Riva already hold VRAM ("free memory < desired"). Relaxing
+    # the constraint lets it start (the NV-FP4 model is ~34 GiB, fits the 97 GiB
+    # Blackwell alongside the others). This matches the proven Docker config.
+    # Official NIM mechanism to forward vLLM CLI args (the env knobs don't move
+    # gpu_memory_utilization). The NV-FP4 model is ~34 GiB; cap utilization (~43 GiB)
+    # and context length so it co-exists with Renny/Riva on the shared 97 GiB GPU.
+    # https://docs.nvidia.com/nim-operator/latest/service.html
+    - name: NIM_PASSTHROUGH_ARGS
+      value: "--gpu-memory-utilization 0.45 --max-model-len 16384"
+    # OpenTelemetry -> Phoenix: the NIM exports a span for EVERY LLM call it
+    # serves (model name, tokens, latency) regardless of caller — kiosk, the RAG
+    # blueprint, agentic flows. This is model-agnostic: Phoenix tracks whatever
+    # model this NIM serves. The rag-adapter additionally records readable
+    # prompt/response spans for the kiosk conversation path (OpenInference).
+    - name: NIM_ENABLE_OTEL
+      value: "1"
+    - name: OTEL_TRACES_EXPORTER
+      value: "otlp"
+    - name: OTEL_METRICS_EXPORTER
+      value: "otlp"
+    - name: OTEL_EXPORTER_OTLP_PROTOCOL
+      value: "grpc"
+    - name: OTEL_EXPORTER_OTLP_ENDPOINT
+      value: "http://phoenix.uneeq.svc.cluster.local:4317"
+    - name: OTEL_SERVICE_NAME
+      value: "nvidia-nim-llm"
+  nodeSelector:
+    uneeq.io/node-type: renderer
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
