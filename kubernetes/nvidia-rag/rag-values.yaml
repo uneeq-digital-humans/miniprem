@@ -1,0 +1,61 @@
+# NVIDIA RAG blueprint Helm values — on-box single-GPU MiniPrem profile.
+#
+# Points the blueprint's LLM at the locally-deployed Gemma NIM and uses the
+# blueprint's bundled embedding/rerank NIMs + Milvus + Elasticsearch.
+#
+# ⚠️  The NVIDIA RAG blueprint chart is version-sensitive. These keys follow the
+#     2.2.x blueprint shape; VALIDATE against the exact chart version pinned in
+#     deploy-allinone.sh (RAG_CHART_VERSION) on a live box, as NVIDIA renames
+#     keys between releases. Treat this as a starting profile, not gospel.
+
+# Pull secrets created by deploy-allinone.sh preflight()
+imagePullSecret:
+  create: false
+  name: ngc-registry-credentials
+
+# ----- LLM: use the local Gemma NIM rather than the blueprint's default -----
+llm:
+  # Point at the in-cluster Gemma NIM (deployed by stage_nim).
+  modelName: "google/gemma-3-27b-it"
+  serverUrl: "http://vllm-gemma4.nim-models.svc.cluster.local:8000/v1"
+  # Gemma is concise & fast; keep thinking off for low-latency conversation.
+  extraOptions:
+    enableThinking: false
+
+# ----- Embedding & rerank NIMs (deployed by the blueprint) -----
+embeddings:
+  modelName: "nvidia/llama-3.2-nv-embedqa-1b-v2"
+  deploy: true
+ranking:
+  modelName: "nvidia/llama-3.2-nv-rerankqa-1b-v2"
+  deploy: true
+
+# ----- Ingestion (nv-ingest): page elements, tables, charts -----
+ingestor:
+  enabled: true
+  extractTables: true
+  extractCharts: true
+  extractImages: true
+
+# ----- Vector store + metadata store -----
+vectorStore:
+  name: milvus
+  # Elasticsearch holds the actual chunk storage in this profile.
+elasticsearch:
+  enabled: true
+
+# ----- Default retrieval collection (the kiosk/adapter target) -----
+defaultCollectionName: "multimodal_data"
+
+# ----- GPU placement: share the single renderer GPU via time-slicing -----
+nodeSelector:
+  uneeq.io/node-type: renderer
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+# ----- Persona/retrieval prompts -----
+# The digital-human PERSONA prompt is owned by the rag-adapter (Redis-backed,
+# kiosk-editable). The blueprint's own retrieval prompt.yaml ConfigMap
+# (rag-server-prompt) can still be customized here or via kubectl if needed.

@@ -1,0 +1,23 @@
+{{- if .Values.persistence.enabled }}
+# Persists the adapter's /data — server-side kiosk-config.json (persona IDs,
+# languages, FAQs), the persona prompt override, standby videos, and the local
+# knowledge base — so they survive pod restarts/reschedules. On a single-node
+# kubeadm box this binds via the local-path provisioner.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: digitalhuman-rag-adapter
+  annotations:
+    helm.sh/resource-policy: keep   # don't delete the data on `helm uninstall`
+spec:
+  accessModes: [ "ReadWriteOnce" ]
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | default "2Gi" }}
+{{- end }}

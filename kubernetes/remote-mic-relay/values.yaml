@@ -1,0 +1,48 @@
+# remote-mic-relay — standalone values.
+#
+# This chart is self-contained: it mounts server.js (the raw RFC 6455 relay) from
+# a ConfigMap into a stock node image, so there is NO image to build or push. To
+# drop it into your own cluster:
+#   helm install remote-mic-relay ./remote-mic-relay -n <ns>
+# then set the kiosk's remote-mic websocketUrl to the Service / NodePort below.
+
+# Stock Node image — no custom build. Override only if you mirror it internally.
+image: "node:20-alpine"
+imagePullPolicy: IfNotPresent
+# imagePullSecrets: [ { name: harbor-credentials } ]   # only if `image` is private
+imagePullSecrets: []
+
+replicas: 1
+
+# Port the relay listens on inside the pod (server.js reads $PORT).
+port: 8080
+
+service:
+  # ClusterIP  → reachable in-cluster / via your own ingress.
+  # NodePort   → reachable at <nodeIP>:<nodePort> on the LAN (what the on-box
+  #              installer uses so a phone on the same Wi-Fi can connect directly).
+  type: NodePort
+  port: 8080
+  # Fixed NodePort so the kiosk can advertise a stable ws://<nodeIP>:<nodePort>.
+  # Leave empty to let Kubernetes assign one. Must be in the cluster's
+  # service-node-port-range (default 30000-32767).
+  nodePort: 30808
+
+# Optional ingress (e.g. to terminate TLS so phones on cellular can reach wss://).
+# Most LAN deployments use the NodePort above and leave this disabled.
+ingress:
+  enabled: false
+  className: nginx
+  host: ""                 # e.g. relay.example.com
+  path: /
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "64Mi"
+  limits:
+    cpu: "250m"
+    memory: "128Mi"

@@ -1,0 +1,97 @@
+{{- if .Values.ingress.enabled }}
+# Routes <kiosk-host>/rag-admin/... -> rag-adapter /... so the kiosk Settings
+# "Brain" tab can reach the adapter's /admin API from the browser. The
+# rewrite-target (/$2) strips the /rag-admin prefix.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-admin
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- range $k, $v := .Values.ingress.annotations }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ printf "%s(/|$)(.*)" .Values.ingress.pathPrefix }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  number: {{ .Values.service.port }}
+    # localhost alias so /rag-admin/... also routes when the kiosk is opened on the
+    # box itself (http://localhost = secure context = full Settings).
+    - host: localhost
+      http:
+        paths:
+          - path: {{ printf "%s(/|$)(.*)" .Values.ingress.pathPrefix }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  number: {{ .Values.service.port }}
+  {{- if .Values.ingress.catchAll }}
+    # Catch-all (no host) so /rag-admin/... works over the LAN IP too (appliance).
+    - http:
+        paths:
+          - path: {{ printf "%s(/|$)(.*)" .Values.ingress.pathPrefix }}
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  number: {{ .Values.service.port }}
+  {{- end }}
+{{- if .Values.ingress.conversationPath }}
+---
+# Same-origin conversation proxy on the kiosk host: <kiosk-host>/v1/... ->
+# rag-adapter /v1/... (no rewrite). The kiosk SPA POSTs /v1/chat/completions here
+# (config.conversation.nim.endpoint); the adapter proxies to the LLM + traces to
+# Phoenix. Separate Ingress object so the /rag-admin rewrite-target doesn't apply.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}-conversation
+  namespace: {{ .Release.Namespace }}
+spec:
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: {{ .Values.ingress.conversationPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  number: {{ .Values.service.port }}
+    # localhost alias so /v1/... also routes when opened on the box (secure context).
+    - host: localhost
+      http:
+        paths:
+          - path: {{ .Values.ingress.conversationPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  number: {{ .Values.service.port }}
+  {{- if .Values.ingress.catchAll }}
+    # Catch-all (no host) so /v1/... works over the LAN IP too (appliance).
+    - http:
+        paths:
+          - path: {{ .Values.ingress.conversationPath }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}
+                port:
+                  number: {{ .Values.service.port }}
+  {{- end }}
+{{- end }}
+{{- end }}

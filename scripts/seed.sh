@@ -53,6 +53,14 @@ MINIPREM_SEED_KNOWN_KEYS=(
     MINIPREM_SEED_CUSTOM_SERVICES
     MINIPREM_SEED_CUSTOM_SERVICES_FILE
     MINIPREM_SEED_FORCE
+    # NVIDIA all-in-one stack (Kubernetes path)
+    MINIPREM_SEED_ALLINONE
+    MINIPREM_SEED_NGC_API_KEY
+    MINIPREM_SEED_GEMMA_MODEL
+    MINIPREM_SEED_GEMMA_BACKEND
+    MINIPREM_SEED_KIOSK_STT_PROVIDER
+    MINIPREM_SEED_KIOSK_BRAND
+    MINIPREM_SEED_RAG_ADMIN_KEY
 )
 
 # ---------------------------------------------------------------------------
@@ -172,6 +180,15 @@ seed_apply_to_vars() {
     : "${STT_PROVIDER:=${MINIPREM_SEED_STT_PROVIDER:-}}"
     : "${CUSTOM_SERVICES_CHOICE:=${MINIPREM_SEED_CUSTOM_SERVICES:-}}"
     : "${CUSTOM_SERVICES_FILE_SEED:=${MINIPREM_SEED_CUSTOM_SERVICES_FILE:-}}"
+
+    # NVIDIA all-in-one stack (consumed by scripts/allinone.sh)
+    : "${ALLINONE:=${MINIPREM_SEED_ALLINONE:-}}"
+    : "${NGC_API_KEY:=${MINIPREM_SEED_NGC_API_KEY:-}}"
+    : "${GEMMA_MODEL:=${MINIPREM_SEED_GEMMA_MODEL:-}}"
+    : "${GEMMA_BACKEND:=${MINIPREM_SEED_GEMMA_BACKEND:-}}"
+    : "${KIOSK_STT_PROVIDER:=${MINIPREM_SEED_KIOSK_STT_PROVIDER:-}}"
+    : "${KIOSK_BRAND:=${MINIPREM_SEED_KIOSK_BRAND:-}}"
+    : "${RAG_ADMIN_KEY:=${MINIPREM_SEED_RAG_ADMIN_KEY:-}}"
 }
 
 # Write Harbor credentials from the seed (if any) into docker-compose.env so

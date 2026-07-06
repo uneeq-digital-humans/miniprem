@@ -1,0 +1,10 @@
+apiVersion: v2
+name: kiosk-ui
+description: >-
+  UneeQ Dell all-in-one kiosk UI (nginx-served React SPA) plus the front-door
+  Ingress that reverse-proxies every on-box service through one host: the kiosk
+  itself, the RAG/LLM adapter (/rag-admin, /v1), the host-helper (/host-admin),
+  the MiniPrem monitor (/monitor), and the Riva STT websocket proxy (/api/asr).
+type: application
+version: 0.1.1
+appVersion: "1.5.0"

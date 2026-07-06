@@ -6,7 +6,11 @@
 # UneeQ Admin Portal, NOT here. Renny retrieves conversation settings
 # from DHOP based on persona configuration.
 
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
+# Rolling UneeQ enterprise build. imagePullPolicy: Always ensures each rollout
+# re-pulls the newest enterprise-latest. To freeze, pin e.g. 0.1184-2f3b7 +
+# set imagePullPolicy: IfNotPresent.
+image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
+imagePullPolicy: Always
 
 # Image pull secret for Harbor registry authentication
 imagePullSecrets:
@@ -86,6 +90,11 @@ renderer:
   health:
     url: "http://0.0.0.0:8081/health"
   
+  # Idle session timeout (seconds). 600.0 (10 min) for shared/cloud pods so idle
+  # sessions release the GPU. The all-in-one kiosk OVERRIDES this to -1.0 (never
+  # time out) in its own values so an idle walk-up Renny doesn't blank the screen.
+  inactivityTimeoutSecs: 600.0
+
   # Sleep timer configuration
   sleepTimer:
     seconds: 5.0

@@ -1,5 +1,14 @@
-# Default image - will be overridden by values file
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
+# Default image. `enterprise-latest` is the rolling UneeQ enterprise build.
+# APPLIANCE RULE: imagePullPolicy MUST be IfNotPresent — a field kiosk restarts
+# from its LOCAL image and must never depend on registry reachability to boot.
+# (With Always, a reboot after kubelet image-GC forced a 12 GB re-download — or
+# bricked an offline box entirely.) Renny only re-downloads when the operator
+# EXPLICITLY updates it (change the tag, or delete the local image first).
+# PINNED release build. Do NOT default to `enterprise-latest` — external
+# (ref-architecture) deploys must be reproducible; the rolling tag is for
+# UneeQ-managed appliances that pin via the platform overlay instead.
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1294-2a117"
+imagePullPolicy: IfNotPresent
 
 deployment:
   # value for uneeq.io/node-type label used as a nodeSelector
@@ -17,14 +26,28 @@ renderer:
   launchDarkly:
     key: "" # Optional - feature flags
   tts:
-    # At least one TTS provider must be configured
+    # At least one TTS provider must be configured.
+    # Riva TTS gRPC endpoint the renderer dials when the persona's Admin-Portal
+    # TTS is NVIDIA Riva. Local Magpie chart → "magpie-tts.<ns>:50051". Point at
+    # a SEPARATE Riva cluster by setting this to that cluster's gRPC address, e.g.
+    # "riva.datacenter.example:50051" — no other change needed. Empty → Renny
+    # falls back to localhost:50051 (silent if nothing is there).
+    rivaServerAddr: ""
     proxyUrl: ""
     veritoneApiKey: ""
     azureRegion: ""
     azureSpeechKey: ""
     elevenlabsApiKey: ""
     elevenlabsModelId: ""
+    elevenlabsOptimizeLatencyLevel: ""
     gcpCredentials: ""
+  nvidia:
+    visibleDevices: "all"
+    driverCapabilities: "all"
+  extraCmdArgs: ""
+  inactivityTimeoutSecs: ""   # empty -> template default (600.0)
+  qualityLevel: ""            # empty -> template default ("web")
+  sdlAudioDriver: ""          # empty -> template default ("pulse")
   container:
     requests:
       cpu: 3200m
@@ -33,3 +56,43 @@ renderer:
       cpu: 3200m
       memory: 7Gi
   logLevel: "4"
+
+# --- Standalone defaults (chart must render with NO overlay: registry-pulled -
+# --- charts have no repo checkout). Platform overlays
+# --- (kubernetes/values/renny-values{,-aks,-cns}.yaml) still layer on top for
+# --- the appliance / EKS / AKS deploys:
+# ---   helm install renny ./renny -f ../values/renny-values.yaml ...
+
+# Renny's image lives in the UNEEQ Harbor project (licensed renderer) — it is
+# NOT in dell-isg-containers and does NOT pull with the kiosk-stack robot.
+# This secret is the renderer credential ("robot B" in the deploy guide §0).
+imagePullSecrets:
+  - name: renny-credentials
+
+# Renderer pod sizing — one GPU slice per pod.
+resources:
+  requests:
+    gpu: 1
+    cpu: 3200m
+    memory: 7Gi
+  limits:
+    gpu: 1
+    cpu: 3200m
+    memory: 7Gi
+
+service:
+  type: ClusterIP
+  ports:
+    health: 8081
+    webrtc: 8888
+    pixelstream: 8080
+
+telemetry:
+  enabled: true
+  backendUrl: "https://renny.services.uneeq.io"
+  heartbeatInterval: 900
+  platform: "k8s"      # eks | aks | gke | k8s (generic)
+  deploymentId: ""     # set per customer deployment
+
+# Extra container env (appended verbatim).
+env: []

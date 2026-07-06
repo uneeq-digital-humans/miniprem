@@ -27,6 +27,19 @@ spec:
       containers:
       - name: interface
         image: {{ .Values.image }}
+        # Default IfNotPresent so a ctr-imported (ISO-baked) image is used as-is —
+        # otherwise a ":latest" tag defaults to Always and the box tries (and fails)
+        # to pull from Harbor. Set imagePullPolicy: Always in values to force a pull.
+        imagePullPolicy: {{ .Values.imagePullPolicy | default "IfNotPresent" }}
+        {{- if .Values.env }}
+        # BYO upstream overrides — e.g. env.KIOSK_RAG_URL for a RAG server that
+        # is not at the image default (rag-server.advanced-rag.svc.cluster.local).
+        env:
+        {{- range $k, $v := .Values.env }}
+        - name: {{ $k }}
+          value: {{ $v | quote }}
+        {{- end }}
+        {{- end }}
         ports:
         - containerPort: 80
         resources:

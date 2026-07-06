@@ -1,0 +1,28 @@
+---
+# UneeQ all-in-one — self-service deploy (the non-ISO path).
+#
+#   Stage 1 (optional, bootstrap_cluster=true): turn a bare Ubuntu 24.04 + NVIDIA
+#           box into a single-node kubeadm cluster with the GPU operator +
+#           ingress-nginx. Mirrors the ISO's end state. Skip it (=false) to deploy
+#           onto an existing cluster you already have a kubeconfig for.
+#   Stage 2: deploy the full UneeQ stack — secrets, Helm releases, and manifests.
+#
+# Run:  ansible-playbook -i inventory.ini site.yml
+#       ansible-playbook -i inventory.ini site.yml --tags stack      # stack only
+#       ansible-playbook -i inventory.ini site.yml --tags cluster    # cluster only
+- name: UneeQ all-in-one (kubeadm + full stack)
+  hosts: uneeq
+  become: true
+  gather_facts: true
+  vars_files:
+    - group_vars/all.yml
+  roles:
+    - role: preflight
+      tags: [preflight, always]
+    - role: cluster
+      when: bootstrap_cluster | bool
+      tags: [cluster]
+    - role: secrets
+      tags: [secrets, stack]
+    - role: stack
+      tags: [stack]

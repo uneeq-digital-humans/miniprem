@@ -29,6 +29,20 @@ config:
 
   standalone: true
 
+  # Conversation: kiosk owns it and talks to the local NVIDIA stack via the
+  # rag-adapter. generation=nim => the SPA POSTs OpenAI chat-completions to the
+  # adapter, which proxies to the Gemma NIM AND traces to Phoenix. The endpoint is
+  # same-origin (/v1/chat/completions) — the adapter's ingress routes /v1 on this
+  # kiosk host to rag-adapter:8085 (see digitalhuman-rag-adapter ingress).
+  conversation:
+    provider: "rag"
+    generation: "nim"
+    memory: "inline"
+    streaming: false
+    nim:
+      endpoint: "/v1/chat/completions"
+      model: "google/gemma-4-31B-it"
+
   stt:
     provider: "riva"
     rivaUrl: "http://digitalhuman-asr.miniprem"

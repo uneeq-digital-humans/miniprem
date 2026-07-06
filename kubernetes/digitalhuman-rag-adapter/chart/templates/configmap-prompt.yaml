@@ -1,0 +1,18 @@
+{{- /*
+Persona prompt ConfigMap. On install it is seeded from chart/files (or the
+baked default if absent). The kiosk Settings panel patches this same ConfigMap
+to rebrand the digital human; the adapter hot-reloads the mounted file.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.prompt.configMapName }}
+  labels:
+    app: digitalhuman-rag-adapter
+  annotations:
+    # Let `helm upgrade` own the initial content but allow out-of-band kubectl
+    # patches from the kiosk without helm reverting them.
+    helm.sh/resource-policy: keep
+data:
+  {{ .Values.prompt.fileName }}: |-
+{{ .Files.Get (printf "files/%s" .Values.prompt.fileName) | default (.Files.Get "files/digital-human-system-prompt.md") | indent 4 }}

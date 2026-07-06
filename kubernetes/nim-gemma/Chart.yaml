@@ -1,0 +1,10 @@
+apiVersion: v2
+name: nim-gemma
+description: >-
+  Serves the kiosk LLM via the NVIDIA NIM Operator (NIMCache + NIMService) —
+  fully NVIDIA-supported, no custom vLLM. Defaults to gemma-4-26b-a4b-it (MoE,
+  ~25 GB) which fits alongside Riva STT/TTS + Renny + RAG on one Blackwell.
+  MTP (multi-token prediction) is a profile toggle, not a container edit.
+type: application
+version: 0.1.0
+appVersion: "gemma-4-26b-a4b-it"

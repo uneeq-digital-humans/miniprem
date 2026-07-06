@@ -20,4 +20,31 @@ spec:
             name: digitalhuman-interface
             port:
               number: {{ .Values.service.port }}
+  # localhost alias so opening the kiosk ON the box (http://localhost) is a SECURE
+  # CONTEXT — browser is happy and Settings unlocks fully; over the LAN host it
+  # deliberately stays audio-only. Inert for cloud/remote hosts.
+  - host: localhost
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: digitalhuman-interface
+            port:
+              number: {{ .Values.service.port }}
+  {{- if .Values.ingress.catchAll }}
+  # Catch-all (no host): the on-box appliance kiosk answers at ANY address — the
+  # LAN IP, hostname, etc. (browser secure-context gate still decides full vs
+  # audio-only). Appliance-only; leave catchAll false for shared/cloud clusters.
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: digitalhuman-interface
+            port:
+              number: {{ .Values.service.port }}
+  {{- end }}
 {{- end }}

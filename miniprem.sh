@@ -338,8 +338,8 @@ setup_flowise() {
         done
     fi
 
-    # Run the chatflow setup script
-    bash "$PROJECT_ROOT/docker/setup-chatflow-post-deployment.sh"
+    # Run the chatflow setup script (lives at the repo root)
+    bash "$PROJECT_ROOT/setup-chatflow-post-deployment.sh"
 }
 
 pull_updates() {

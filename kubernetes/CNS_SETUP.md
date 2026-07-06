@@ -38,7 +38,7 @@ NVIDIA Cloud Native Stack (CNS) provides a complete platform for running GPU-acc
 
 - **Ubuntu 22.04 LTS** (recommended)
 - **Ubuntu 24.04 LTS**
-- **RHEL 8.7+**
+- **RHEL 8.7+** — CNS layer only; **not validated** for the digital-human appliance (use Ubuntu)
 
 ### Prerequisites
 

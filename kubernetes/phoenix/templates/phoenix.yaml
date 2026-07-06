@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: phoenix
+  namespace: {{ .Values.namespace }}
+  labels: { app: phoenix }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # one :6006 binder on hostNetwork
+  selector:
+    matchLabels: { app: phoenix }
+  template:
+    metadata:
+      labels: { app: phoenix }
+    spec:
+      {{- if .Values.hostNetwork }}
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      containers:
+        - name: phoenix
+          image: {{ .Values.image }}
+          ports:
+            - { name: ui, containerPort: 6006 }
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+          env:
+            - { name: PHOENIX_PORT, value: "6006" }   # else k8s injects a tcp:// URL Phoenix can't parse
+            - { name: PHOENIX_WORKING_DIR, value: /data }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+          resources: {{ toYaml .Values.resources | nindent 12 }}
+          readinessProbe:
+            httpGet: { path: /, port: 6006 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: phoenix-data }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: phoenix-data
+  namespace: {{ .Values.namespace }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: {{ .Values.storage.size }} } }
+  storageClassName: {{ .Values.storage.storageClass }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phoenix
+  namespace: {{ .Values.namespace }}
+  labels: { app: phoenix }
+spec:
+  selector: { app: phoenix }
+  ports:
+    - { name: ui, port: 6006, targetPort: 6006 }
+    - { name: otlp-grpc, port: 4317, targetPort: 4317 }
+    - { name: otlp-http, port: 4318, targetPort: 4318 }

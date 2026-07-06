@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: miniprem-monitor
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: miniprem-monitor
+spec:
+  replicas: {{ .Values.replicas }}
+  selector:
+    matchLabels:
+      app: miniprem-monitor
+  template:
+    metadata:
+      labels:
+        app: miniprem-monitor
+    spec:
+      serviceAccountName: miniprem-monitor
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{ toYaml . | indent 8 }}
+      {{- end }}
+      containers:
+        - name: monitor
+          image: {{ .Values.image }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          env:
+            - name: MONITOR_MODE
+              value: {{ .Values.mode | quote }}
+            {{- if eq .Values.mode "kubernetes" }}
+            - name: KUBE_IN_CLUSTER
+              value: "true"
+            {{- end }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          resources: {{ toYaml .Values.resources | nindent 12 }}

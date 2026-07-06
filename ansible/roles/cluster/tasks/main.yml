@@ -1,0 +1,103 @@
+---
+# Single-node kubeadm cluster on Ubuntu 24.04 + NVIDIA. Idempotent: each step
+# guards on its result, so re-runs are safe. Mirrors kubernetes/scripts/install-allinone.sh.
+
+- name: Disable swap now and on boot
+  ansible.builtin.shell: |
+    swapoff -a
+    sed -i.bak '/\sswap\s/s/^/#/' /etc/fstab
+  changed_when: false
+
+- name: Kernel modules for k8s networking
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/k8s.conf
+    content: "overlay\nbr_netfilter\n"
+  notify: load k8s modules
+
+- name: Sysctl for k8s networking
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/k8s.conf
+    content: |
+      net.bridge.bridge-nf-call-iptables  = 1
+      net.bridge.bridge-nf-call-ip6tables = 1
+      net.ipv4.ip_forward                 = 1
+  notify: reload sysctl
+
+- name: Flush handlers (modules + sysctl) before kubeadm
+  ansible.builtin.meta: flush_handlers
+
+- name: Install containerd
+  ansible.builtin.apt: { name: containerd, state: present, update_cache: true }
+
+- name: containerd default config + SystemdCgroup
+  ansible.builtin.shell: |
+    mkdir -p /etc/containerd
+    containerd config default > /etc/containerd/config.toml
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/' /etc/containerd/config.toml
+  args: { creates: /etc/containerd/config.toml }
+  notify: restart containerd
+
+- name: Add Kubernetes apt repo key
+  ansible.builtin.shell: |
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/Release.key \
+      | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ k8s_version }}/deb/ /" \
+      > /etc/apt/sources.list.d/kubernetes.list
+  args: { creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg }
+
+- name: Install kubelet/kubeadm/kubectl
+  ansible.builtin.apt: { name: [kubelet, kubeadm, kubectl], state: present, update_cache: true }
+
+- name: kubeadm init (single control-plane)
+  ansible.builtin.command: "kubeadm init --pod-network-cidr={{ pod_cidr }}"
+  args: { creates: /etc/kubernetes/admin.conf }
+
+- name: Make admin.conf the default kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: true
+    mode: "0600"
+  args: {}
+
+- name: Install Calico CNI
+  ansible.builtin.command: >-
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf apply -f
+    https://raw.githubusercontent.com/projectcalico/calico/v3.28.0/manifests/calico.yaml
+  register: calico
+  changed_when: "'created' in calico.stdout"
+  failed_when: calico.rc != 0 and 'unchanged' not in calico.stdout
+
+- name: Untaint control-plane (single-node scheduling)
+  ansible.builtin.command: >-
+    kubectl --kubeconfig=/etc/kubernetes/admin.conf taint nodes --all
+    node-role.kubernetes.io/control-plane- --overwrite
+  register: untaint
+  changed_when: false
+  failed_when: false
+  when: single_node | bool
+
+- name: Add helm repos (ingress-nginx, nvidia)
+  ansible.builtin.shell: |
+    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx || true
+    helm repo add nvidia https://helm.ngc.nvidia.com/nvidia || true
+    helm repo update
+  changed_when: false
+  environment: { KUBECONFIG: /etc/kubernetes/admin.conf }
+
+- name: Install ingress-nginx
+  ansible.builtin.command: >-
+    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx
+    -n ingress-nginx --create-namespace --version {{ ingress_nginx_version }}
+    --set controller.hostNetwork=true --set controller.service.type=ClusterIP
+  environment: { KUBECONFIG: /etc/kubernetes/admin.conf }
+  changed_when: true
+
+- name: Install NVIDIA GPU operator
+  ansible.builtin.command: >-
+    helm upgrade --install gpu-operator nvidia/gpu-operator
+    -n gpu-operator --create-namespace --version {{ gpu_operator_version }}
+    --set driver.enabled=false
+  environment: { KUBECONFIG: /etc/kubernetes/admin.conf }
+  changed_when: true

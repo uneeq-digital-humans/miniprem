@@ -1,0 +1,11 @@
+apiVersion: v2
+name: remote-mic-relay
+description: >-
+  Self-hosted, dependency-free WebSocket relay that pairs a visitor's phone (the
+  kiosk /remote page) with a kiosk by connectionId. A drop-in on-prem replacement
+  for UneeQ's hosted relay — runs on a stock node:20-alpine image with server.js
+  mounted from a ConfigMap (nothing to build or pull from a registry). Install it
+  standalone into any cluster and point the kiosk's websocketUrl at its Service.
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
