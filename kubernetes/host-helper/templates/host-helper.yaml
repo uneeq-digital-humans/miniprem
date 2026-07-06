@@ -65,31 +65,43 @@ spec:
               curl -fsSL -o /usr/local/bin/kubectl https://dl.k8s.io/release/v{{ .Values.kubectlVersion }}/bin/linux/amd64/kubectl
               chmod +x /usr/local/bin/kubectl
               exec uvicorn host_helper:app --host 0.0.0.0 --port 8086
+          {{- if .Values.hostIntegration.enabled }}
           env:
             - { name: DISPLAY, value: {{ .Values.env.display | quote }} }
             - { name: XAUTHORITY, value: {{ .Values.env.xauthority | quote }} }
             - { name: PULSE_SERVER, value: {{ .Values.env.pulseServer | quote }} }
+          {{- end }}
           ports: [ { containerPort: 8086 } ]
+          {{- if .Values.hostIntegration.enabled }}
           securityContext: { privileged: true }
+          {{- end }}
           {{- if .Values.gpu }}
           resources: { limits: { nvidia.com/gpu: 1 } }
           {{- end }}
           volumeMounts:
             - { name: src, mountPath: /app }
+            {{- if .Values.hostIntegration.enabled }}
             - { name: xsock, mountPath: /tmp/.X11-unix }
             - { name: xauth, mountPath: /host-xauth, readOnly: true }
             - { name: pulse, mountPath: /run/user/1000/pulse }
             - { name: containerd-sock, mountPath: /run/containerd/containerd.sock }
             - { name: nerdctl-bin, mountPath: /usr/local/bin/nerdctl, readOnly: true }
             - { name: ngc-docker, mountPath: /root/.docker, readOnly: true }
+            {{- end }}
       volumes:
         - { name: src, configMap: { name: {{ .Values.srcConfigMap }} } }
+        {{- if .Values.hostIntegration.enabled }}
+        # Appliance-only: strict hostPath types mean kubelet REFUSES to start the
+        # pod when a path is missing (no GDM session, no nerdctl, ...) — which is
+        # exactly why these are opt-in. Generic clusters run without them: GPU
+        # stats (in-container nvidia-smi) and service health need none of this.
         - { name: xsock, hostPath: { path: {{ .Values.hostPaths.x11 }}, type: Directory } }
         - { name: xauth, hostPath: { path: {{ .Values.hostPaths.xauth }}, type: Directory } }
         - { name: pulse, hostPath: { path: {{ .Values.hostPaths.pulse }}, type: Directory } }
         - { name: containerd-sock, hostPath: { path: {{ .Values.hostPaths.containerdSock }}, type: Socket } }
         - { name: nerdctl-bin, hostPath: { path: {{ .Values.hostPaths.nerdctl }}, type: File } }
         - { name: ngc-docker, secret: { secretName: {{ .Values.ngcDockerSecret }}, items: [ { key: .dockerconfigjson, path: config.json } ], optional: true } }
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service
