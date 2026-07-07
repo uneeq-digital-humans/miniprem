@@ -394,7 +394,7 @@ pull_required_images() {
             "prom/prometheus:v2.45.0"
             "grafana/grafana:10.2.0"
             "redis:latest"
-            "vllm/vllm-openai:v0.2.7"
+            "vllm/vllm-openai:v0.24.0"
         )
         
         if ! pull_images_parallel "${images[@]}"; then
