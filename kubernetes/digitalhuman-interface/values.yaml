@@ -79,7 +79,15 @@ config:
   # shipped by the digitalhuman-asr chart, or "deepgram" for cloud STT.
   stt:
     provider: "riva"
-    rivaUrl: "http://digitalhuman-asr.miniprem"
+    # Riva STT WebSocket endpoint AS SEEN FROM THE VISITOR'S BROWSER.
+    # EMPTY = same-origin: the kiosk page's own host proxies /api/asr to the
+    # riva-ws-proxy, which dials whatever Riva gRPC address the asr chart is
+    # configured with (local NIM or a remote/BYO Riva) — works on EVERY
+    # deployment. Only set this when the ws-proxy is exposed on a DIFFERENT
+    # public host than the kiosk page. An appliance-only hostname here (the
+    # old digitalhuman-asr.miniprem default) does not resolve from customer
+    # browsers and silently killed live speech input off-appliance.
+    rivaUrl: ""
     language: "en-US"
 
   # RAG adapter admin API, used by the kiosk Settings "Brain" tab to edit the
