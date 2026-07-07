@@ -1,0 +1,17 @@
+# host-helper — UneeQ APPLIANCE overlay (CNS/kubeadm all-in-one box).
+#
+#   helm upgrade --install host-helper ./host-helper -n uneeq \
+#     -f ../values/host-helper-values-cns.yaml
+#
+# Enables the appliance-only host integration (audio + display control, on-node
+# nerdctl model pulls) that the standalone chart ships DISABLED — its strict
+# hostPath mounts require a GDM session, PulseAudio socket, containerd socket
+# and the nerdctl binary on the node, which only the appliance guarantees.
+hostIntegration:
+  enabled: true
+
+# In-kiosk LLM download/switch (NIM Operator CRDs) — appliance runs the NIM
+# Operator with models in nim-models, so enable the RBAC for it here.
+nim:
+  enabled: true
+  namespace: nim-models
