@@ -20,14 +20,14 @@ OVERLAY="$CHART_DIR/../values/host-helper-values-cns.yaml"
 helm lint "$CHART_DIR"
 
 R=$(helm template hh "$CHART_DIR")
-echo "$R" | grep -q 'hostPath: {' && { echo 'FAIL: default render contains hostPath volumes'; exit 1; }
-echo "$R" | grep -q 'privileged: true' && { echo 'FAIL: default render contains privileged securityContext'; exit 1; }
+grep -q 'hostPath: {' <<< "$R" && { echo 'FAIL: default render contains hostPath volumes'; exit 1; }
+grep -q 'privileged: true' <<< "$R" && { echo 'FAIL: default render contains privileged securityContext'; exit 1; }
 echo 'OK: default pod spec references no host state'
 
 R=$(helm template hh "$CHART_DIR" -f "$OVERLAY")
-N=$(echo "$R" | grep -c 'hostPath: {')
+N=$(grep -c 'hostPath: {' <<< "$R")
 [ "$N" -eq 5 ] || { echo "FAIL: appliance overlay expected 5 hostPath volumes, got $N"; exit 1; }
-echo "$R" | grep -q 'privileged: true' || { echo 'FAIL: appliance overlay lost privileged'; exit 1; }
+grep -q 'privileged: true' <<< "$R" || { echo 'FAIL: appliance overlay lost privileged'; exit 1; }
 echo 'OK: appliance mode intact'
 
 if [ "${1:-}" = "--kind" ]; then
