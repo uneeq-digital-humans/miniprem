@@ -39,8 +39,9 @@ if [ "${1:-}" = "--kind" ]; then
   sleep 15
   PHASE=$(kubectl -n uneeq get pod -l app=host-helper -o jsonpath='{.items[0].status.phase}')
   [ "$PHASE" = "Running" ] || { kubectl -n uneeq describe pod -l app=host-helper | tail -30; exit 1; }
-  CODE=$(kubectl -n uneeq run hh-probe --image=curlimages/curl:8.10.1 --rm -i --restart=Never -- \
-    -s -o /dev/null -w '%{http_code}' --max-time 15 http://host-helper:8086/gpu)
+  # the container installs curl at startup; exec avoids kubectl-run log noise
+  CODE=$(kubectl -n uneeq exec deploy/host-helper -- \
+    curl -s -o /dev/null -w '%{http_code}' --max-time 15 http://localhost:8086/gpu)
   echo "GET /gpu -> HTTP $CODE"
   echo "$CODE" | grep -Eq '^[0-9]{3}$'   # any HTTP status = uvicorn serving
   echo 'OK: default install runs on a host with no appliance paths'

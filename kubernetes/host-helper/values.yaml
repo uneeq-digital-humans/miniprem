@@ -29,8 +29,13 @@ gpu: true
 # In-kiosk LLM switching (host-helper-nim Role/RoleBinding). Grants the SA rights to
 # manage NIMCache/NIMService in the NIM namespace so "Set as active LLM" works. Set
 # enabled=false on boxes with no NIM operator (e.g. vLLM-only) to skip the Role.
+# In-kiosk LLM switching (NIMCache/NIMService RBAC). Requires the NVIDIA NIM
+# Operator AND the target namespace to exist — an appliance feature. OFF by
+# default: on a generic cluster the Role would reference a namespace that
+# does not exist and the whole chart install fails. The appliance enables it
+# via values/host-helper-values-cns.yaml.
 nim:
-  enabled: true
+  enabled: false
   namespace: nim-models
 
 # Host paths the agent needs (GPU-proc names via hostPID; audio/display control;

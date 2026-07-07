@@ -9,3 +9,9 @@
 # and the nerdctl binary on the node, which only the appliance guarantees.
 hostIntegration:
   enabled: true
+
+# In-kiosk LLM download/switch (NIM Operator CRDs) — appliance runs the NIM
+# Operator with models in nim-models, so enable the RBAC for it here.
+nim:
+  enabled: true
+  namespace: nim-models
