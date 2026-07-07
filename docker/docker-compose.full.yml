@@ -5,7 +5,7 @@ name: uneeq-miniprem
 services:
   # === FIRST TIER: Memory-intensive model loading services ===
   vllm:
-    image: vllm/vllm-openai:v0.2.7
+    image: vllm/vllm-openai:v0.24.0
     container_name: vllm
     ports:
       - "8000:8800"
