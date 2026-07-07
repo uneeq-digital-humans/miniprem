@@ -15,13 +15,27 @@ srcConfigMap: host-helper-src
 
 # Pin to the GPU node (its nvidia-smi, X, pulse, containerd live there). Single-node: leave "".
 nodeName: ""
+
+# Appliance host integration (audio/display control, on-node nerdctl model
+# pulls). OFF by default: the hostPath mounts use strict types, so on a cluster
+# without a GDM session / nerdctl the kubelet refuses to START the pod
+# ("hostPath type check failed") -- a generic (BYO-endpoint) cluster needs none
+# of it. GPU/VRAM stats and service health work either way. The UneeQ appliance
+# enables this via values/host-helper-values-cns.yaml.
+hostIntegration:
+  enabled: false
 gpu: true
 
 # In-kiosk LLM switching (host-helper-nim Role/RoleBinding). Grants the SA rights to
 # manage NIMCache/NIMService in the NIM namespace so "Set as active LLM" works. Set
 # enabled=false on boxes with no NIM operator (e.g. vLLM-only) to skip the Role.
+# In-kiosk LLM switching (NIMCache/NIMService RBAC). Requires the NVIDIA NIM
+# Operator AND the target namespace to exist — an appliance feature. OFF by
+# default: on a generic cluster the Role would reference a namespace that
+# does not exist and the whole chart install fails. The appliance enables it
+# via values/host-helper-values-cns.yaml.
 nim:
-  enabled: true
+  enabled: false
   namespace: nim-models
 
 # Host paths the agent needs (GPU-proc names via hostPID; audio/display control;

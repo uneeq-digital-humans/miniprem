@@ -1,0 +1,35 @@
+name: host-helper chart CI
+
+on:
+  pull_request:
+    paths:
+      - 'kubernetes/host-helper/**'
+      - 'kubernetes/values/host-helper-values-cns.yaml'
+      - '.github/workflows/host-helper-chart-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'kubernetes/host-helper/**'
+      - 'kubernetes/values/host-helper-values-cns.yaml'
+
+jobs:
+  # Default render must reference ZERO host state (no hostPath volumes, no
+  # privileged) — nothing for kubelet to type-check on ANY host — and the
+  # appliance overlay must restore exactly the five mounts + privileged.
+  render-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: bash kubernetes/host-helper/tests/verify-host-independence.sh
+
+  # Empirical second host type: a kind node (no GDM session, no nerdctl, no
+  # nim-models namespace — the validator's exact failure class) must run the
+  # DEFAULT install to Ready and answer HTTP on :8086.
+  kind-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - uses: helm/kind-action@v1
+      - run: bash kubernetes/host-helper/tests/verify-host-independence.sh --kind
