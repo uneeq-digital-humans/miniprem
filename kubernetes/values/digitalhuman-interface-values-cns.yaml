@@ -60,7 +60,12 @@ config:
 
   stt:
     provider: "riva"
-    rivaUrl: "http://digitalhuman-asr.miniprem"
+    # Empty = same origin: the kiosk nginx proxies /api/asr/ -> riva-ws-proxy, so
+    # the STT websocket inherits the page scheme (wss:// under HTTPS, ws:// under
+    # http). Do NOT hardcode http://digitalhuman-asr.miniprem here — an absolute
+    # http URL is blocked as mixed content once the kiosk is served over HTTPS.
+    # Set an absolute wss:// URL only for a TLS-fronted BYO/remote Riva.
+    rivaUrl: ""
     language: "en-US"
 
   # UneeQ SDK options — mirrors enterprise hosted experience reference defaults.
