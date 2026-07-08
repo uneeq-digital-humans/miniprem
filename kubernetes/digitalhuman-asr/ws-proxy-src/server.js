@@ -94,7 +94,16 @@ const wss = new WebSocket.Server({ server, path: '/api/asr/v1/stream' });
 wss.on('connection', (ws, req) => {
   console.log('[proxy] Browser connected from', req.socket.remoteAddress);
 
-  const rivaClient = new RivaASR(RIVA_GRPC_URL, grpc.credentials.createInsecure());
+  // Keepalives matter when Riva is REMOTE (nemotron.enabled=false +
+  // proxy.rivaGrpcUrl): NAT/LB middleboxes silently kill idle TCP connections,
+  // and without pings the next utterance dies on a dead channel. Harmless for
+  // the local-sidecar case.
+  const rivaClient = new RivaASR(RIVA_GRPC_URL, grpc.credentials.createInsecure(), {
+    'grpc.keepalive_time_ms': 30000,
+    'grpc.keepalive_timeout_ms': 10000,
+    'grpc.keepalive_permit_without_calls': 1,
+    'grpc.http2.max_pings_without_data': 0,
+  });
   let grpcCall = null;
   let streamingConfig = null; // remembered so we can restart the stream mid-session
   let closed = false;         // browser gone — stop restarting
