@@ -52,17 +52,16 @@ nerdctl run --rm -e NGC_API_KEY=$NGC_API_KEY \
 ## After-boot verification (confirm the model is serving properly)
 
 Run these once the `gemma` pod is `Running` (namespace `nim-models`). They confirm
-the NV-FP4 profile is active and the context cap took effect — no NGC key needed,
-it reads the already-cached model.
+the NV-FP4 profile is active — no NGC key needed, it reads the already-cached model.
 
 ```bash
 POD=$(kubectl -n nim-models get pod -l app.kubernetes.io/name=gemma -o name | head -1)   # or: get pod | grep gemma
 
-# 1) The env we feed vLLM (expect the NV-FP4 profile hash + KV-cache + max-model-len):
-kubectl -n nim-models get deploy gemma -o yaml | grep -A1 -E 'NIM_MODEL_PROFILE|KV_CACHE|PASSTHROUGH|RELAX_MEM'
+# 1) The env we feed vLLM (expect the NV-FP4 profile hash + KV-cache reuse):
+kubectl -n nim-models get deploy gemma -o yaml | grep -A1 -E 'NIM_MODEL_PROFILE|KV_CACHE|RELAX_MEM'
 
-# 2) The served model + the ACTUAL context length the engine came up with
-#    (expect id google/gemma-4-26B-A4B-it and max_model_len 16384, NOT 262144):
+# 2) The served model + context length (id google/gemma-4-26B-A4B-it; max_model_len
+#    is the profile default 262144 — see the max_model_len note below):
 kubectl -n nim-models exec $POD -- curl -s localhost:8000/v1/models | python3 -m json.tool
 
 # 3) The profile the NIM actually selected at boot (expect the nvfp4 fallback):
@@ -72,6 +71,15 @@ kubectl -n nim-models logs $POD | grep -iE 'selected profile|nvfp4|quantization'
 kubectl -n nim-models exec $POD -- list-model-profiles 2>/dev/null | grep -iE 'mtp|specul|eagle'
 ```
 
-If `max_model_len` still shows 262144, the `maxModelLen` value didn't reach the
-NIM — check that `NIM_PASSTHROUGH_ARGS` is on the Deployment (step 1). If `/v1/models`
-reports a different id, the served profile/image drifted from `google/gemma-4-26B-A4B-it`.
+If `/v1/models` reports a different id, the served profile/image drifted from
+`google/gemma-4-26B-A4B-it`.
+
+**max_model_len note:** it will read **262144** (the nvfp4 profile default), and
+that is expected. `NIM_PASSTHROUGH_ARGS="--max-model-len N"` was tested on the T2
+(2026-07-08) and is **ignored** by this NIM build — the engine ignores it
+(`engine_extra_args max_model_len:None`, `max_seq_len=262144`). There is no
+working env-level context cap today; capping would require patching
+`/opt/nim/fallback.yaml` and re-validating. Corollary for anyone adding
+speculative/MTP config: `NIM_PASSTHROUGH_ARGS` is not a reliable channel on this
+build — verify with `curl /v1/models` (or the engine_extra_args log) that any arg
+you set actually took effect.
