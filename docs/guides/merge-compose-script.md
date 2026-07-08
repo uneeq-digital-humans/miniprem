@@ -147,7 +147,7 @@ Shows detailed debug information about the merge process.
 ```yaml
 services:
   renny:
-    image: cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7
+    image: cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6
   flowise:
     image: flowiseai/flowise:latest
 ```

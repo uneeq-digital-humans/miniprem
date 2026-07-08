@@ -7,7 +7,7 @@
 # from DHOP based on persona configuration.
 
 # Rolling UneeQ enterprise build. imagePullPolicy: Always ensures each rollout
-# re-pulls the newest enterprise-latest. To freeze, pin e.g. 0.1184-2f3b7 +
+# re-pulls the newest enterprise-latest. To freeze, pin e.g. 0.1332-decd6 +
 # set imagePullPolicy: IfNotPresent.
 image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
 imagePullPolicy: Always
