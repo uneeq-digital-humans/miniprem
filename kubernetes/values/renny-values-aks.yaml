@@ -24,7 +24,7 @@
 # Image is pulled from UneeQ's Harbor registry (cr.uneeq.io)
 # Contact help@uneeq.com for Harbor robot account credentials
 # Rolling enterprise build; imagePullPolicy: Always re-pulls each rollout.
-# To freeze a known-good build, pin e.g. 0.1184-2f3b7 + imagePullPolicy: IfNotPresent.
+# To freeze a known-good build, pin e.g. 0.1332-decd6 + imagePullPolicy: IfNotPresent.
 image: cr.uneeq.io/uneeq/renny-renderer:enterprise-latest
 imagePullPolicy: Always
 

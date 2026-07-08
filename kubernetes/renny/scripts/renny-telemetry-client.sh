@@ -13,7 +13,7 @@ TELEMETRY_BACKEND_URL="${TELEMETRY_BACKEND_URL:-https://renny.services.uneeq.io}
 HEARTBEAT_INTERVAL_SECONDS="${HEARTBEAT_INTERVAL_SECONDS:-900}"
 PLATFORM="${PLATFORM:-docker-ubuntu}"
 DEPLOYMENT_ID="${DEPLOYMENT_ID:-}"
-VERSION="${VERSION:-renny-0.1184}"  # Default version if not provided
+VERSION="${VERSION:-renny-0.1332}"  # Default version if not provided
 
 # Installation ID persistence (mounted from /var/lib/miniprem/installation_id on host for Docker,
 # or generated at runtime for Kubernetes pods)
