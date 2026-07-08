@@ -3,7 +3,7 @@ name: gemma-4-26b-a4b-it
 
 image:
   repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
-  tag: 1.7.0-variant
+  tag: latest
   pullPolicy: IfNotPresent
 
 # The optimized NIM profile to serve. Default = the ~25 GB (≈25890 MiB) profile
