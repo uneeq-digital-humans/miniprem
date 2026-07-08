@@ -2,24 +2,36 @@ namespace: nim-models
 name: gemma-4-26b-a4b-it
 
 image:
+  # Gemma-4 26B-A4B: a Mixture-of-Experts (~4B ACTIVE params of 26B total). This
+  # NIM ships the weights in BOTH NV-FP4 and BF16 — the `model.profile` below is
+  # what actually selects the QUANTIZATION. On the shared single-GPU box we run
+  # the NV-FP4 profile; that is what makes the model fit alongside Riva + Renny +
+  # RAG. (`-variant` in the tag is the NIM packaging variant, NOT the quant.)
   repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
   tag: 1.7.0-variant
   pullPolicy: IfNotPresent
 
-# The optimized NIM profile to serve. Default = the ~25 GB (≈25890 MiB) profile
-# that fits with Riva + Renny + RAG on one Blackwell. Find alternatives with:
+# The optimized NIM profile to serve — this picks the QUANTIZATION + engine.
+# Pinned = vllm-nvfp4-tp1-pp1-fallback-1-48gib (NV-FP4): ~25 GB actual VRAM at
+# gpuMemoryUtilization 0.30, fits with Riva + Renny + RAG on one Blackwell. (The
+# "48gib" in the profile name is the target GPU-memory class, not the footprint.)
+# A BF16 fallback profile (533c7a07…) also exists for full precision on a bigger
+# card. List all with:
 #   nerdctl run --rm -e NGC_API_KEY=... <image> list-model-profiles
 model:
-  profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"
+  profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"  # NV-FP4
 
 # --- MTP / speculative decoding ----------------------------------------------
-# VERIFIED 2026-06-29 via `list-model-profiles`: the gemma-4-26b-a4b-it NIM ships
-# NO MTP/speculative/EAGLE profile — only standard vllm nvfp4/bf16 fallback &
-# throughput profiles. So MTP is NOT available for this model on the supported
-# NIM stack (it required vLLM-nightly + the 12B "-it-assistant" drafter, which the
-# "no custom vLLM" constraint rules out). Leave disabled. If a future NIM build
-# publishes an MTP profile, set mtp.profile to its hash and enable — the template
-# already swaps NIM_MODEL_PROFILE to it, no other change needed.
+# RE-VERIFIED 2026-07-08 via `list-model-profiles` (nim tag 1.7.0-variant): the
+# gemma-4-26b-a4b-it NIM ships 9 profiles, and NONE is MTP/speculative/EAGLE —
+# they are all standard vLLM engine profiles:
+#   nvfp4 fallback (48gib, pinned) · bf16 fallback (80gib) · bf16 tp2 fallback
+#   + h20/b200/h200/l40s/dgx-spark throughput profiles (bf16 & nvfp4)
+# So MTP is NOT available for this model on the supported NIM stack (it required
+# vLLM-nightly + the 12B "-it-assistant" drafter, which the "no custom vLLM"
+# constraint rules out). Leave disabled. If a future NIM build publishes an MTP
+# profile, set mtp.profile to its hash and enable — the template already swaps
+# NIM_MODEL_PROFILE to it, no other change needed.
 mtp:
   enabled: false
   profile: ""        # MTP profile hash IF a future NIM build ships one
