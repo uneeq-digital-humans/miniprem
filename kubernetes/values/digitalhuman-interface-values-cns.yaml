@@ -29,6 +29,14 @@ config:
 
   standalone: true
 
+  # Setup/troubleshooting escape hatch: true lets the Settings password unlock
+  # work from non-localhost origins (e.g. a tech's laptop at http://<box-ip>)
+  # BEFORE TLS is configured — the password then crosses the LAN unencrypted and
+  # the kiosk shows a warning banner. Keep false in production; use a verified
+  # SSL certificate instead (scripts/setup-kiosk-tls.sh).
+  security:
+    allowInsecureAdmin: false
+
   # Conversation: kiosk owns it and talks to the local NVIDIA stack via the
   # rag-adapter. generation=nim => the SPA POSTs OpenAI chat-completions to the
   # adapter, which proxies to the Gemma NIM AND traces to Phoenix. The endpoint is
