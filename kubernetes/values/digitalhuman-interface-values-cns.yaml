@@ -37,7 +37,13 @@ config:
   conversation:
     provider: "rag"
     generation: "nim"
-    memory: "inline"
+    # Server-side session memory: the endpoint below is same-origin → the
+    # rag-adapter, whose Redis window (keyed by the x-session-id the SPA sends)
+    # supplies remembered turns. The SPA sends ONLY the current message — the
+    # prompt no longer grows every turn, and voice/typed/remote-mic share one
+    # conversation. Use "inline" instead when pointing nim.endpoint at a BYO
+    # LLM that bypasses the adapter.
+    memory: "session"
     streaming: false
     nim:
       endpoint: "/v1/chat/completions"
