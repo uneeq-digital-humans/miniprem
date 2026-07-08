@@ -17,7 +17,7 @@
 # reachability (with Always, a reboot after kubelet image-GC forced a 12 GB
 # re-download — or bricked the kiosk offline). To track the rolling build on a
 # CONNECTED dev box, override with enterprise-latest + imagePullPolicy: Always.
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1294-2a117"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"
 imagePullPolicy: IfNotPresent
 
 # Image pull secret for Harbor registry authentication
@@ -49,7 +49,11 @@ gpuTimeSlicing:
 
 deployment:
   nodeType: ""  # Empty = no node selector (single server deployments)
-  totalReplicas: 4  # Match gpuTimeSlicing.replicasPerGpu × number of GPUs
+  totalReplicas: 2  # 2 Rennys leaves GPU headroom for the co-resident Gemma NIM.
+  # NOTE: was 4, but with the LLM (Gemma 26b NIM) sharing this single RTX PRO 6000,
+  # 4 Rennys starved Gemma's vLLM sampler-warmup and it CUDA-OOM crash-looped
+  # (discovered 2026-07-07). 2 is the empirically-verified working count on this
+  # box. If the LLM is NOT co-resident (renderer-only deploy) this can go back up.
 
 renderer:
   # DHOP connection (connects to UneeQ cloud for session orchestration)
@@ -118,7 +122,7 @@ renderer:
   # Renny must stay rendering when idle (no blank screen). The kiosk app decides
   # when a session starts/ends; with eco standby video it ends Renny itself to
   # save GPU.
-  # NOTE: -1 is NOT honored as "infinite" by the renderer (>=0.1294 ends idle
+  # NOTE: -1 is NOT honored as "infinite" by the renderer (>=0.1332 ends idle
   # sessions at ~10s with EEndReason::UserInactivity when negative). Use a large
   # POSITIVE value (24h) instead — positive values are honored (cloud uses 600.0).
   inactivityTimeoutSecs: 86400.0
