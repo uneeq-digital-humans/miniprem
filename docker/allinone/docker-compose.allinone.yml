@@ -119,7 +119,7 @@ services:
   # published ports. GPU + host IPC for Unreal pixel-streaming.
   # ----------------------------------------------------------------------- #
   renny:
-    image: ${RENNY_IMAGE:-cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7}
+    image: ${RENNY_IMAGE:-cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6}
     container_name: renny
     <<: *gpu
     networks: [uneeq]

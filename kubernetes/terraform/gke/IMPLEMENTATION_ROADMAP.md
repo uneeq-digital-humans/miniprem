@@ -270,7 +270,7 @@ kubectl create secret docker-registry harbor-credentials \
 
 ```yaml
 # GKE-Specific Overrides
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"
 
 # GPU Time-Slicing (GKE Native)
 gpuTimeSlicing:

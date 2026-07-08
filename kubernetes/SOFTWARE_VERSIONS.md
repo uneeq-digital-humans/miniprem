@@ -3,7 +3,7 @@
 **Document type:** Software Bill of Materials / Version Manifest
 **Deployment target:** On-premises Kubernetes (kubeadm) and MicroK8s with NVIDIA GPU acceleration
 **Document version:** 1.0
-**Last reviewed:** 2026-05-14
+**Last reviewed:** 2026-07-08
 **Owner:** MiniPrem Platform Engineering
 
 ---
@@ -113,10 +113,12 @@ Cluster topology defaults: single control-plane node; pod CIDR `192.168.0.0/16`;
 
 ### 4.5 MiniPrem Application
 
+> **Note:** The Renny version below (and everywhere it appears in this repo) is pinned as of **2026-07-08**. UneeQ releases new Renny builds frequently, so this tag can lag the latest release. Contact UneeQ or check `cr.uneeq.io` for the current build before a new deployment.
+
 | Component | Version | Source | License | Role |
 |---|---|---|---|---|
-| Renny Helm chart | 0.1184-2f3b7 | Internal registry `cr.uneeq.io` | Commercial (UneeQ) | Digital human renderer deployment |
-| Renny renderer image | `cr.uneeq.io/uneeq/renny-renderer:0.1184-2f3b7` | Internal registry | Commercial (UneeQ) | Renderer container |
+| Renny Helm chart | 0.1332-decd6 | Internal registry `cr.uneeq.io` | Commercial (UneeQ) | Digital human renderer deployment |
+| Renny renderer image | `cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6` | Internal registry | Commercial (UneeQ) | Renderer container |
 | Digital Human Interface chart | Floating `:latest` tag in default values | Internal registry | Commercial (UneeQ) | Kiosk UI. Pin to a numbered tag before regulated-environment deployment. |
 | Digital Human WebSocket API chart | Floating `:latest` tag in default values | Internal registry | Commercial (UneeQ) | Edge WebSocket gateway. Pin before regulated-environment deployment. |
 | Digital Human ASR chart | Floating `:latest` tag in default values | Internal registry / NVIDIA NGC | Commercial (UneeQ / NVIDIA) | Speech recognition. Includes `nvcr.io/nim/nvidia/nemotron-asr-streaming:latest`. Pin before regulated-environment deployment. |
@@ -151,7 +153,7 @@ The following combination is the reference baseline for partner validation:
 | NVIDIA GPU Operator | v24.9.0 |
 | NIM Operator | 1.0.0 |
 | Helm | 3.x |
-| Renny chart | 0.1184-2f3b7 |
+| Renny chart | 0.1332-decd6 |
 
 Known incompatibilities enforced by the installer:
 
