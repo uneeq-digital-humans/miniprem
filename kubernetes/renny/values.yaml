@@ -7,7 +7,7 @@
 # PINNED release build. Do NOT default to `enterprise-latest` — external
 # (ref-architecture) deploys must be reproducible; the rolling tag is for
 # UneeQ-managed appliances that pin via the platform overlay instead.
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1294-2a117"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"
 imagePullPolicy: IfNotPresent
 
 deployment:
