@@ -43,6 +43,16 @@ spec:
     - name: NIM_RELAX_MEM_CONSTRAINTS
       value: "1"
     {{- end }}
+    {{- if .Values.kvCacheReuse }}
+    - name: NIM_ENABLE_KV_CACHE_REUSE
+      value: "1"
+    {{- end }}
+    {{- if .Values.maxModelLen }}
+    # Forward the context cap to vLLM. gpu_memory_utilization is set via the
+    # fallback.yaml sed above, so only --max-model-len goes here.
+    - name: NIM_PASSTHROUGH_ARGS
+      value: "--max-model-len {{ .Values.maxModelLen }}"
+    {{- end }}
     {{- range $k, $v := .Values.extraEnv }}
     - name: {{ $k }}
       value: {{ $v | quote }}
