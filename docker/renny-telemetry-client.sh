@@ -161,7 +161,7 @@ log "INFO: Instance: $INSTANCE_NAME ($INSTANCE_TYPE)"
 
 # Send installation event
 log "INFO: Sending installation event..."
-if send_event "installation" "\"version\": \"renny-0.1184\", \"source\": \"docker-compose\""; then
+if send_event "installation" "\"version\": \"renny-0.1332\", \"source\": \"docker-compose\""; then
     log "INFO: Installation event sent"
 else
     log "WARN: Installation event failed, continuing anyway"
