@@ -17,7 +17,7 @@
 # reachability (with Always, a reboot after kubelet image-GC forced a 12 GB
 # re-download — or bricked the kiosk offline). To track the rolling build on a
 # CONNECTED dev box, override with enterprise-latest + imagePullPolicy: Always.
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1294-2a117"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"
 imagePullPolicy: IfNotPresent
 
 # Image pull secret for Harbor registry authentication
