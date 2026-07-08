@@ -41,6 +41,23 @@ mtp:
 gpuMemoryUtilization: "0.30"
 relaxMemConstraints: true     # NIM_RELAX_MEM_CONSTRAINTS=1
 
+# vLLM context-length cap, forwarded to the engine via NIM_PASSTHROUGH_ARGS. The
+# nvfp4 profile's DEFAULT max_model_len is 262144 (256K) — far more than a kiosk
+# needs and heavy on KV-cache, which competes for the same ~25 GB budget on the
+# shared GPU. Cap it so the KV cache fits and more turns stay resident. "" = use
+# the profile default (not recommended on the shared box).
+maxModelLen: "16384"
+
+# Prefix KV-cache reuse (NIM_ENABLE_KV_CACHE_REUSE=1): the replayed conversation
+# history shares a prefix turn-to-turn, so only new tokens are prefilled — keeps
+# per-turn latency ~flat as the transcript grows. Recommended for the kiosk.
+kvCacheReuse: true
+
+# Extra env passed straight through to the NIMService (e.g. Phoenix/OpenTelemetry:
+#   NIM_ENABLE_OTEL: "1", OTEL_TRACES_EXPORTER: otlp,
+#   OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix.uneeq.svc.cluster.local:4317).
+extraEnv: {}
+
 auth:
   authSecret: ngc-api-secret  # generic NGC API key (model download)
   pullSecret: ngc-secret      # docker-registry secret for nvcr.io

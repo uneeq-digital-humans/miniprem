@@ -48,3 +48,30 @@ To re-check on a newer NIM build:
 nerdctl run --rm -e NGC_API_KEY=$NGC_API_KEY \
   nvcr.io/nim/google/gemma-4-26b-a4b-it:latest list-model-profiles | grep -i 'mtp\|specul\|eagle'
 ```
+
+## After-boot verification (confirm the model is serving properly)
+
+Run these once the `gemma` pod is `Running` (namespace `nim-models`). They confirm
+the NV-FP4 profile is active and the context cap took effect — no NGC key needed,
+it reads the already-cached model.
+
+```bash
+POD=$(kubectl -n nim-models get pod -l app.kubernetes.io/name=gemma -o name | head -1)   # or: get pod | grep gemma
+
+# 1) The env we feed vLLM (expect the NV-FP4 profile hash + KV-cache + max-model-len):
+kubectl -n nim-models get deploy gemma -o yaml | grep -A1 -E 'NIM_MODEL_PROFILE|KV_CACHE|PASSTHROUGH|RELAX_MEM'
+
+# 2) The served model + the ACTUAL context length the engine came up with
+#    (expect id google/gemma-4-26B-A4B-it and max_model_len 16384, NOT 262144):
+kubectl -n nim-models exec $POD -- curl -s localhost:8000/v1/models | python3 -m json.tool
+
+# 3) The profile the NIM actually selected at boot (expect the nvfp4 fallback):
+kubectl -n nim-models logs $POD | grep -iE 'selected profile|nvfp4|quantization' | head
+
+# 4) MTP is not available for this model — this must return NOTHING:
+kubectl -n nim-models exec $POD -- list-model-profiles 2>/dev/null | grep -iE 'mtp|specul|eagle'
+```
+
+If `max_model_len` still shows 262144, the `maxModelLen` value didn't reach the
+NIM — check that `NIM_PASSTHROUGH_ARGS` is on the Deployment (step 1). If `/v1/models`
+reports a different id, the served profile/image drifted from `google/gemma-4-26B-A4B-it`.
