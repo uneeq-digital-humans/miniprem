@@ -41,12 +41,15 @@ mtp:
 gpuMemoryUtilization: "0.30"
 relaxMemConstraints: true     # NIM_RELAX_MEM_CONSTRAINTS=1
 
-# vLLM context-length cap, forwarded to the engine via NIM_PASSTHROUGH_ARGS. The
-# nvfp4 profile's DEFAULT max_model_len is 262144 (256K) — far more than a kiosk
-# needs and heavy on KV-cache, which competes for the same ~25 GB budget on the
-# shared GPU. Cap it so the KV cache fits and more turns stay resident. "" = use
-# the profile default (not recommended on the shared box).
-maxModelLen: "16384"
+# NOTE: max_model_len is NOT capped here. VERIFIED on the T2 (2026-07-08) that
+# NIM_PASSTHROUGH_ARGS="--max-model-len N" is IGNORED by this NIM build — the
+# engine still came up with max_seq_len=262144 and engine_extra_args
+# max_model_len:None. So there is no working env-level cap; the nvfp4 profile's
+# default 262144 stands. If a cap is genuinely needed on the shared GPU, it must
+# be done another way (e.g. sed max_model_len in /opt/nim/fallback.yaml like the
+# gpu_memory_utilization patch above) and RE-VALIDATED via `curl /v1/models`
+# before relying on it. Do NOT re-add a maxModelLen/NIM_PASSTHROUGH_ARGS knob
+# that silently does nothing.
 
 # Prefix KV-cache reuse (NIM_ENABLE_KV_CACHE_REUSE=1): the replayed conversation
 # history shares a prefix turn-to-turn, so only new tokens are prefilled — keeps
