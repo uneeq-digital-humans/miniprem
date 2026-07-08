@@ -1,0 +1,19 @@
+# Installed at /etc/systemd/system/kiosk-boot.service on the AMI.
+# Runs kiosk-boot.sh (kubeadm reset+reinit+redeploy) on every boot, since the
+# box no longer boots at a fixed private IP — see kiosk-boot.sh for why.
+[Unit]
+Description=MiniPrem kiosk: reset+reinit k8s and redeploy the stack for this boot's IP
+After=network-online.target containerd.service
+Wants=network-online.target
+ConditionPathExists=/home/admin/migration/creds.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kiosk-boot.sh
+StandardOutput=append:/var/log/kiosk-boot.log
+StandardError=append:/var/log/kiosk-boot.log
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,39 @@
+# Static PV for the Gemma NIM model cache, so it survives a kubeadm reset.
+#
+# Why: the box re-inits its k8s control plane on every boot (see
+# kubernetes/scripts/aws-kiosk/kiosk-instance.sh) to avoid pinning to one
+# private IP/AZ. That wipes etcd, including PVC objects. If the Gemma cache
+# were a normal dynamic local-path PVC, a fresh boot would get a brand-new
+# empty directory and re-pull ~30-90GB from NGC every time. This PV instead
+# points at a FIXED host directory that survives resets, and a matching PVC
+# (created by the NIMCache CR in nim-gemma.yaml) binds to it every time via a
+# non-default StorageClass + claimRef — see the comment in nim-gemma.yaml for
+# why the StorageClass must be non-default (local-path is this cluster's
+# default and would otherwise silently dynamic-provision instead of binding
+# to this PV).
+#
+# Apply this BEFORE nim-gemma.yaml. The host directory must exist first:
+#   sudo mkdir -p /data/nim-cache/gemma
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: static-nim
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gemma-cache-pv
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: static-nim
+  hostPath:
+    path: /data/nim-cache/gemma
+  claimRef:
+    namespace: nim-models
+    name: gemma-cache-pvc

@@ -48,7 +48,11 @@ DEPLOY_RENNY="${DEPLOY_RENNY:-yes}"
 DEPLOY_KIOSK="${DEPLOY_KIOSK:-yes}"
 
 # Models / images
-GEMMA_MODEL="${GEMMA_MODEL:-google/gemma-4-31B-it}"     # served model name (kiosk sends this; adapter also auto-discovers)
+# NOTE: defaults here MUST match manifests/nim-gemma.yaml's checked-in tag
+# (gemma-4-26b-a4b-it). They drifted once already — a stale 31b default here
+# got sed'd over the 26b manifest at deploy time and nobody noticed until the
+# AMI shipped 31b. Keep these two files in sync.
+GEMMA_MODEL="${GEMMA_MODEL:-google/gemma-4-26b-a4b-it}"     # served model name (kiosk sends this; adapter also auto-discovers)
 GEMMA_BACKEND="${GEMMA_BACKEND:-nim}"             # nim (NIM operator, NV-FP4 — Dell default) | vllm
 # vLLM template knobs (set by the VRAM-based template in install-allinone.sh).
 GEMMA_SERVED_NAME="${GEMMA_SERVED_NAME:-$GEMMA_MODEL}"  # vLLM --served-model-name (adapter sends this)
@@ -57,7 +61,7 @@ VLLM_MAX_LEN="${VLLM_MAX_LEN:-16384}"
 # The NIM LLM image to deploy. Seed-driven so Dell can run ANY NVIDIA NIM model
 # (a different Gemma, Llama, Nemotron, …) without editing manifests — the adapter
 # auto-discovers the served model and Phoenix tracks whatever it is.
-NIM_LLM_IMAGE="${NIM_LLM_IMAGE:-nvcr.io/nim/google/gemma-4-31b-it:latest}"
+NIM_LLM_IMAGE="${NIM_LLM_IMAGE:-nvcr.io/nim/google/gemma-4-26b-a4b-it:latest}"
 RAG_CHART_VERSION="${RAG_CHART_VERSION:-2.3.2}"   # 2.3.2 = entitled 1B embed/rerank + we point LLM at the local gemma. (v2.6.0 defaults to a 120B agentic LLM + nemotron NIMs the NGC key isn't entitled to / box can't run.)
 STT_PROVIDER="${STT_PROVIDER:-riva}"               # kiosk STT: riva | deepgram
 RAG_ADMIN_KEY="${RAG_ADMIN_KEY:-}"                 # optional /admin/* shared secret
@@ -81,6 +85,11 @@ PHOENIX_PROJECT="${PHOENIX_PROJECT:-kiosk-conversations}"
 NGC_API_KEY="${NGC_API_KEY:-}"
 HARBOR_USERNAME="${HARBOR_USERNAME:-}"
 HARBOR_PASSWORD="${HARBOR_PASSWORD:-}"
+# Cloud TTS/STT (used when Riva is disabled). Populate via creds.conf, same as
+# the other secrets above — never pass these as literal --set args on the CLI.
+ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}"
+ELEVENLABS_MODEL_ID="${ELEVENLABS_MODEL_ID:-}"
+DEEPGRAM_API_KEY="${DEEPGRAM_API_KEY:-}"
 # UneeQ DHOP platform creds — Renny authenticates to the UneeQ signalling service
 # with these (seed PLATFORM_KEY/TENANT_ID). Without them Renny can't start
 # (CreateContainerConfigError: missing dhop-api-key in the renny secret).
@@ -264,14 +273,17 @@ stage_renny() {
   helm_install renny "$NAMESPACE" "$K8S_DIR/renny" \
     -f "$K8S_DIR/values/renny-values-cns.yaml" \
     --set renderer.dhop.apiKey="$PLATFORM_KEY" \
-    --set renderer.dhop.tenantId="$TENANT_ID"
+    --set renderer.dhop.tenantId="$TENANT_ID" \
+    ${ELEVENLABS_API_KEY:+--set-string renderer.tts.elevenlabsApiKey="$ELEVENLABS_API_KEY"} \
+    ${ELEVENLABS_MODEL_ID:+--set-string renderer.tts.elevenlabsModelId="$ELEVENLABS_MODEL_ID"}
 }
 
 stage_kiosk() {
   [ "$DEPLOY_KIOSK" = yes ] || { log "skip kiosk"; return; }
   log "Deploying websocket-api + Dell kiosk (STT provider: $STT_PROVIDER)"
   helm_install digitalhuman-websocket-api "$NAMESPACE" "$K8S_DIR/digitalhuman-websocket-api" \
-    -f "$K8S_DIR/values/digitalhuman-websocket-api-values-cns.yaml"
+    -f "$K8S_DIR/values/digitalhuman-websocket-api-values-cns.yaml" \
+    ${DEEPGRAM_API_KEY:+--set-string secrets.deepgramApiKey="$DEEPGRAM_API_KEY"}
   # The kiosk's stt.provider/rivaUrl come from its values (config.stt.*),
   # rendered into the runtime config.yaml ConfigMap the SPA fetches.
   helm_install digitalhuman-interface "$NAMESPACE" "$K8S_DIR/digitalhuman-interface" \

@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Manage the AWS-hosted MiniPrem CNS kiosk instance.
+#
+# SANITIZED TEMPLATE. Copy to kiosk-instance.sh (gitignored) and fill in the
+# account-specific values below, or export them as env vars before running.
+# The real kiosk-instance.sh is NOT committed — it contains private infra
+# (account ID, AMI/subnet/SG/EIP IDs, target-group ARN).
+#
+#   kiosk-instance.sh boot        Launch the kiosk from its AMI, attach EIP + ALB, wait until live
+#   kiosk-instance.sh terminate   Terminate the running kiosk instance (ALB/EIP/DNS are kept)
+#   kiosk-instance.sh status      Show instance, ALB target health, and public URL state
+#
+# The AMI's k8s control plane is NOT pinned to a fixed IP/AZ. On every boot,
+# the kiosk-boot systemd unit (kiosk-boot.sh, baked into the AMI) resets and
+# re-inits kubeadm fresh against whatever private IP this boot got, then
+# redeploys the whole stack. That's what lets this script launch in EITHER
+# g7e-capable AZ instead of retrying one fixed AZ (the old pinned-IP approach
+# failed hard whenever that one AZ was out of capacity — common in practice).
+# The Gemma model cache still survives across boots (static hostPath PV, see
+# manifests/nim-gemma-cache-pv.yaml), so this isn't a full model re-download
+# every time — but a boot IS a real kubeadm init + full helm redeploy: budget
+# ~10-15 min, not near-instant.
+#
+# Standing infrastructure this script relies on (NOT created or destroyed here):
+#   ALB + target group (map it to BOTH g7e-capable AZs), ACM wildcard listener,
+#   Route53 records -> ALB, and the subnet/SG/EIP filled in below.
+set -euo pipefail
+
+REGION="${KIOSK_REGION:-us-east-1}"
+AMI_ID="${KIOSK_AMI_ID:-ami-REPLACE_ME}"                    # the current good kiosk AMI
+INSTANCE_TYPE="${KIOSK_INSTANCE_TYPE:-g7e.4xlarge}"
+# Try both g7e-capable AZs in this VPC — capacity flips between them.
+SUBNETS=(${KIOSK_SUBNETS:-subnet-REPLACE_AZ_A subnet-REPLACE_AZ_B})
+SECURITY_GROUP="${KIOSK_SECURITY_GROUP:-sg-REPLACE_ME}"     # kiosk instance SG (SSH + ALB ingress)
+KEY_NAME="${KIOSK_KEY_NAME:-REPLACE_ME}"                    # EC2 keypair name
+EIP_ALLOC="${KIOSK_EIP_ALLOC:-eipalloc-REPLACE_ME}"         # pre-allocated Elastic IP
+TG_ARN="${KIOSK_TG_ARN:-arn:aws:elasticloadbalancing:REGION:ACCOUNT_ID:targetgroup/NAME/ID}"
+NAME_TAG="${KIOSK_NAME_TAG:-miniprem-kiosk-cns}"
+KIOSK_URL="${KIOSK_URL:-https://REPLACE_ME.example.com/}"
+
+log() { printf '\033[1;36m[kiosk]\033[0m %s\n' "$*"; }
+
+find_instance() {
+  aws ec2 describe-instances --region "$REGION" \
+    --filters "Name=tag:Name,Values=$NAME_TAG" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+    --query 'Reservations[].Instances[].InstanceId' --output text
+}
+
+cmd_boot() {
+  local existing; existing=$(find_instance)
+  if [ -n "$existing" ]; then
+    log "Instance $existing already exists — refusing to boot a second."
+    exit 1
+  fi
+
+  log "Launching $INSTANCE_TYPE from $AMI_ID (trying each of: ${SUBNETS[*]})…"
+  local iid="" out
+  for attempt in $(seq 1 20); do
+    for subnet in "${SUBNETS[@]}"; do
+      if out=$(aws ec2 run-instances --region "$REGION" \
+          --image-id "$AMI_ID" --instance-type "$INSTANCE_TYPE" \
+          --key-name "$KEY_NAME" --subnet-id "$subnet" \
+          --security-group-ids "$SECURITY_GROUP" \
+          --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$NAME_TAG},{Key=Project,Value=miniprem-kiosk}]" \
+          --query 'Instances[0].InstanceId' --output text 2>&1); then
+        iid="$out"; break 2
+      fi
+      echo "$out" | grep -q InsufficientInstanceCapacity || { echo "$out" >&2; exit 1; }
+      log "attempt $attempt: no g7e capacity in $subnet yet…"
+    done
+    sleep 30
+  done
+  [ -n "$iid" ] || { log "Gave up: no g7e.4xlarge capacity in either AZ after 10 min."; exit 1; }
+  log "Launched $iid — waiting for running state"
+  aws ec2 wait instance-running --region "$REGION" --instance-ids "$iid"
+
+  # CRITICAL: if this VPC's CIDR is IDENTICAL to the cluster's pod-network-cidr
+  # (e.g. both 192.168.0.0/16), Calico's outbound-NAT rule skips masquerading
+  # any destination inside the declared pod pool on the assumption it's
+  # pod-internal traffic — but most of that range is real VPC infra (DNS
+  # resolver, other subnets). Un-NAT'd pod-sourced packets leaving the ENI get
+  # silently dropped by AWS's source/dest check, breaking ALL pod egress (DNS,
+  # NGC pulls, DHOP, ElevenLabs/Deepgram — discovered via a SERVFAIL-then-ICMP-
+  # 100%-loss chase on 2026-07-07). This is a per-ENI EC2 setting, NOT carried
+  # by the AMI — must be (re)disabled on every launch.
+  local eni; eni=$(aws ec2 describe-instances --region "$REGION" --instance-ids "$iid" \
+    --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' --output text)
+  log "Disabling source/dest check on $eni (required — see comment above)"
+  aws ec2 modify-network-interface-attribute --region "$REGION" --network-interface-id "$eni" --no-source-dest-check
+
+  log "Associating EIP + registering with the ALB target group (by instance ID — AZ-agnostic)"
+  aws ec2 associate-address --region "$REGION" --instance-id "$iid" --allocation-id "$EIP_ALLOC" >/dev/null
+  aws elbv2 register-targets --region "$REGION" --target-group-arn "$TG_ARN" --targets "Id=$iid"
+
+  # kiosk-boot.service runs kubeadm reset+reinit+full redeploy on the box
+  # itself — real init + GPU/NIM operator reconcile + model load, not a warm
+  # resume. 10-15 min is typical; give it real headroom before giving up.
+  log "Waiting for kiosk-boot.service to finish and the stack to come up (target healthy + kiosk HTTP 200; up to 25 min)…"
+  for i in $(seq 1 100); do
+    state=$(aws elbv2 describe-target-health --region "$REGION" --target-group-arn "$TG_ARN" \
+      --query 'TargetHealthDescriptions[0].TargetHealth.State' --output text 2>/dev/null || echo unknown)
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$KIOSK_URL" || true)
+    [ "$state" = healthy ] && [ "$code" = 200 ] && { log "Kiosk is LIVE: $KIOSK_URL ($iid)"; exit 0; }
+    sleep 15
+  done
+  log "Timed out waiting — check: sudo tail -f /var/log/kiosk-boot.log on the box, or kubectl get pods -A"
+  exit 1
+}
+
+cmd_terminate() {
+  local iid; iid=$(find_instance)
+  [ -n "$iid" ] || { log "No kiosk instance found."; exit 0; }
+  log "Deregistering $iid from the ALB and terminating (EIP/ALB/DNS are kept)…"
+  aws elbv2 deregister-targets --region "$REGION" --target-group-arn "$TG_ARN" --targets "Id=$iid" 2>/dev/null || true
+  aws ec2 terminate-instances --region "$REGION" --instance-ids "$iid" \
+    --query 'TerminatingInstances[0].CurrentState.Name' --output text
+}
+
+cmd_status() {
+  local iid; iid=$(find_instance)
+  if [ -n "$iid" ]; then
+    aws ec2 describe-instances --region "$REGION" --instance-ids "$iid" \
+      --query 'Reservations[0].Instances[0].[InstanceId,State.Name,PublicIpAddress,LaunchTime]' --output text
+    aws elbv2 describe-target-health --region "$REGION" --target-group-arn "$TG_ARN" \
+      --query 'TargetHealthDescriptions[].[Target.Id,TargetHealth.State]' --output text
+  else
+    echo "no kiosk instance (ALB/EIP/DNS still standing)"
+  fi
+  printf 'kiosk URL: %s -> HTTP %s\n' "$KIOSK_URL" "$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$KIOSK_URL" || echo n/a)"
+}
+
+case "${1:-}" in
+  boot) cmd_boot ;;
+  terminate) cmd_terminate ;;
+  status) cmd_status ;;
+  *) echo "usage: $0 {boot|terminate|status}"; exit 2 ;;
+esac

@@ -5,6 +5,8 @@
 #   - NIM Operator CRDs (apps.nvidia.com/v1alpha1: NIMCache, NIMService)
 #   - Secrets in namespace nim-models: ngc-registry-credentials (image pull),
 #     nim-credentials (NGC_API_KEY)
+#   - The static PV/PVC below (apply BEFORE this file) so the cache survives a
+#     kubeadm reset — see kubernetes/manifests/nim-gemma-cache-pv.yaml
 #
 # This is the NIM-operator alternative to manifests/vllm-gemma4.yaml. Select it
 # with GEMMA_BACKEND=nim in deploy-allinone.sh. Validate the image tag/profile
@@ -17,17 +19,29 @@ metadata:
 spec:
   source:
     ngc:
-      modelPuller: nvcr.io/nim/google/gemma-4-26b-a4b-it:1.7.0-variant
+      modelPuller: nvcr.io/nim/google/gemma-4-26b-a4b-it:latest
       pullSecret: ngc-registry-credentials
       authSecret: nim-credentials
-      # No precision filter: let the operator auto-select the GPU-optimal profile.
-      # On Blackwell (RTX PRO 6000) this resolves to NV-FP4 automatically. A forced
-      # `model.precision: fp4` matched no tagged profile ("no profiles selected").
+      # Pinned (not auto/no-filter): with no profile filter, the cache job
+      # explores multiple untagged "fallback" profiles on every run (tp=2,
+      # tp=1 bf16, tp=1 nvfp4, ...) instead of converging on one — each boot
+      # grew the cache further (90GB -> 130GB) rather than fast-verifying
+      # existing content (discovered 2026-07-07). Pin to the exact same tp=1
+      # nvfp4 fallback hash as the NIMService's storage.nimCache.profile
+      # below, so caching is deterministic and bounded (~35-40GB) and a
+      # repeat run genuinely short-circuits via blake3 content matching.
+      model:
+        profiles:
+          - "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"
   storage:
     pvc:
       create: true
-      storageClass: ""        # default storage class
-      size: "50Gi"
+      # Non-default SC on purpose: "local-path" is this cluster's default, and a
+      # PVC with storageClass:"" gets dynamically provisioned by it (ignoring our
+      # static PV below). Naming an explicit non-default class forces binding to
+      # the pre-created PV instead — see nim-gemma-cache-pv.yaml.
+      storageClass: "static-nim"
+      size: "100Gi"
       volumeAccessMode: ReadWriteOnce
   resources: {}
 ---
@@ -39,7 +53,7 @@ metadata:
 spec:
   image:
     repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
-    tag: 1.7.0-variant
+    tag: latest
     pullPolicy: IfNotPresent
     pullSecrets:
       - ngc-registry-credentials
@@ -47,7 +61,18 @@ spec:
   storage:
     nimCache:
       name: gemma-cache
-      profile: ""             # auto-select the cached NV-FP4 profile
+      # Pinned, NOT auto-select: gemma-4-26b-a4b-it's manifest has no profile
+      # tagged for our exact GPU (RTX PRO 6000 Blackwell, pci.device_id
+      # 2bb5:10de) — none of the hardware-matched "throughput" profiles apply,
+      # so auto-select falls through to the manifest's FIRST untagged
+      # "fallback" profile, which happens to be tp=2 (needs 2 GPUs) and
+      # crash-loops with NIMProfileIDNotFound on this single-GPU box
+      # (discovered 2026-07-07). This hash is the tp=1 nvfp4 fallback profile
+      # — matches the default already pinned in kubernetes/nim-gemma/values.yaml
+      # (the standalone helm chart), just never carried over to this
+      # NIM-operator CRD manifest. Re-verify if the NIM image tag/version ever
+      # changes — profile hashes are tied to the manifest content.
+      profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"
   replicas: 1
   resources:
     limits:
@@ -62,14 +87,20 @@ spec:
       value: "1"
     # Shared (time-sliced) GPU: the NIM's default 0.85 GPU-mem-utilization check
     # fails when Renny/Riva already hold VRAM ("free memory < desired"). Relaxing
-    # the constraint lets it start (the NV-FP4 model is ~34 GiB, fits the 97 GiB
-    # Blackwell alongside the others). This matches the proven Docker config.
-    # Official NIM mechanism to forward vLLM CLI args (the env knobs don't move
-    # gpu_memory_utilization). The NV-FP4 model is ~34 GiB; cap utilization (~43 GiB)
-    # and context length so it co-exists with Renny/Riva on the shared 97 GiB GPU.
+    # the constraint lets it start, capped low enough to co-exist with Renny on
+    # the shared 97 GiB Blackwell. Official NIM mechanism to forward vLLM CLI
+    # args (the env knobs don't move gpu_memory_utilization).
     # https://docs.nvidia.com/nim-operator/latest/service.html
+    #
+    # 0.45 (~44 GiB) was calibrated for the ORIGINAL 31b model and is too tight
+    # for 26b: vLLM's startup sampler warmup profiles a full 128-request batch
+    # (deliberately pessimistic, well above steady-state usage) and hit a hard
+    # CUDA OOM at 0.45 even though actual concurrent usage (Renny x4 + host-
+    # helper) was only ~9 GiB of the 97 GiB total (discovered 2026-07-07).
+    # Bumped to 0.60 (~59 GiB) — still leaves ~38 GiB headroom for everything
+    # else. Re-tune if Renny's real footprint changes.
     - name: NIM_PASSTHROUGH_ARGS
-      value: "--gpu-memory-utilization 0.45 --max-model-len 16384"
+      value: "--gpu-memory-utilization 0.60 --max-model-len 16384"
     # OpenTelemetry -> Phoenix: the NIM exports a span for EVERY LLM call it
     # serves (model name, tokens, latency) regardless of caller — kiosk, the RAG
     # blueprint, agentic flows. This is model-agnostic: Phoenix tracks whatever
