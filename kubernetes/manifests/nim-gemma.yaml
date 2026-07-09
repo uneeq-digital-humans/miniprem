@@ -36,6 +36,13 @@ spec:
   storage:
     pvc:
       create: true
+      # Explicit name so it deterministically matches the static PV's
+      # claimRef (nim-gemma-cache-pv.yaml pins claimRef.name:
+      # gemma-cache-pvc). Without this the operator derives the PVC name
+      # from the NIMCache name, and any mismatch leaves the PVC Pending
+      # forever — Gemma never starts and the "no re-download" cache is
+      # never used. Keep this and the PV's claimRef in lockstep.
+      name: "gemma-cache-pvc"
       # Non-default SC on purpose: "local-path" is this cluster's default, and a
       # PVC with storageClass:"" gets dynamically provisioned by it (ignoring our
       # static PV below). Naming an explicit non-default class forces binding to

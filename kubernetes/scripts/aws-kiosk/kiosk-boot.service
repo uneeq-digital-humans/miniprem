@@ -13,7 +13,13 @@ RemainAfterExit=yes
 ExecStart=/usr/local/bin/kiosk-boot.sh
 StandardOutput=append:/var/log/kiosk-boot.log
 StandardError=append:/var/log/kiosk-boot.log
-TimeoutStartSec=1800
+# 90 min, NOT the typical 10-15 min boot: worst case is a cold Gemma cache
+# (35-90 GB NGC pull at NGC's mercy). 1800s SIGTERM'd exactly that case
+# mid-deploy. Keep this >= the waiter budget in kiosk-instance.sh.example.
+# (No Restart=: systemd disallows it with Type=oneshot + RemainAfterExit=yes;
+# recovery is `systemctl restart kiosk-boot` or an instance reboot — the
+# script is safe to re-run.)
+TimeoutStartSec=5400
 
 [Install]
 WantedBy=multi-user.target

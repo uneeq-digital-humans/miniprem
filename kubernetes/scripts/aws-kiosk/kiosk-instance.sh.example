@@ -94,9 +94,12 @@ cmd_boot() {
 
   # kiosk-boot.service runs kubeadm reset+reinit+full redeploy on the box
   # itself — real init + GPU/NIM operator reconcile + model load, not a warm
-  # resume. 10-15 min is typical; give it real headroom before giving up.
-  log "Waiting for kiosk-boot.service to finish and the stack to come up (target healthy + kiosk HTTP 200; up to 25 min)…"
-  for i in $(seq 1 100); do
+  # resume. 10-15 min is typical, but a cold Gemma cache (fresh AMI / wiped
+  # /data) pulls 35-90 GB from NGC — budget matches the unit's
+  # TimeoutStartSec=5400 so this waiter never gives up on a boot systemd is
+  # still happy to let finish.
+  log "Waiting for kiosk-boot.service to finish and the stack to come up (target healthy + kiosk HTTP 200; up to 90 min)…"
+  for i in $(seq 1 360); do
     state=$(aws elbv2 describe-target-health --region "$REGION" --target-group-arn "$TG_ARN" \
       --query 'TargetHealthDescriptions[0].TargetHealth.State' --output text 2>/dev/null || echo unknown)
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$KIOSK_URL" || true)
