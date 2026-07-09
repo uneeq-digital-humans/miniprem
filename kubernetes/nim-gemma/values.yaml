@@ -22,19 +22,35 @@ model:
   profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"  # NV-FP4
 
 # --- MTP / speculative decoding ----------------------------------------------
-# RE-VERIFIED 2026-07-08 via `list-model-profiles` (nim tag 1.7.0-variant): the
-# gemma-4-26b-a4b-it NIM ships 9 profiles, and NONE is MTP/speculative/EAGLE —
-# they are all standard vLLM engine profiles:
-#   nvfp4 fallback (48gib, pinned) · bf16 fallback (80gib) · bf16 tp2 fallback
-#   + h20/b200/h200/l40s/dgx-spark throughput profiles (bf16 & nvfp4)
-# So MTP is NOT available for this model on the supported NIM stack (it required
-# vLLM-nightly + the 12B "-it-assistant" drafter, which the "no custom vLLM"
-# constraint rules out). Leave disabled. If a future NIM build publishes an MTP
-# profile, set mtp.profile to its hash and enable — the template already swaps
-# NIM_MODEL_PROFILE to it, no other change needed.
+# Full investigation on T2, 2026-07-08 (PR #23): MTP genuinely works on THIS
+# build. `list-model-profiles` still shows no packaged MTP/speculative/EAGLE
+# profile (that check is correct, below and in the README) — but the drafter
+# ships INSIDE the pinned nvfp4 profile at /opt/nim/workspace/assistant
+# (Gemma4AssistantForCausalLM, the "-it-assistant" MTP drafter). No separate
+# profile hash needed — there is nothing to swap NIM_MODEL_PROFILE to.
+# /opt/nim/fallback.yaml is a full AsyncEngineArgs passthrough (its loader
+# filters keys against `fields(AsyncEngineArgs)` then does
+# `AsyncEngineArgs(**engine_args)`), unlike NIM_PASSTHROUGH_ARGS which this
+# build silently ignores (see the max_model_len note below). Appending to
+# fallback.yaml —
+#   speculative_config:
+#     model: /opt/nim/workspace/assistant
+#     num_speculative_tokens: 3
+# — made vLLM build SpeculativeConfig(method='mtp', …) and load the drafter.
+#
+# STILL DISABLED (enabled: false) for an unrelated reason: this NIM sizes its
+# KV cache from `nim_num_kv_cache_seq_lens: 1.0`, NOT from gpu_memory_utilization
+# (identical ~0.31 GiB KV cache measured at both 0.30 and 0.55 utilization).
+# That fixed KV cache is too small for vLLM's own "serve >=1 request at
+# max_seq_len" check — enabling MTP (or capping max_model_len) crashloops on
+# it. Likely an NVIDIA memory-estimator gap for gemma-4-26b-a4b. Untested next
+# lever: kvCacheSeqLens below (NIM_NUM_KV_CACHE_SEQ_LENS) — raising it should
+# enlarge the KV cache. Flip mtp.enabled once that (or an NVIDIA-side fix)
+# resolves the crash — re-validate via `curl /v1/models` + pod logs first.
 mtp:
   enabled: false
-  profile: ""        # MTP profile hash IF a future NIM build ships one
+  draftModelPath: /opt/nim/workspace/assistant   # bundled drafter, already in the image
+  numSpeculativeTokens: 3
 
 # vLLM gpu_memory_utilization injected into /opt/nim/fallback.yaml at startup so
 # the model co-exists with Riva/Renny/RAG (0.30 ≈ 25 GB of the 96 GB card).
@@ -45,16 +61,25 @@ relaxMemConstraints: true     # NIM_RELAX_MEM_CONSTRAINTS=1
 # NIM_PASSTHROUGH_ARGS="--max-model-len N" is IGNORED by this NIM build — the
 # engine still came up with max_seq_len=262144 and engine_extra_args
 # max_model_len:None. So there is no working env-level cap; the nvfp4 profile's
-# default 262144 stands. If a cap is genuinely needed on the shared GPU, it must
-# be done another way (e.g. sed max_model_len in /opt/nim/fallback.yaml like the
-# gpu_memory_utilization patch above) and RE-VALIDATED via `curl /v1/models`
-# before relying on it. Do NOT re-add a maxModelLen/NIM_PASSTHROUGH_ARGS knob
-# that silently does nothing.
+# default 262144 stands. fallback.yaml IS a working channel for arbitrary
+# EngineArgs (see the mtp block above) — but setting max_model_len there hits
+# the same KV-cache sizing bug as MTP and crashloops, so it's not re-added here
+# either. Once kvCacheSeqLens (below) or an NVIDIA fix resolves that, both this
+# cap and MTP can be re-enabled through the same fallback.yaml append.
+# RE-VALIDATE via `curl /v1/models` before relying on any arg set this way.
 
 # Prefix KV-cache reuse (NIM_ENABLE_KV_CACHE_REUSE=1): the replayed conversation
 # history shares a prefix turn-to-turn, so only new tokens are prefilled — keeps
 # per-turn latency ~flat as the transcript grows. Recommended for the kiosk.
 kvCacheReuse: true
+
+# UNTESTED lever for the KV-cache sizing bug described in the mtp block above
+# (NIM_NUM_KV_CACHE_SEQ_LENS). This NIM currently sizes its KV cache from a
+# fixed 1.0 regardless of gpu_memory_utilization (~0.31 GiB, too small to serve
+# one request at max_seq_len). Raising this — e.g. "4" — should enlarge the KV
+# cache allocation; nobody has run this on hardware yet. "" = unset, NIM
+# default (1.0). Verify via pod logs / `curl /v1/models` before trusting it.
+kvCacheSeqLens: ""
 
 # Extra env passed straight through to the NIMService (e.g. Phoenix/OpenTelemetry:
 #   NIM_ENABLE_OTEL: "1", OTEL_TRACES_EXPORTER: otlp,
