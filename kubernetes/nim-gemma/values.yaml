@@ -106,5 +106,3 @@ cache:
     size: 100Gi
     storageClass: nfs-client
     accessMode: ReadWriteOnce
-
-extraEnv: {}                  # e.g. { NIM_ENABLE_KV_CACHE_REUSE: "1" }
