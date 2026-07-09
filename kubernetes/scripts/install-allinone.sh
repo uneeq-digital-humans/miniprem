@@ -19,32 +19,27 @@ VRAM_MIB="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits 2>
 VRAM_GB=$(( VRAM_MIB / 1024 ))
 log "Detected GPU VRAM: ${VRAM_GB} GB"
 
-# --- 2) Recommend an LLM (gemma via NVIDIA NIM) -----------------------------
-# Recommendation = what a standard NGC key can ACTUALLY pull (verified on a live
-# box) AND what fits alongside Riva STT + Riva TTS + Renny + RAG on ONE GPU.
-# Pullable gemma NIMs with a standard key: gemma-2-9b-it and gemma-3-1b-it. The
-# larger gemmas (gemma-2-27b, gemma-3-4b/12b/27b) 401 without an extra NGC
-# entitlement, and there is NO public "gemma-4" NIM. gemma-2-9b is the sweet spot
-# (good quality, ~10–18GB — leaves ample room on a 24GB+ card for the rest).
-if   [ "$VRAM_GB" -lt 16 ]; then REC=lean
+# --- 2) LLM: the Dell-standard Gemma NIM ------------------------------------
+# STANDARD (and the ONLY supported Gemma) = google/gemma-4-26B-A4B-it: a
+# Mixture-of-Experts (~4B active of 26B total) served NV-FP4, ~25 GB VRAM — fits
+# alongside Riva STT + Riva TTS + Renny + RAG on one Blackwell / RTX 6000-class
+# card. Do NOT substitute another Gemma (gemma-2/gemma-3, or a dense gemma-4 like
+# 31B): the whole stack is aligned on this one id (nim-gemma chart, rag-adapter,
+# RAG blueprint, kiosk). `llama` is the only non-Gemma fallback — for a small/
+# contended GPU or a box whose NGC key can't pull the gemma-4 NIM.
+if   [ "$VRAM_GB" -lt 32 ]; then REC=llama     # 26B-A4B needs ~25GB + headroom; too big here
 else                              REC=standard; fi
 echo
-echo "  LLM templates (gemma via NVIDIA NIM — NGC key only, no HF token):"
-echo "    standard  → google/gemma-2-9b-it      (RECOMMENDED; pullable, fits with Riva+Renny+RAG)"
-echo "    lean      → google/gemma-3-1b-it      (tiny; only for a very small/contended GPU)"
-echo "    big       → google/gemma-3-27b-it     (needs an extra NGC entitlement — pull 401s without it)"
-echo "    llama     → meta/llama-3.1-8b-instruct (NIM fallback; always available)"
+echo "  LLM templates (via NVIDIA NIM — NGC key only):"
+echo "    standard  → google/gemma-4-26B-A4B-it  (RECOMMENDED; NV-FP4 MoE, fits with Riva+Renny+RAG on a big GPU)"
+echo "    llama     → meta/llama-3.1-8b-instruct (non-Gemma fallback; always available, fits small GPUs)"
 echo
 T="$(ask "Template (recommended: $REC)" "$REC")"
 
 case "$T" in
-  standard) GEMMA_BACKEND=nim; NIM_LLM_IMAGE="nvcr.io/nim/google/gemma-2-9b-it:latest";       GEMMA_MODEL="google/gemma-2-9b-it" ;;
-  lean)     GEMMA_BACKEND=nim; NIM_LLM_IMAGE="nvcr.io/nim/google/gemma-3-1b-it:latest";       GEMMA_MODEL="google/gemma-3-1b-it"
-            warn "Lean: gemma-3-1b is small — modest quality; use only on a tight GPU." ;;
-  big)      GEMMA_BACKEND=nim; NIM_LLM_IMAGE="nvcr.io/nim/google/gemma-3-27b-it:latest";      GEMMA_MODEL="google/gemma-3-27b-it"
-            warn "gemma-3-27b requires an NGC entitlement — the pull 401s without it." ;;
-  llama)    GEMMA_BACKEND=nim; NIM_LLM_IMAGE="nvcr.io/nim/meta/llama-3.1-8b-instruct:latest"; GEMMA_MODEL="meta/llama-3.1-8b-instruct" ;;
-  *) echo "Unknown template '$T'"; exit 1 ;;
+  standard) GEMMA_BACKEND=nim; NIM_LLM_IMAGE="nvcr.io/nim/google/gemma-4-26b-a4b-it:1.7.0-variant"; GEMMA_MODEL="google/gemma-4-26B-A4B-it" ;;
+  llama)    GEMMA_BACKEND=nim; NIM_LLM_IMAGE="nvcr.io/nim/meta/llama-3.1-8b-instruct:latest";       GEMMA_MODEL="meta/llama-3.1-8b-instruct" ;;
+  *) echo "Unknown template '$T' (supported: standard | llama)"; exit 1 ;;
 esac
 GEMMA_MODEL="$(ask "  LLM model" "$GEMMA_MODEL")"
 GEMMA_SERVED_NAME="$GEMMA_MODEL"

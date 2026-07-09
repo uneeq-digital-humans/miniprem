@@ -2,32 +2,88 @@ namespace: nim-models
 name: gemma-4-26b-a4b-it
 
 image:
+  # Gemma-4 26B-A4B: a Mixture-of-Experts (~4B ACTIVE params of 26B total). This
+  # NIM ships the weights in BOTH NV-FP4 and BF16 — the `model.profile` below is
+  # what actually selects the QUANTIZATION. On the shared single-GPU box we run
+  # the NV-FP4 profile; that is what makes the model fit alongside Riva + Renny +
+  # RAG. (`-variant` in the tag is the NIM packaging variant, NOT the quant.)
   repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
   tag: 1.7.0-variant
   pullPolicy: IfNotPresent
 
-# The optimized NIM profile to serve. Default = the ~25 GB (≈25890 MiB) profile
-# that fits with Riva + Renny + RAG on one Blackwell. Find alternatives with:
+# The optimized NIM profile to serve — this picks the QUANTIZATION + engine.
+# Pinned = vllm-nvfp4-tp1-pp1-fallback-1-48gib (NV-FP4): ~25 GB actual VRAM at
+# gpuMemoryUtilization 0.30, fits with Riva + Renny + RAG on one Blackwell. (The
+# "48gib" in the profile name is the target GPU-memory class, not the footprint.)
+# A BF16 fallback profile (533c7a07…) also exists for full precision on a bigger
+# card. List all with:
 #   nerdctl run --rm -e NGC_API_KEY=... <image> list-model-profiles
 model:
-  profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"
+  profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"  # NV-FP4
 
 # --- MTP / speculative decoding ----------------------------------------------
-# VERIFIED 2026-06-29 via `list-model-profiles`: the gemma-4-26b-a4b-it NIM ships
-# NO MTP/speculative/EAGLE profile — only standard vllm nvfp4/bf16 fallback &
-# throughput profiles. So MTP is NOT available for this model on the supported
-# NIM stack (it required vLLM-nightly + the 12B "-it-assistant" drafter, which the
-# "no custom vLLM" constraint rules out). Leave disabled. If a future NIM build
-# publishes an MTP profile, set mtp.profile to its hash and enable — the template
-# already swaps NIM_MODEL_PROFILE to it, no other change needed.
+# VALIDATED and ON by default. On T2 (RTX PRO 6000 Blackwell 96 GB, 2026-07-09)
+# MTP boots clean and serves coherent output. The "-it-assistant" drafter
+# (Gemma4AssistantForCausalLM) ships INSIDE the pinned nvfp4 profile at
+# /opt/nim/workspace/assistant — no separate profile hash, nothing to swap
+# NIM_MODEL_PROFILE to. `list-model-profiles` shows no packaged MTP/EAGLE
+# profile; that check is correct and irrelevant — the drafter is bundled in the
+# weights.
+#
+# The lever is /opt/nim/fallback.yaml (a full AsyncEngineArgs passthrough: its
+# loader filters keys against `fields(AsyncEngineArgs)` then does
+# `AsyncEngineArgs(**engine_args)`), NOT NIM_PASSTHROUGH_ARGS which this build
+# silently ignores (see the max_model_len note below). nim.yaml appends, when
+# mtp.enabled —
+#   speculative_config:
+#     model: /opt/nim/workspace/assistant
+#     num_speculative_tokens: 3
+# Verified: vLLM built SpeculativeConfig(method='mtp', num_spec_tokens=3), loaded
+# the drafter, and booted at the profile-default 262144 context / util 0.30 with
+# a 438,396-token KV cache (1.67x concurrency) — then served a correct reply at
+# ~200 tok/s. Re-validate on new hardware/images via `curl /v1/chat/completions`
+# + pod logs for `SpeculativeConfig(method='mtp'`.
+#
+# Set enabled:false on VRAM-constrained boxes (the drafter is a second model in
+# memory). num_speculative_tokens=3 works; logs hint >1 can lower acceptance and
+# max_num_batched_tokens=4096 is tight — tune later for peak throughput.
 mtp:
-  enabled: false
-  profile: ""        # MTP profile hash IF a future NIM build ships one
+  enabled: true
+  draftModelPath: /opt/nim/workspace/assistant   # bundled drafter, already in the image
+  numSpeculativeTokens: 3
 
 # vLLM gpu_memory_utilization injected into /opt/nim/fallback.yaml at startup so
 # the model co-exists with Riva/Renny/RAG (0.30 ≈ 25 GB of the 96 GB card).
 gpuMemoryUtilization: "0.30"
 relaxMemConstraints: true     # NIM_RELAX_MEM_CONSTRAINTS=1
+
+# NOTE: max_model_len is left at the nvfp4 profile default (262144). VERIFIED on
+# T2 (2026-07-08) that NIM_PASSTHROUGH_ARGS="--max-model-len N" is IGNORED by this
+# build — the engine came up with max_seq_len=262144 and engine_extra_args
+# max_model_len:None. fallback.yaml IS a working channel to cap it if ever needed
+# (same mechanism as the mtp block above). CORRECTION (2026-07-09): the earlier
+# crashloop blamed on a "KV-cache sizing bug" was a misdiagnosis — it was a
+# 3-at-once config (util 0.55 + max_model_len 16384 + MTP). MTP alone at default
+# context is healthy (see mtp block); there is no fixed-tiny-KV problem on this
+# build. RE-VALIDATE via `curl /v1/models` before relying on any arg set this way.
+
+# Prefix KV-cache reuse (NIM_ENABLE_KV_CACHE_REUSE=1): the replayed conversation
+# history shares a prefix turn-to-turn, so only new tokens are prefilled — keeps
+# per-turn latency ~flat as the transcript grows. Recommended for the kiosk.
+kvCacheReuse: true
+
+# NIM_NUM_KV_CACHE_SEQ_LENS escape hatch. We once suspected KV cache was pinned
+# tiny (~0.31 GiB) regardless of gpu_memory_utilization and that raising this was
+# needed for MTP. VALIDATED FALSE on T2 (2026-07-09): at the default 1.0 the KV
+# cache is 438,396 tokens (1.67x concurrency at 262144) and MTP boots fine. Leave
+# "" (NIM default 1.0); only set it if a future build genuinely under-sizes KV.
+# Verify via pod logs / `curl /v1/models` before trusting it.
+kvCacheSeqLens: ""
+
+# Extra env passed straight through to the NIMService (e.g. Phoenix/OpenTelemetry:
+#   NIM_ENABLE_OTEL: "1", OTEL_TRACES_EXPORTER: otlp,
+#   OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix.uneeq.svc.cluster.local:4317).
+extraEnv: {}
 
 auth:
   authSecret: ngc-api-secret  # generic NGC API key (model download)
@@ -49,5 +105,3 @@ cache:
     size: 100Gi
     storageClass: nfs-client
     accessMode: ReadWriteOnce
-
-extraEnv: {}                  # e.g. { NIM_ENABLE_KV_CACHE_REUSE: "1" }

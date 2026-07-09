@@ -15,9 +15,13 @@ imagePullSecret:
 
 # ----- LLM: use the local Gemma NIM rather than the blueprint's default -----
 llm:
-  # Point at the in-cluster Gemma NIM (deployed by stage_nim).
-  modelName: "google/gemma-3-27b-it"
-  serverUrl: "http://vllm-gemma4.nim-models.svc.cluster.local:8000/v1"
+  # Point at the in-cluster Gemma NIM (deployed by stage_nim). This MUST be the
+  # id the NIM actually serves (`/v1/models` → google/gemma-4-26B-A4B-it) and the
+  # NIM's own service — the old gemma-3-27b-it name + vllm-gemma4 host were stale
+  # (no vllm-gemma4 exists; the box runs the gemma NIM). apply-rag-integration.sh
+  # patches the live server to these same values.
+  modelName: "google/gemma-4-26B-A4B-it"
+  serverUrl: "http://gemma.nim-models.svc.cluster.local:8000/v1"
   # Gemma is concise & fast; keep thinking off for low-latency conversation.
   extraOptions:
     enableThinking: false
