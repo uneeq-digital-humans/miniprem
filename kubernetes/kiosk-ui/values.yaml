@@ -16,7 +16,7 @@ spa:
 # is pullable. Override image.* to a mirror in the `uneeq` project if needed.
 image:
   repository: cr.uneeq.io/dell-isg-containers/digitalhuman-interface
-  tag: 0.11-b7693
+  tag: 0.244-ca717
   pullPolicy: IfNotPresent
 imagePullSecrets:
   - harbor-credentials
