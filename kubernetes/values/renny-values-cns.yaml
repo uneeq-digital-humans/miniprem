@@ -49,7 +49,10 @@ gpuTimeSlicing:
 
 deployment:
   nodeType: ""  # Empty = no node selector (single server deployments)
-  totalReplicas: 4  # Match gpuTimeSlicing.replicasPerGpu × number of GPUs
+  totalReplicas: 2  # 2 Rennys leaves GPU headroom for the co-resident Gemma NIM.
+                    # Empirically validated: 4 starved Gemma's vLLM warmup into a
+                    # CUDA OOM crash-loop on the shared single-GPU box (matches the
+                    # AWS all-in-one finding). Raise only on a dedicated Renny GPU.
 
 renderer:
   # DHOP connection (connects to UneeQ cloud for session orchestration)
