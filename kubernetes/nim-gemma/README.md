@@ -20,7 +20,7 @@ Every published profile for this model is "Incompatible with system" (they targe
 lowers `gpu_memory_utilization` (0.30) so it runs at ~25 GB on the shared 96 GB
 card. Default profile `98504107…` = `vllm-nvfp4-tp1-pp1-fallback-1-48gib`.
 
-## MTP — works, but disabled pending a KV-cache bug (full investigation on T2, 2026-07-08)
+## MTP — validated and ON by default (T2, 2026-07-09)
 
 `list-model-profiles` on `nvcr.io/nim/google/gemma-4-26b-a4b-it:latest` returns
 ONLY standard profiles — no MTP/speculative/EAGLE/Medusa:
@@ -45,19 +45,27 @@ speculative_config:
   model: /opt/nim/workspace/assistant
   num_speculative_tokens: 3
 ```
-made vLLM build `SpeculativeConfig(method='mtp', …)` and load the drafter, verified
-on T2. The chart wires this behind `mtp.enabled` (`templates/nim.yaml`) — no
-profile hash or NIM_MODEL_PROFILE swap needed, since it's the same profile.
+made vLLM build `SpeculativeConfig(method='mtp', …)` and load the drafter. The
+chart wires this behind `mtp.enabled` (`templates/nim.yaml`) — no profile hash or
+NIM_MODEL_PROFILE swap needed, since it's the same profile.
 
-**Why it's still off by default:** this NIM sizes its KV cache from a fixed
-`nim_num_kv_cache_seq_lens: 1.0`, not from `gpu_memory_utilization` (identical
-~0.31 GiB KV cache measured at both 0.30 and 0.55 utilization — likely an NVIDIA
-memory-estimator gap for gemma-4-26b-a4b). That KV cache is too small for vLLM's
-own "serve ≥1 request at max_seq_len" check, so enabling MTP (or capping
-`max_model_len`) crashloops. Untested next lever: `kvCacheSeqLens` in
-`values.yaml` (`NIM_NUM_KV_CACHE_SEQ_LENS`) — raising it should enlarge the KV
-cache. Flip `mtp.enabled: true` once that (or an NVIDIA-side fix) resolves the
-crash, and re-validate via `curl /v1/models` + pod logs before trusting it.
+**Validated end-to-end (2026-07-09, RTX PRO 6000 Blackwell 96 GB).** With MTP on
+at the default 262144 context and `gpuMemoryUtilization: 0.30`, gemma booted clean
+(`SpeculativeConfig(method='mtp', num_spec_tokens=3)`, drafter loaded), reported a
+**438,396-token KV cache (1.67x concurrency)**, and served a correct reply at
+**~200 tok/s** (`curl /v1/chat/completions`, HTTP 200). It is now **on by default**.
+
+**Correction to the earlier draft of this doc:** a previous version claimed MTP
+was blocked because this NIM "sizes its KV cache from a fixed
+`nim_num_kv_cache_seq_lens: 1.0` (~0.31 GiB), too small for the max_seq_len check."
+**That was a misdiagnosis.** The crashloop that produced it was a three-changes-at-
+once config (util 0.55 + `max_model_len: 16384` appended to fallback.yaml + MTP).
+Isolating MTP alone proved the KV cache is healthy (438k tokens at util 0.30) and
+`nim_num_kv_cache_seq_lens` stays at its 1.0 default. `kvCacheSeqLens` in
+`values.yaml` is retained only as an escape hatch, not a requirement. Set
+`mtp.enabled: false` on VRAM-constrained boxes (the drafter is a second model in
+memory); re-validate on new hardware/images via `curl /v1/chat/completions` + pod
+logs for `SpeculativeConfig(method='mtp'`.
 
 To re-check the profile list on a newer NIM build:
 ```bash
