@@ -270,10 +270,18 @@ stage_renny() {
   # Pass the DHOP platform creds (seed PLATFORM_KEY/TENANT_ID) so the renny secret
   # gets a real dhop-api-key + the deployment a real tenantId — otherwise Renny
   # fails with CreateContainerConfigError (missing dhop-api-key).
+  # When Riva TTS isn't deployed, blank the CNS values' rivaServerAddr so Renny
+  # doesn't carry a RIVA_SERVER_ADDR pointing at a nonexistent service —
+  # host-helper's /tts-config uses that env's presence to decide the renderer is
+  # "wired for Riva", which makes the kiosk status panel report "Riva TTS:
+  # Offline" forever on ElevenLabs-only boxes (cosmetic but alarming).
+  local riva_addr_override=()
+  [ "$DEPLOY_RIVA_TTS" = yes ] || riva_addr_override=(--set-string renderer.tts.rivaServerAddr="")
   helm_install renny "$NAMESPACE" "$K8S_DIR/renny" \
     -f "$K8S_DIR/values/renny-values-cns.yaml" \
     --set renderer.dhop.apiKey="$PLATFORM_KEY" \
     --set renderer.dhop.tenantId="$TENANT_ID" \
+    "${riva_addr_override[@]}" \
     ${ELEVENLABS_API_KEY:+--set-string renderer.tts.elevenlabsApiKey="$ELEVENLABS_API_KEY"} \
     ${ELEVENLABS_MODEL_ID:+--set-string renderer.tts.elevenlabsModelId="$ELEVENLABS_MODEL_ID"}
 }
