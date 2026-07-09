@@ -14,6 +14,12 @@
 #     see manifests/nim-gemma-cache-pv.yaml) — a fresh PVC re-binds to it via
 #     the non-default "static-nim" StorageClass, so the NIM operator's puller
 #     finds the weights already there and skips the ~30-90GB NGC download.
+#   - The rag-adapter's /data at /data/rag-adapter (static hostPath PV, see
+#     manifests/rag-adapter-data-pv.yaml) — kiosk-config.json, persona prompt
+#     override, standby videos, Settings password, and the knowledge base.
+#     Without this every boot silently reset all live operator config (the
+#     etcd wipe recreates the PVC empty; unlike the on-prem Dell appliance,
+#     where /data persists because etcd is never reset).
 #   - /home/admin/migration/creds.conf (host file, not a k8s object) — has
 #     NGC_API_KEY/HARBOR_*/PLATFORM_KEY/TENANT_ID/DEEPGRAM_API_KEY/
 #     ELEVENLABS_API_KEY baked into the AMI.
@@ -89,12 +95,24 @@ systemctl restart kubelet
 log "Waiting for the node to go Ready (up to 5 min)…"
 kubectl wait --for=condition=Ready node --all --timeout=300s
 
-log "Applying the static Gemma cache PV (must exist before the NIMCache CR)"
+log "Applying the static PVs (Gemma cache + rag-adapter data — must exist before their claimants)"
+mkdir -p /data/nim-cache/gemma /data/rag-adapter
 kubectl apply -f "$REPO/kubernetes/manifests/nim-gemma-cache-pv.yaml"
+kubectl apply -f "$REPO/kubernetes/manifests/rag-adapter-data-pv.yaml"
 
+# helm repo add/update need helm.ngc.nvidia.com — tolerable to fail (a
+# transient NGC blip must not kill the boot) ONLY because the AMI bakes the
+# repo index + chart cache from a previous successful run. Verify the chart is
+# actually resolvable (from network OR cache) and fail fast with a real error
+# instead of letting `helm upgrade` die later with something cryptic.
 log "Installing GPU operator"
 helm repo add nvidia https://helm.ngc.nvidia.com/nvidia >/dev/null 2>&1 || true
-helm repo update >/dev/null 2>&1 || true
+helm repo update >/dev/null 2>&1 || \
+  log "WARNING: helm repo update failed (NGC unreachable?) — falling back to the AMI's cached chart index"
+helm show chart nvidia/gpu-operator >/dev/null 2>&1 || {
+  echo "FATAL: chart nvidia/gpu-operator not resolvable (network down AND no cached index in the AMI)" >&2
+  exit 1
+}
 helm upgrade --install gpu-operator nvidia/gpu-operator \
   --namespace gpu-operator --create-namespace \
   --set operator.defaultRuntime=containerd \
@@ -107,6 +125,14 @@ for i in $(seq 1 60); do
   [ -n "$gpu" ] && [ "$gpu" != "0" ] && break
   sleep 5
 done
+# Under set -e a for-loop that never breaks still falls through "successfully"
+# — check the result explicitly so a broken GPU stack fails the boot loudly
+# instead of deploying a stack whose GPU pods will sit Pending forever.
+if [ -z "${gpu:-}" ] || [ "$gpu" = "0" ]; then
+  echo "FATAL: GPU never became allocatable (gpu-operator broken? driver mismatch?) — aborting boot" >&2
+  kubectl get pods -n gpu-operator >&2 || true
+  exit 1
+fi
 
 # These two steps were manual one-off actions on the original box (2026-07-06)
 # that got baked into that AMI's etcd state — a fresh kubeadm init has neither.
@@ -152,10 +178,22 @@ for i in $(seq 1 36); do
   [ "$gpu" = "6" ] && break
   sleep 5
 done
+if [ "${gpu:-}" != "6" ]; then
+  echo "FATAL: time-slicing never took effect (allocatable=$gpu, expected 6) — Renny/Gemma/host-helper cannot coexist; aborting boot" >&2
+  exit 1
+fi
 
 log "Installing NIM operator"
+helm show chart nvidia/k8s-nim-operator >/dev/null 2>&1 || {
+  echo "FATAL: chart nvidia/k8s-nim-operator not resolvable (network down AND no cached index in the AMI)" >&2
+  exit 1
+}
 helm upgrade --install nim-operator nvidia/k8s-nim-operator --namespace nim-operator --create-namespace
 for i in $(seq 1 30); do kubectl get crd nimservices.apps.nvidia.com >/dev/null 2>&1 && break; sleep 4; done
+kubectl get crd nimservices.apps.nvidia.com >/dev/null 2>&1 || {
+  echo "FATAL: NIM operator CRDs never appeared after 2 min — aborting boot" >&2
+  exit 1
+}
 
 log "Installing ingress-nginx (deploy-allinone.sh doesn't do this — separate step)"
 bash "$REPO/kubernetes/scripts/cns-reprovision/40-ingress.sh"
@@ -180,6 +218,31 @@ export DEPLOY_RIVA_TTS=no
 export DEPLOY_RIVA_STT=no
 export STT_PROVIDER=deepgram
 export KIOSK_INGRESS_HOST=digitalhuman.miniprem
+# Bind the rag-adapter's /data PVC to the static hostPath PV so operator
+# config survives the per-boot etcd wipe (see rag-adapter-data-pv.yaml).
+export RAG_DATA_STORAGE_CLASS=static-local
 bash kubernetes/scripts/deploy-allinone.sh
+
+# The whole point of the static PVs is defeated silently if the PVCs bind to
+# the wrong thing (or sit Pending): Gemma re-pulls 30-90GB, operator config
+# resets per boot. Verify the actual bindings and fail loudly on mismatch.
+log "Verifying static PV bindings…"
+verify_pvc_bound() {  # verify_pvc_bound <ns> <pvc> <expected-pv> (waits up to 5 min — WaitForFirstConsumer binds only once the pod schedules)
+  local ns=$1 pvc=$2 want_pv=$3 phase= pv=
+  for _ in $(seq 1 60); do
+    phase=$(kubectl -n "$ns" get pvc "$pvc" -o jsonpath='{.status.phase}' 2>/dev/null || true)
+    pv=$(kubectl -n "$ns" get pvc "$pvc" -o jsonpath='{.spec.volumeName}' 2>/dev/null || true)
+    [ "$phase" = "Bound" ] && break
+    sleep 5
+  done
+  if [ "$phase" != "Bound" ] || [ "$pv" != "$want_pv" ]; then
+    echo "FATAL: PVC $ns/$pvc is '$phase' bound to '${pv:-<none>}' (expected Bound to $want_pv) — static hostPath data is NOT wired up" >&2
+    kubectl -n "$ns" get pvc >&2 || true; kubectl get pv >&2 || true
+    exit 1
+  fi
+  log "PVC $ns/$pvc bound to $want_pv ✓"
+}
+verify_pvc_bound nim-models gemma-cache-pvc gemma-cache-pv
+verify_pvc_bound uneeq rag-adapter-data rag-adapter-data-pv
 
 log "Boot sequence complete."

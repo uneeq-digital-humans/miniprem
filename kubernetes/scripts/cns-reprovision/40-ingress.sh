@@ -8,7 +8,14 @@ export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
 
 log "Installing ingress-nginx (hostNetwork)"
 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/null 2>&1 || true
-helm repo update >/dev/null 2>&1 || true
+helm repo update >/dev/null 2>&1 || \
+  log "WARNING: helm repo update failed (github.io unreachable?) — falling back to the cached chart index"
+# Fail fast with a real error if the chart is resolvable neither from the
+# network nor the local helm cache — otherwise the install below dies cryptically.
+helm show chart ingress-nginx/ingress-nginx >/dev/null 2>&1 || {
+  echo "FATAL: chart ingress-nginx/ingress-nginx not resolvable (network down AND no cached index)" >&2
+  exit 1
+}
 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
   --namespace ingress-nginx --create-namespace \
   --set controller.hostNetwork=true \

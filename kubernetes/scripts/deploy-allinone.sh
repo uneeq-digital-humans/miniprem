@@ -78,6 +78,12 @@ ADAPTER_LLM_URL="${ADAPTER_LLM_URL:-$([ "$GEMMA_BACKEND" = nim ] && echo "$NIM_G
 # rag-adapter image: override to a locally-built image (e.g. on a kubeadm box that
 # can't pull from cr.uneeq.io) — set RAG_ADAPTER_IMAGE=rag-adapter:local.
 RAG_ADAPTER_IMAGE="${RAG_ADAPTER_IMAGE:-}"
+# rag-adapter /data StorageClass. Default "" = cluster default (dynamic
+# local-path — correct on the on-prem Dell appliance where etcd persists).
+# The reset-on-boot AWS kiosk sets this to "static-local" so the PVC binds to
+# the fixed hostPath PV (manifests/rag-adapter-data-pv.yaml) and operator
+# config survives the per-boot etcd wipe.
+RAG_DATA_STORAGE_CLASS="${RAG_DATA_STORAGE_CLASS:-}"
 PHOENIX_OTLP_ENDPOINT="${PHOENIX_OTLP_ENDPOINT:-http://phoenix.${NAMESPACE}.svc.cluster.local:6006/v1/traces}"
 PHOENIX_PROJECT="${PHOENIX_PROJECT:-kiosk-conversations}"
 
@@ -175,9 +181,23 @@ stage_nim() {
     # image was ignored and only the bare `tag:` got rewritten onto the wrong repo).
     local _repo="${NIM_LLM_IMAGE%:*}" _tag="${NIM_LLM_IMAGE##*:}"
     if [ "$_repo" = "$NIM_LLM_IMAGE" ] || [ -z "$_tag" ]; then _repo="$NIM_LLM_IMAGE"; _tag="latest"; fi
+    # The manifest's pinned profile hashes are tied to the DEFAULT image's
+    # manifest content. If the seed chose a different image (other model OR
+    # other tag), those hashes don't exist there and the NIM crash-loops with
+    # NIMProfileIDNotFound — strip the pins and let the operator auto-select.
+    local _default_img _strip_profiles=()
+    _default_img=$(sed -n 's/^[[:space:]]*modelPuller:[[:space:]]*//p' "$K8S_DIR/manifests/nim-gemma.yaml" | head -1)
+    if [ "${_repo}:${_tag}" != "$_default_img" ]; then
+      log "NIM image differs from manifest default ($_default_img) — dropping pinned profile hashes (operator auto-select)"
+      _strip_profiles=(-e '/^[[:space:]]*model:[[:space:]]*$/d' \
+                       -e '/^[[:space:]]*profiles:[[:space:]]*$/d' \
+                       -e '/^[[:space:]]*profile:[[:space:]]/d' \
+                       -e '/^[[:space:]]*- "[0-9a-f]\{64\}"[[:space:]]*$/d')
+    fi
     sed -e "s#^\([[:space:]]*\)modelPuller: .*#\1modelPuller: ${_repo}:${_tag}#" \
         -e "s#^\([[:space:]]*\)repository: .*#\1repository: ${_repo}#" \
         -e "s#^\([[:space:]]*\)tag: .*#\1tag: ${_tag}#" \
+        ${_strip_profiles[@]+"${_strip_profiles[@]}"} \
         "$K8S_DIR/manifests/nim-gemma.yaml" | $KUBECTL apply -n "$NIM_NAMESPACE" -f -
   else
     log "Deploying Gemma via vLLM (model=$GEMMA_MODEL gpu-util=$VLLM_GPU_UTIL max-len=$VLLM_MAX_LEN)"
@@ -255,6 +275,7 @@ stage_rag_adapter() {
     --set phoenix.project="$PHOENIX_PROJECT" \
     --set ingress.host="${KIOSK_INGRESS_HOST:-digitalhuman.miniprem}" \
     ${RAG_ADAPTER_IMAGE:+--set image.repository="${RAG_ADAPTER_IMAGE%%:*}" --set image.tag="${RAG_ADAPTER_IMAGE##*:}" --set image.pullPolicy=IfNotPresent} \
+    ${RAG_DATA_STORAGE_CLASS:+--set persistence.storageClass="$RAG_DATA_STORAGE_CLASS"} \
     ${RAG_ADMIN_KEY:+--set admin.apiKey="$RAG_ADMIN_KEY"}
 }
 
