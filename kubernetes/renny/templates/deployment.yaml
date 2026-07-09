@@ -166,7 +166,13 @@ spec:
             path: /health
             port: 8082
           periodSeconds: 10
-          failureThreshold: 6
+          # The renderer intentionally delays its ready signal 60s after engine
+          # init ("Delaying renderer ready signal for 60.0 seconds") — a 6×10s
+          # window expires right at that boundary, so pods crash-looped on
+          # timing luck (observed 2026-07-09: one replica up, one killed 6×
+          # by "failed startup probe"). 30×10s = 5 min of startup grace; the
+          # liveness probe still guards the pod once started.
+          failureThreshold: 30
           timeoutSeconds: 2
         tty: true
 {{- if .Values.telemetry.enabled }}
