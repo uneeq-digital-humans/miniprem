@@ -1,4 +1,4 @@
-image: "cr.uneeq.io/dell-isg-containers/digitalhuman-interface:0.238-6bfec"
+image: "cr.uneeq.io/dell-isg-containers/digitalhuman-interface:0.244-ca717"
 
 imagePullSecrets:
   - name: harbor-credentials
