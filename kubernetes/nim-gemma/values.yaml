@@ -2,32 +2,89 @@ namespace: nim-models
 name: gemma-4-26b-a4b-it
 
 image:
+  # Gemma-4 26B-A4B: a Mixture-of-Experts (~4B ACTIVE params of 26B total). This
+  # NIM ships the weights in BOTH NV-FP4 and BF16 — the `model.profile` below is
+  # what actually selects the QUANTIZATION. On the shared single-GPU box we run
+  # the NV-FP4 profile; that is what makes the model fit alongside Riva + Renny +
+  # RAG. (`-variant` in the tag is the NIM packaging variant, NOT the quant.)
   repository: nvcr.io/nim/google/gemma-4-26b-a4b-it
   tag: latest
   pullPolicy: IfNotPresent
 
-# The optimized NIM profile to serve. Default = the ~25 GB (≈25890 MiB) profile
-# that fits with Riva + Renny + RAG on one Blackwell. Find alternatives with:
+# The optimized NIM profile to serve — this picks the QUANTIZATION + engine.
+# Pinned = vllm-nvfp4-tp1-pp1-fallback-1-48gib (NV-FP4): ~25 GB actual VRAM at
+# gpuMemoryUtilization 0.30, fits with Riva + Renny + RAG on one Blackwell. (The
+# "48gib" in the profile name is the target GPU-memory class, not the footprint.)
+# A BF16 fallback profile (533c7a07…) also exists for full precision on a bigger
+# card. List all with:
 #   nerdctl run --rm -e NGC_API_KEY=... <image> list-model-profiles
 model:
-  profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"
+  profile: "98504107c270d21f1cd8997de34c06e4e277f724c949d509cc64d39aef3e98d9"  # NV-FP4
 
 # --- MTP / speculative decoding ----------------------------------------------
-# VERIFIED 2026-06-29 via `list-model-profiles`: the gemma-4-26b-a4b-it NIM ships
-# NO MTP/speculative/EAGLE profile — only standard vllm nvfp4/bf16 fallback &
-# throughput profiles. So MTP is NOT available for this model on the supported
-# NIM stack (it required vLLM-nightly + the 12B "-it-assistant" drafter, which the
-# "no custom vLLM" constraint rules out). Leave disabled. If a future NIM build
-# publishes an MTP profile, set mtp.profile to its hash and enable — the template
-# already swaps NIM_MODEL_PROFILE to it, no other change needed.
+# Full investigation on T2, 2026-07-08 (PR #23): MTP genuinely works on THIS
+# build. `list-model-profiles` still shows no packaged MTP/speculative/EAGLE
+# profile (that check is correct, below and in the README) — but the drafter
+# ships INSIDE the pinned nvfp4 profile at /opt/nim/workspace/assistant
+# (Gemma4AssistantForCausalLM, the "-it-assistant" MTP drafter). No separate
+# profile hash needed — there is nothing to swap NIM_MODEL_PROFILE to.
+# /opt/nim/fallback.yaml is a full AsyncEngineArgs passthrough (its loader
+# filters keys against `fields(AsyncEngineArgs)` then does
+# `AsyncEngineArgs(**engine_args)`), unlike NIM_PASSTHROUGH_ARGS which this
+# build silently ignores (see the max_model_len note below). Appending to
+# fallback.yaml —
+#   speculative_config:
+#     model: /opt/nim/workspace/assistant
+#     num_speculative_tokens: 3
+# — made vLLM build SpeculativeConfig(method='mtp', …) and load the drafter.
+#
+# STILL DISABLED (enabled: false) for an unrelated reason: this NIM sizes its
+# KV cache from `nim_num_kv_cache_seq_lens: 1.0`, NOT from gpu_memory_utilization
+# (identical ~0.31 GiB KV cache measured at both 0.30 and 0.55 utilization).
+# That fixed KV cache is too small for vLLM's own "serve >=1 request at
+# max_seq_len" check — enabling MTP (or capping max_model_len) crashloops on
+# it. Likely an NVIDIA memory-estimator gap for gemma-4-26b-a4b. Untested next
+# lever: kvCacheSeqLens below (NIM_NUM_KV_CACHE_SEQ_LENS) — raising it should
+# enlarge the KV cache. Flip mtp.enabled once that (or an NVIDIA-side fix)
+# resolves the crash — re-validate via `curl /v1/models` + pod logs first.
 mtp:
   enabled: false
-  profile: ""        # MTP profile hash IF a future NIM build ships one
+  draftModelPath: /opt/nim/workspace/assistant   # bundled drafter, already in the image
+  numSpeculativeTokens: 3
 
 # vLLM gpu_memory_utilization injected into /opt/nim/fallback.yaml at startup so
 # the model co-exists with Riva/Renny/RAG (0.30 ≈ 25 GB of the 96 GB card).
 gpuMemoryUtilization: "0.30"
 relaxMemConstraints: true     # NIM_RELAX_MEM_CONSTRAINTS=1
+
+# NOTE: max_model_len is NOT capped here. VERIFIED on the T2 (2026-07-08) that
+# NIM_PASSTHROUGH_ARGS="--max-model-len N" is IGNORED by this NIM build — the
+# engine still came up with max_seq_len=262144 and engine_extra_args
+# max_model_len:None. So there is no working env-level cap; the nvfp4 profile's
+# default 262144 stands. fallback.yaml IS a working channel for arbitrary
+# EngineArgs (see the mtp block above) — but setting max_model_len there hits
+# the same KV-cache sizing bug as MTP and crashloops, so it's not re-added here
+# either. Once kvCacheSeqLens (below) or an NVIDIA fix resolves that, both this
+# cap and MTP can be re-enabled through the same fallback.yaml append.
+# RE-VALIDATE via `curl /v1/models` before relying on any arg set this way.
+
+# Prefix KV-cache reuse (NIM_ENABLE_KV_CACHE_REUSE=1): the replayed conversation
+# history shares a prefix turn-to-turn, so only new tokens are prefilled — keeps
+# per-turn latency ~flat as the transcript grows. Recommended for the kiosk.
+kvCacheReuse: true
+
+# UNTESTED lever for the KV-cache sizing bug described in the mtp block above
+# (NIM_NUM_KV_CACHE_SEQ_LENS). This NIM currently sizes its KV cache from a
+# fixed 1.0 regardless of gpu_memory_utilization (~0.31 GiB, too small to serve
+# one request at max_seq_len). Raising this — e.g. "4" — should enlarge the KV
+# cache allocation; nobody has run this on hardware yet. "" = unset, NIM
+# default (1.0). Verify via pod logs / `curl /v1/models` before trusting it.
+kvCacheSeqLens: ""
+
+# Extra env passed straight through to the NIMService (e.g. Phoenix/OpenTelemetry:
+#   NIM_ENABLE_OTEL: "1", OTEL_TRACES_EXPORTER: otlp,
+#   OTEL_EXPORTER_OTLP_ENDPOINT: http://phoenix.uneeq.svc.cluster.local:4317).
+extraEnv: {}
 
 auth:
   authSecret: ngc-api-secret  # generic NGC API key (model download)
@@ -49,5 +106,3 @@ cache:
     size: 100Gi
     storageClass: nfs-client
     accessMode: ReadWriteOnce
-
-extraEnv: {}                  # e.g. { NIM_ENABLE_KV_CACHE_REUSE: "1" }
