@@ -448,6 +448,39 @@ async def chat_completions_proxy(request: Request):
     messages = body.get("messages") or []
     stream = bool(body.get("stream"))
 
+    # ---- Shared session memory (same Redis window the /prompt path uses) ----
+    # The kiosk sends x-session-id (the UneeQ session id its STT/speak flow uses),
+    # so merging the remembered window here gives typed /v1 chat and the Renny
+    # voice path ONE conversation: a name given by voice is known to typed chat
+    # and vice versa. Turns the client already re-sent are deduped by exact
+    # (role, content); remembered turns are inserted after the system message
+    # (chronology across the two paths is approximate, which is fine for a
+    # sliding window). V1_SESSION_MEMORY=false restores the pure stateless proxy.
+    session_id = request.headers.get("x-session-id") or body.get("user")
+    mem_last_user = next(
+        (m.get("content") for m in reversed(messages) if m.get("role") == "user"), None
+    )
+    if settings.v1_session_memory and session_id and store.enabled:
+        remembered = await store.history(session_id)
+        if remembered:
+            from collections import Counter
+            have = Counter((m.get("role"), m.get("content")) for m in messages)
+            merged = []
+            for m in remembered:
+                k = (m.get("role"), m.get("content"))
+                if have.get(k, 0) > 0:
+                    have[k] -= 1  # client already re-sent this turn
+                    continue
+                merged.append(m)
+            if merged:
+                idx = next((i for i, m in enumerate(messages) if m.get("role") == "system"), -1)
+                messages[idx + 1:idx + 1] = merged
+                body["messages"] = messages
+                log.info(
+                    "v1 session memory: merged %d remembered message(s) into session %s",
+                    len(merged), session_id,
+                )
+
     # ---- Kiosk RAG (on-box Milvus Lite) ------------------------------------
     # The kiosk's /v1 chat is a plain LLM call by default. When the knowledge base
     # is on, retrieve the top chunks for the latest user turn from the kiosk-OWNED
@@ -484,10 +517,9 @@ async def chat_completions_proxy(request: Request):
     upstream = settings.llm_url.rstrip("/") + "/v1/chat/completions"
 
     # Conversation context for Phoenix grouping/labels. The kiosk can send these
-    # headers (graceful if absent); session id also falls back to the OpenAI `user`
-    # field. The session id is the shared thread the kiosk's STT/speak spans reuse.
+    # headers (graceful if absent); session_id was extracted above for the shared
+    # memory window and doubles as the Phoenix thread id.
     h = request.headers
-    session_id = h.get("x-session-id") or body.get("user")
     persona = h.get("x-persona")
     language = h.get("x-language")
     # Stable, readable span title for the kiosk LLM chat. The persona varies (and
@@ -517,6 +549,8 @@ async def chat_completions_proxy(request: Request):
         except Exception:
             pass
         tracing.end_llm_span(span, answer, usage)
+        if settings.v1_session_memory and session_id and mem_last_user and answer:
+            await store.append(session_id, mem_last_user, answer)
         return Response(
             content=resp.content,
             status_code=resp.status_code,
@@ -561,6 +595,8 @@ async def chat_completions_proxy(request: Request):
             raise
         finally:
             tracing.end_llm_span(span, "".join(collected), usage)
+            if settings.v1_session_memory and session_id and mem_last_user and collected:
+                await store.append(session_id, mem_last_user, "".join(collected))
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 

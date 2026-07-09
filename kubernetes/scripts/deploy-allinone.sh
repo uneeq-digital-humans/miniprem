@@ -48,11 +48,11 @@ DEPLOY_RENNY="${DEPLOY_RENNY:-yes}"
 DEPLOY_KIOSK="${DEPLOY_KIOSK:-yes}"
 
 # Models / images
-# NOTE: defaults here MUST match manifests/nim-gemma.yaml's checked-in tag
-# (gemma-4-26b-a4b-it). They drifted once already — a stale 31b default here
-# got sed'd over the 26b manifest at deploy time and nobody noticed until the
-# AMI shipped 31b. Keep these two files in sync.
-GEMMA_MODEL="${GEMMA_MODEL:-google/gemma-4-26b-a4b-it}"     # served model name (kiosk sends this; adapter also auto-discovers)
+# NOTE: defaults here MUST match manifests/nim-gemma.yaml's checked-in image
+# tag. They drifted once already — a stale 31b default here got sed'd over the
+# 26b manifest at deploy time and nobody noticed until the AMI shipped 31b.
+# Keep these two files in sync.
+GEMMA_MODEL="${GEMMA_MODEL:-google/gemma-4-26B-A4B-it}"  # served model name (kiosk sends this; adapter also auto-discovers). MoE ~4B active + NV-FP4 — fits the shared GPU. Do NOT default to a dense 31B/27B: too big to co-reside with Renny+Riva.
 GEMMA_BACKEND="${GEMMA_BACKEND:-nim}"             # nim (NIM operator, NV-FP4 — Dell default) | vllm
 # vLLM template knobs (set by the VRAM-based template in install-allinone.sh).
 GEMMA_SERVED_NAME="${GEMMA_SERVED_NAME:-$GEMMA_MODEL}"  # vLLM --served-model-name (adapter sends this)
@@ -61,7 +61,7 @@ VLLM_MAX_LEN="${VLLM_MAX_LEN:-16384}"
 # The NIM LLM image to deploy. Seed-driven so Dell can run ANY NVIDIA NIM model
 # (a different Gemma, Llama, Nemotron, …) without editing manifests — the adapter
 # auto-discovers the served model and Phoenix tracks whatever it is.
-NIM_LLM_IMAGE="${NIM_LLM_IMAGE:-nvcr.io/nim/google/gemma-4-26b-a4b-it:latest}"
+NIM_LLM_IMAGE="${NIM_LLM_IMAGE:-nvcr.io/nim/google/gemma-4-26b-a4b-it:1.7.0-variant}"
 RAG_CHART_VERSION="${RAG_CHART_VERSION:-2.3.2}"   # 2.3.2 = entitled 1B embed/rerank + we point LLM at the local gemma. (v2.6.0 defaults to a 120B agentic LLM + nemotron NIMs the NGC key isn't entitled to / box can't run.)
 STT_PROVIDER="${STT_PROVIDER:-riva}"               # kiosk STT: riva | deepgram
 RAG_ADMIN_KEY="${RAG_ADMIN_KEY:-}"                 # optional /admin/* shared secret

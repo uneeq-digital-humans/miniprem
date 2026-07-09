@@ -58,7 +58,7 @@ Key ones: `RAG_BASE_URL`, `RAG_CHAT_PATH`, `RAG_MODEL`, `COLLECTION_NAME`,
 ```sh
 helm upgrade --install rag-adapter ./chart -n uneeq \
   --set rag.baseUrl=http://rag-server.advanced-rag.svc.cluster.local:8081 \
-  --set rag.model=google/gemma-3-27b-it \
+  --set rag.model=google/gemma-4-26B-A4B-it \
   --set rag.collectionName=multimodal_data
 ```
 Then in the **UneeQ Admin Portal**, set the persona's conversation endpoint to:

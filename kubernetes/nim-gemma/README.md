@@ -20,7 +20,7 @@ Every published profile for this model is "Incompatible with system" (they targe
 lowers `gpu_memory_utilization` (0.30) so it runs at ~25 GB on the shared 96 GB
 card. Default profile `98504107…` = `vllm-nvfp4-tp1-pp1-fallback-1-48gib`.
 
-## MTP — not available for this model (verified 2026-06-29)
+## MTP — works, but disabled pending a KV-cache bug (full investigation on T2, 2026-07-08)
 
 `list-model-profiles` on `nvcr.io/nim/google/gemma-4-26b-a4b-it:latest` returns
 ONLY standard profiles — no MTP/speculative/EAGLE/Medusa:
@@ -31,20 +31,74 @@ ONLY standard profiles — no MTP/speculative/EAGLE/Medusa:
 | vllm-bf16-tp1/tp2-pp1-fallback | `533c7a07…` / `452f22c6…` |
 | vllm-{b200,h200,h20,l40s,dgx-spark}-…-throughput | (GPU-specific) |
 
-So **MTP cannot be enabled here on the supported NIM stack.** MTP for Gemma‑4
-DOES exist officially — Google ships an MTP drafter for the 26B‑A4B (and E2B/E4B/
-31B) and NVIDIA's **NeMo‑AutoModel** exposes `Gemma4WithDrafter` — but ONLY via the
-**vLLM / NeMo** serving path, NOT as a packaged NIM optimized profile. NVIDIA's own
-`nvidia/Gemma-4-26B-A4B-NVFP4` checkpoint is documented "to serve with vLLM"
-(TP=1 only), with no NIM and no MTP profile. Our "fully NVIDIA‑supported, no custom
-vLLM" constraint therefore rules MTP out today. `mtp.*` in values is a forward hook
-for if/when a future NIM build publishes an MTP/speculative profile (re‑check with
-the `list-model-profiles` command below). Verified against official sources
-2026‑06‑30 (build.nvidia.com NIM container profiles + HF NVFP4 card + NeMo‑AutoModel
-Gemma 4 docs).
+That part of the earlier claim was correct — but the leap from "no packaged MTP
+*profile*" to "MTP is not available" was wrong, and has been corrected. The
+"-it-assistant" MTP drafter (`Gemma4AssistantForCausalLM`) ships **inside** the
+pinned nvfp4 profile itself, at `/opt/nim/workspace/assistant` — it just isn't
+exposed as its own `list-model-profiles` entry. And `/opt/nim/fallback.yaml` turns
+out to be a full `AsyncEngineArgs` passthrough (its loader filters keys against
+`fields(AsyncEngineArgs)` then calls `AsyncEngineArgs(**engine_args)`) — unlike
+`NIM_PASSTHROUGH_ARGS`, which this build silently ignores (see the max_model_len
+note below). Appending to `fallback.yaml`:
+```yaml
+speculative_config:
+  model: /opt/nim/workspace/assistant
+  num_speculative_tokens: 3
+```
+made vLLM build `SpeculativeConfig(method='mtp', …)` and load the drafter, verified
+on T2. The chart wires this behind `mtp.enabled` (`templates/nim.yaml`) — no
+profile hash or NIM_MODEL_PROFILE swap needed, since it's the same profile.
 
-To re-check on a newer NIM build:
+**Why it's still off by default:** this NIM sizes its KV cache from a fixed
+`nim_num_kv_cache_seq_lens: 1.0`, not from `gpu_memory_utilization` (identical
+~0.31 GiB KV cache measured at both 0.30 and 0.55 utilization — likely an NVIDIA
+memory-estimator gap for gemma-4-26b-a4b). That KV cache is too small for vLLM's
+own "serve ≥1 request at max_seq_len" check, so enabling MTP (or capping
+`max_model_len`) crashloops. Untested next lever: `kvCacheSeqLens` in
+`values.yaml` (`NIM_NUM_KV_CACHE_SEQ_LENS`) — raising it should enlarge the KV
+cache. Flip `mtp.enabled: true` once that (or an NVIDIA-side fix) resolves the
+crash, and re-validate via `curl /v1/models` + pod logs before trusting it.
+
+To re-check the profile list on a newer NIM build:
 ```bash
 nerdctl run --rm -e NGC_API_KEY=$NGC_API_KEY \
   nvcr.io/nim/google/gemma-4-26b-a4b-it:latest list-model-profiles | grep -i 'mtp\|specul\|eagle'
 ```
+
+## After-boot verification (confirm the model is serving properly)
+
+Run these once the `gemma` pod is `Running` (namespace `nim-models`). They confirm
+the NV-FP4 profile is active — no NGC key needed, it reads the already-cached model.
+
+```bash
+POD=$(kubectl -n nim-models get pod -l app.kubernetes.io/name=gemma -o name | head -1)   # or: get pod | grep gemma
+
+# 1) The env we feed vLLM (expect the NV-FP4 profile hash + KV-cache reuse):
+kubectl -n nim-models get deploy gemma -o yaml | grep -A1 -E 'NIM_MODEL_PROFILE|KV_CACHE|RELAX_MEM'
+
+# 2) The served model + context length (id google/gemma-4-26B-A4B-it; max_model_len
+#    is the profile default 262144 — see the max_model_len note below):
+kubectl -n nim-models exec $POD -- curl -s localhost:8000/v1/models | python3 -m json.tool
+
+# 3) The profile the NIM actually selected at boot (expect the nvfp4 fallback):
+kubectl -n nim-models logs $POD | grep -iE 'selected profile|nvfp4|quantization' | head
+
+# 4) No NIM profile is MTP-branded, so this returns NOTHING even though MTP
+#    itself works — the drafter is bundled inside the nvfp4 profile at
+#    /opt/nim/workspace/assistant, not exposed as its own profile entry. See
+#    the MTP section below before treating this as "MTP unavailable":
+kubectl -n nim-models exec $POD -- list-model-profiles 2>/dev/null | grep -iE 'mtp|specul|eagle'
+```
+
+If `/v1/models` reports a different id, the served profile/image drifted from
+`google/gemma-4-26B-A4B-it`.
+
+**max_model_len note:** it will read **262144** (the nvfp4 profile default), and
+that is expected. `NIM_PASSTHROUGH_ARGS="--max-model-len N"` was tested on the T2
+(2026-07-08) and is **ignored** by this NIM build — the engine ignores it
+(`engine_extra_args max_model_len:None`, `max_seq_len=262144`). There is no
+working env-level context cap today; capping would require patching
+`/opt/nim/fallback.yaml` and re-validating. Corollary for anyone adding
+speculative/MTP config: `NIM_PASSTHROUGH_ARGS` is not a reliable channel on this
+build — verify with `curl /v1/models` (or the engine_extra_args log) that any arg
+you set actually took effect.
