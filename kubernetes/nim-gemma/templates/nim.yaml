@@ -32,8 +32,8 @@ spec:
   # `AsyncEngineArgs(**engine_args)`) — unlike NIM_PASSTHROUGH_ARGS, which is
   # silently ignored by this build (verified on T2, 2026-07-08). Patch it here
   # before start_server reads it. gpu_memory_utilization is always patched;
-  # speculative_config is appended only when mtp.enabled (see values.yaml —
-  # left off by default, it crashloops until the KV-cache sizing bug is fixed).
+  # speculative_config is appended when mtp.enabled (ON by default — MTP validated
+  # on T2 2026-07-09; see values.yaml). Disable mtp for VRAM-constrained boxes.
   command:
     - /bin/sh
     - -c
