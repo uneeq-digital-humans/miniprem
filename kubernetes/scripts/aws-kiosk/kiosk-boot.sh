@@ -33,6 +33,23 @@ POD_CIDR="${POD_CIDR:-192.168.0.0/16}"
 
 [ -f "$MIG/creds.conf" ] || { echo "FATAL: $MIG/creds.conf missing — cannot deploy" >&2; exit 1; }
 
+# host-helper's k8s-deploy.yaml hostPath-mounts /run/user/1000/{gdm,pulse}
+# (type: Directory — mount FAILS if absent). Those exist on the physical Dell
+# appliance (GDM autologin session) but this AWS box is headless with no GDM
+# installed. A plain mkdir is NOT enough: /run/user/1000 is a logind-managed
+# tmpfs that only exists while a session is open and is torn down on logout
+# (dirs created over SSH vanished the moment the session closed — discovered
+# 2026-07-09 chasing host-helper stuck in ContainerCreating with "hostPath
+# type check failed"). Enable lingering so the runtime dir stays mounted for
+# the life of the boot, then a tmpfiles rule recreates the subdirs. The pod's
+# audio/display features are no-ops here; GPU stats + Renny control still work.
+loginctl enable-linger ubuntu
+printf 'd /run/user/1000/gdm 0700 ubuntu ubuntu -\nd /run/user/1000/pulse 0700 ubuntu ubuntu -\n' \
+  > /etc/tmpfiles.d/kiosk-host-helper.conf
+# runtime dir appears asynchronously after enable-linger; wait briefly, then create
+for _ in $(seq 1 30); do [ -d /run/user/1000 ] && break; sleep 1; done
+systemd-tmpfiles --create /etc/tmpfiles.d/kiosk-host-helper.conf || true
+
 log "Resetting any stale control plane from a previous boot's IP"
 kubeadm reset -f 2>&1 | tail -5 || true
 rm -rf /etc/cni/net.d
