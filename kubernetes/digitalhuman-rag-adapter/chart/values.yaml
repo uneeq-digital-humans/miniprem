@@ -45,7 +45,7 @@ ingress:
 rag:
   baseUrl: "http://rag-server.advanced-rag.svc.cluster.local:8081"
   chatPath: "/v1/chat/completions"   # alias: /v1/generate
-  model: "google/gemma-3-27b-it"     # match the NIM deployed in manifests/nim-gemma.yaml
+  model: "google/gemma-4-26B-A4B-it"  # the id the NIM actually serves (/v1/models); adapter also auto-discovers
   apiKey: ""                          # optional bearer for the RAG server
   useKnowledgeBase: true
   collectionName: "multimodal_data"
@@ -62,7 +62,7 @@ streamFormat: "flowise"   # "flowise" (Renny-compatible) or "openai"
 # vLLM/NIM works) and records each call as an OpenInference span to Phoenix.
 llm:
   url: "http://gemma.nim-models.svc.cluster.local:8000"
-  model: "google/gemma-3-27b-it"
+  model: "google/gemma-4-26B-A4B-it"
 # ragMode: "blueprint" proxies the /prompt path to the NVIDIA RAG server; "local"
 # uses the adapter's own Milvus-Lite retrieval. The /v1/chat/completions tracing
 # proxy is independent of this.
