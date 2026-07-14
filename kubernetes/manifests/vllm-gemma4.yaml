@@ -1,7 +1,12 @@
-# vLLM serving Gemma 4 E4B-it at FP8 quantization on a single RTX 6000 Ada.
+# vLLM FALLBACK backend (GEMMA_BACKEND=vllm): serves the configured ${GEMMA_MODEL}
+# (a HuggingFace checkpoint) at FP8 on a single RTX 6000 Ada. The STANDARD/default
+# backend is the gemma-4-26b-a4b-it NIM (NV-FP4) — see manifests/nim-gemma.yaml.
+# NOTE: vLLM cannot serve the NV-FP4 a4b NIM checkpoint, so if you use this path,
+# override GEMMA_MODEL to an HF-servable Gemma (or just use the NIM backend).
 #
-# VRAM budget on a shared 48 GB GPU (with Renny + Magpie TTS + Nemotron ASR co-located):
-#   ~10 GB weights at FP8 + KV cache for 128K context (--max-model-len limits this)
+# VRAM budget on a shared 48 GB GPU (with Renny + Magpie TTS + Nemotron ASR co-located)
+# depends on the chosen ${GEMMA_MODEL}; e.g. a ~4B FP8 model is ~10 GB weights +
+# KV cache for 128K context (--max-model-len limits this).
 #
 # Prereqs:
 #   - hf-token Secret in the nim-models namespace (gemma-4 is a gated model)

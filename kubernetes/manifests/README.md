@@ -57,7 +57,7 @@ disables liveness/readiness checks until it succeeds.
 | File | Purpose |
 |---|---|
 | `magpie-tts.yaml` | NVIDIA Riva Magpie TTS NIM (gRPC port 50051, HTTP 9000). ~11 GB VRAM at batch_size=8. |
-| `vllm-gemma4.yaml` | vLLM serving Gemma-4 E4B-it at FP8 on a single RTX 6000 Ada. |
+| `vllm-gemma4.yaml` | vLLM **fallback** backend (`GEMMA_BACKEND=vllm`) serving the configured `${GEMMA_MODEL}` (an HF checkpoint) at FP8. Standard backend is the gemma-4-26b-a4b-it NIM. |
 | `gpu-operator.yaml` | GPU Operator install + time-slicing ConfigMap. |
 | `autoscaler.yaml` / `autoscaler/` | HPA for renny + supporting resources. |
 | `namespace.yaml` | Namespaces (uneeq, nim-models, observability, etc.). |

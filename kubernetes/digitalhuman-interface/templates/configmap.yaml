@@ -6,7 +6,12 @@ metadata:
 data:
   # Rendered verbatim from .Values.config — shape must match the app's
   # Config interface (interface/src/types/utils/Config.ts).
-  # Mounted at /usr/share/nginx/html/config.yaml in the pod and
-  # fetched at runtime by useConfig().
+  # Mounted at /usr/share/nginx/html/config.yaml in the pod and fetched at
+  # runtime by useConfig() as the DEPLOY layer (over the build-bundled defaults,
+  # under operator/server overrides). NOTE: only a deploy-safe allowlist is
+  # applied (app, security, backend, stt, conversation, remoteMic*/standbyVideo*)
+  # — personas and the `uneeq` SDK block here are IGNORED at runtime (personas
+  # come from the bundled brand + the box's server overrides). Empty values are
+  # skipped, so partial entries never clobber a populated default.
   config.yaml: |
     {{- toYaml .Values.config | nindent 4 }}

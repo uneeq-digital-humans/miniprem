@@ -1,7 +1,3 @@
-{{- $profile := .Values.model.profile -}}
-{{- if and .Values.mtp.enabled .Values.mtp.profile -}}
-{{-   $profile = .Values.mtp.profile -}}
-{{- end -}}
 apiVersion: apps.nvidia.com/v1alpha1
 kind: NIMCache
 metadata:
@@ -14,7 +10,7 @@ spec:
       authSecret: {{ .Values.auth.authSecret }}
       model:
         profiles:
-          - {{ $profile | quote }}
+          - {{ .Values.model.profile | quote }}
       modelPuller: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
       pullSecret: {{ .Values.auth.pullSecret }}
   storage:
@@ -31,18 +27,39 @@ metadata:
   namespace: {{ .Values.namespace }}
 spec:
   authSecret: {{ .Values.auth.authSecret }}
-  # Lower vLLM gpu_memory_utilization so the model shares the GPU with Riva/Renny/RAG.
+  # /opt/nim/fallback.yaml is a full AsyncEngineArgs passthrough (the NIM's
+  # vllm.py loader filters keys against `fields(AsyncEngineArgs)` and calls
+  # `AsyncEngineArgs(**engine_args)`) — unlike NIM_PASSTHROUGH_ARGS, which is
+  # silently ignored by this build (verified on T2, 2026-07-08). Patch it here
+  # before start_server reads it. gpu_memory_utilization is always patched;
+  # speculative_config is appended when mtp.enabled (ON by default — MTP validated
+  # on T2 2026-07-09; see values.yaml). Disable mtp for VRAM-constrained boxes.
   command:
     - /bin/sh
     - -c
-    - "sed -i 's/gpu_memory_utilization: 0.9/gpu_memory_utilization: {{ .Values.gpuMemoryUtilization }}/g' /opt/nim/fallback.yaml && /usr/local/bin/start_server"
+    - |
+      sed -i 's/gpu_memory_utilization: 0.9/gpu_memory_utilization: {{ .Values.gpuMemoryUtilization }}/g' /opt/nim/fallback.yaml
+      {{- if .Values.mtp.enabled }}
+      printf 'speculative_config:\n  model: "%s"\n  num_speculative_tokens: %s\n' {{ .Values.mtp.draftModelPath | quote }} {{ .Values.mtp.numSpeculativeTokens }} >> /opt/nim/fallback.yaml
+      {{- end }}
+      exec /usr/local/bin/start_server
   env:
     - name: NIM_MODEL_PROFILE
-      value: {{ $profile | quote }}
+      value: {{ .Values.model.profile | quote }}
     {{- if .Values.relaxMemConstraints }}
     - name: NIM_RELAX_MEM_CONSTRAINTS
       value: "1"
     {{- end }}
+    {{- if .Values.kvCacheReuse }}
+    - name: NIM_ENABLE_KV_CACHE_REUSE
+      value: "1"
+    {{- end }}
+    {{- if .Values.kvCacheSeqLens }}
+    - name: NIM_NUM_KV_CACHE_SEQ_LENS
+      value: {{ .Values.kvCacheSeqLens | quote }}
+    {{- end }}
+    {{- /* No NIM_PASSTHROUGH_ARGS --max-model-len: verified ignored by this NIM
+           build (see values.yaml note). max_model_len stays the profile default. */}}
     {{- range $k, $v := .Values.extraEnv }}
     - name: {{ $k }}
       value: {{ $v | quote }}

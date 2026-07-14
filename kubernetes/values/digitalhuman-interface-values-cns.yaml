@@ -29,6 +29,15 @@ config:
 
   standalone: true
 
+  # Setup/troubleshooting escape hatch: true lets the Settings password unlock
+  # work from non-localhost origins (e.g. a tech's laptop at http://<box-ip>)
+  # BEFORE TLS is configured — the password then crosses the LAN unencrypted and
+  # the kiosk shows a warning banner. Prefer false + a verified SSL certificate
+  # (scripts/setup-kiosk-tls.sh) in production. Enabled here for the CNS test
+  # appliance so Settings are reachable over the LAN during bring-up.
+  security:
+    allowInsecureAdmin: true
+
   # Conversation: kiosk owns it and talks to the local NVIDIA stack via the
   # rag-adapter. generation=nim => the SPA POSTs OpenAI chat-completions to the
   # adapter, which proxies to the Gemma NIM AND traces to Phoenix. The endpoint is
@@ -37,15 +46,26 @@ config:
   conversation:
     provider: "rag"
     generation: "nim"
-    memory: "inline"
+    # Server-side session memory: the endpoint below is same-origin → the
+    # rag-adapter, whose Redis window (keyed by the x-session-id the SPA sends)
+    # supplies remembered turns. The SPA sends ONLY the current message — the
+    # prompt no longer grows every turn, and voice/typed/remote-mic share one
+    # conversation. Use "inline" instead when pointing nim.endpoint at a BYO
+    # LLM that bypasses the adapter.
+    memory: "session"
     streaming: false
     nim:
       endpoint: "/v1/chat/completions"
-      model: "google/gemma-4-31B-it"
+      model: "google/gemma-4-26B-A4B-it"   # the id the NIM serves; adapter also auto-discovers
 
   stt:
     provider: "riva"
-    rivaUrl: "http://digitalhuman-asr.miniprem"
+    # Empty = same origin: the kiosk nginx proxies /api/asr/ -> riva-ws-proxy, so
+    # the STT websocket inherits the page scheme (wss:// under HTTPS, ws:// under
+    # http). Do NOT hardcode http://digitalhuman-asr.miniprem here — an absolute
+    # http URL is blocked as mixed content once the kiosk is served over HTTPS.
+    # Set an absolute wss:// URL only for a TLS-fronted BYO/remote Riva.
+    rivaUrl: ""
     language: "en-US"
 
   # UneeQ SDK options — mirrors enterprise hosted experience reference defaults.
