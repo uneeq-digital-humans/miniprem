@@ -107,20 +107,23 @@ config:
     generation: "nim"   # retrieve from RAG, generate with the Gemma NIM directly (full control)
     streaming: false
     memory: "inline"    # fold recent turns into the question so context is never lost
-    # ALL-IN-ONE DEFAULTS = localhost. The kiosk's Chrome runs ON the box, so
-    # every service is reachable at localhost on its fixed port — zero config,
-    # and localhost is a Chrome "secure context" so even streaming works over
-    # plain http. Operators normally never touch these; the Brain tab can
-    # override only for the unusual case of a remote/separate RAG cluster.
+    # SAME-ORIGIN DEFAULTS. These are dialed FROM THE VISITOR'S BROWSER — not
+    # necessarily the box's own Chrome. A laptop/tablet/validator reaching the
+    # kiosk over the network resolves localhost:PORT to THEIR machine, which
+    # silently killed retrieval + generation off-box. Origin-relative paths
+    # ride the kiosk's own nginx routes (/v1 -> rag-adapter -> LLM,
+    # /rag -> RAG server) and are correct from EVERY browser, on-box Chrome
+    # included. Only set absolute URLs when a service is exposed on a
+    # DIFFERENT public host than the kiosk page.
     rag:
-      endpoint: "http://localhost:8081/v1/generate"      # RAG blueprint generate (generation=rag)
-      searchEndpoint: "http://localhost:8081/v1/search"  # RAG retriever (generation=nim)
+      endpoint: "/rag/v1/generate"      # RAG blueprint generate (generation=rag)
+      searchEndpoint: "/rag/v1/search"  # RAG retriever (generation=nim)
       collectionNames: ["multimodal_data"]
       useKnowledgeBase: true
       enableReranker: true
       enableCitations: true
     nim:
-      endpoint: "http://localhost:8000/v1/chat/completions"  # Gemma NIM (generation=nim)
+      endpoint: "/v1/chat/completions"  # same-origin: kiosk nginx -> rag-adapter -> the configured LLM
       model: "google/gemma-4-26B-A4B-it"   # turnkey Dell default — EXACT id the NIM serves (/v1/models)
 
   # When true, the mic button is rendered directly on the kiosk page (no QR
