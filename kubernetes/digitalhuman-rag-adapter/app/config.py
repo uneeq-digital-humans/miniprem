@@ -63,6 +63,11 @@ class Settings:
     redis_url: str = os.getenv("REDIS_URL", "")  # empty => session memory disabled
     session_ttl_s: int = _int("SESSION_TTL_S", 1800)  # 30 min idle expiry
     max_history_turns: int = _int("MAX_HISTORY_TURNS", 12)  # user+assistant pairs kept
+    # Share the Redis session window with /v1/chat/completions too (keyed by the
+    # x-session-id header / OpenAI `user` field), so the kiosk's typed chat and the
+    # Renny voice path (/prompt) see ONE conversation. false => /v1 stays a pure
+    # stateless proxy.
+    v1_session_memory: bool = os.getenv("V1_SESSION_MEMORY", "true").strip().lower() in {"1", "true", "yes", "on"}
 
     # ---- Admin / kiosk management ------------------------------------------
     # nv-ingest ingestion server, for the kiosk's document manager (upload/list).

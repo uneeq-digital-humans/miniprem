@@ -49,6 +49,18 @@ config:
     environment: "production"   # development | staging | production
     autoStartMic: true
 
+  # Admin-surface security posture.
+  # allowInsecureAdmin=true lets the Settings password unlock be used from
+  # NON-localhost origins — including plain http:// over the LAN, where the
+  # password crosses the network UNENCRYPTED. Intended ONLY for initial setup
+  # and troubleshooting (a tech's laptop at http://<box-ip> before TLS exists);
+  # the kiosk shows a warning banner whenever it is used remotely.
+  # STRONGLY RECOMMENDED to keep false in production and serve the kiosk behind
+  # a verified SSL certificate instead (scripts/setup-kiosk-tls.sh) — with a
+  # trusted cert the browser unlocks over HTTPS and this flag is unnecessary.
+  security:
+    allowInsecureAdmin: false
+
   # Per-language persona definitions. Each language has both a "cloud" (UneeQ
   # hosted) and "miniprem" (on-prem) variant. Customers typically need to
   # change the `id` to their own UneeQ persona ID.
