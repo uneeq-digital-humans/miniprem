@@ -12,5 +12,5 @@
 - 📊 Monitoring with Prometheus & Grafana
 - 🔄 Workflow Automation with Flowise
 
-[GitLab](https://gitlab.com/tgmerritt/miniprem-2025)
+[GitHub](https://github.com/uneeq-digital-humans/miniprem)
 [Get Started](guides/getting-started.md)
