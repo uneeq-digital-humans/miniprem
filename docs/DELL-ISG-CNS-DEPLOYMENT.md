@@ -163,8 +163,8 @@ The `deploy-local.sh` script automates the complete MiniPrem CNS deployment:
 
 ```bash
 cd ~
-git clone https://gitlab.com/tgmerritt/miniprem-2025.git
-cd miniprem-2025
+git clone https://github.com/uneeq-digital-humans/miniprem.git
+cd miniprem
 ```
 
 ### Step 2: Navigate to Scripts
@@ -462,8 +462,8 @@ cat /etc/os-release | grep VERSION_ID  # Should show 24.04
 
 # 2. Clone repository
 cd ~
-git clone https://gitlab.com/tgmerritt/miniprem-2025.git
-cd miniprem-2025/kubernetes/scripts/cns
+git clone https://github.com/uneeq-digital-humans/miniprem.git
+cd miniprem/kubernetes/scripts/cns
 
 # 3. Run deployment (non-interactive)
 sudo CNS_INSTALL_MODE=minimal \
@@ -519,4 +519,4 @@ sudo microk8s kubectl get pods -n uneeq
 
 ---
 
-*For the latest version of this document and deployment scripts, visit the GitLab repository or contact UneeQ support.*
+*For the latest version of this document and deployment scripts, visit the GitHub repository (https://github.com/uneeq-digital-humans/miniprem) or contact UneeQ support.*
