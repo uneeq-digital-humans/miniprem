@@ -95,6 +95,10 @@ renderer:
   # time out) in its own values so an idle walk-up Renny doesn't blank the screen.
   inactivityTimeoutSecs: 600.0
 
+  # Cross-process GPU submission serialization; blank = off. Set to
+  # /run/renny-gpu-lock when replicasPerGpu > 1 — see docs/guides/kubernetes-overview.md.
+  gpuLockPath: ""
+
   # Sleep timer configuration
   sleepTimer:
     seconds: 5.0

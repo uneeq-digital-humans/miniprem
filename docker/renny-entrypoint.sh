@@ -20,6 +20,13 @@ else
     echo "[$(date)] Telemetry disabled by MINIPREM_TELEMETRY_DISABLED flag"
 fi
 
+# Cross-process GPU submission serialization. Only worth enabling with 2+ Rennys
+# sharing one GPU; unset RENNY_GPU_LOCK_PATH leaves the CVar at its default 0.
+if [ -n "${RENNY_GPU_LOCK_PATH:-}" ]; then
+    echo "[$(date)] GPU submission serialization on (lock dir: ${RENNY_GPU_LOCK_PATH})"
+    set -- "$@" "-ExecCmds=r.Renny.GpuSerialization.Enabled 2"
+fi
+
 # Start Renny application using the original container entrypoint
 # This ensures proper initialization (PulseAudio cleanup, etc.)
 echo "[$(date)] Starting Renny application via original entrypoint..."
