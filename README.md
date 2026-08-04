@@ -30,8 +30,8 @@ Full documentation is at **[https://docs.uneeq.io](https://docs.uneeq.io)**
 ## Quick Start
 
 ```bash
-git clone https://gitlab.com/tgmerritt/miniprem-2025.git
-cd miniprem-2025
+git clone https://github.com/uneeq-digital-humans/miniprem.git
+cd miniprem
 ./docker/scripts/install_miniprem.sh
 ```
 
