@@ -126,8 +126,7 @@ renderer:
   # POSITIVE value (24h) instead — positive values are honored (cloud uses 600.0).
   inactivityTimeoutSecs: 86400.0
 
-  # Cross-process GPU submission serialization; blank = off. The strongest case
-  # in this repo (multiple Rennys, one GPU) — see docs/CNS-DEPLOYMENT-GUIDE.md.
+  # GPU submission serialization; blank = off. See docs/CNS-DEPLOYMENT-GUIDE.md.
   gpuLockPath: ""
 
   # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)

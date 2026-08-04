@@ -258,7 +258,7 @@ uid 1000. Blank renders a manifest identical to one built without the feature.
 
 | Requirement | Detail |
 |---|---|
-| Image | `renny-renderer` >= `0.1401-fe051`. Older tags ignore the setting. |
+| Image | Needs a `renny-renderer` build that supports it. Older images ignore the setting and run unserialized. |
 | Worth it? | Only when `replicasPerGpu` > 1. With one pod per GPU it is a no-op. |
 | Path | Must be node-local tmpfs (so a reboot clears the lock) and not under `/dev/shm`. |
 

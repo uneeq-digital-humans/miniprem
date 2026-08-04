@@ -47,8 +47,8 @@ GPU, the driver context-switches between them and burns 36-40% of the card on pi
 flushes rather than rendering. Set `renderer.gpuLockPath=/run/renny-gpu-lock` to serialize
 GPU submission across pods (measured in-cluster: GPU `sm%` 98% → ~43% at 3 pods/GPU). Blank
 (the default) is off and renders a manifest identical to one built without the feature.
-Requires `renny-renderer` >= `0.1401-fe051`, and serializes Renny against Renny only — a
-co-resident Gemma/Riva/vLLM on the same GPU is not covered. See
+Needs a `renny-renderer` build that supports it, and serializes Renny against Renny only —
+a co-resident Gemma/Riva/vLLM on the same GPU is not covered. See
 `docs/CNS-DEPLOYMENT-GUIDE.md`.
 
 ---

@@ -65,7 +65,6 @@ services:
       - ./renny-telemetry-client.sh:/opt/renny/telemetry-client.sh:ro
       - /var/lib/miniprem/installation_id:/app/data/installation_id
       - /tmp/miniprem_telemetry_state:/app/telemetry_state
-      # Shared GPU submission lock; inert unless RENNY_GPU_LOCK_PATH is set.
       - /run/renny-gpu-lock:/run/renny-gpu-lock
     healthcheck:
       test: "curl -f http://localhost:8081/health"

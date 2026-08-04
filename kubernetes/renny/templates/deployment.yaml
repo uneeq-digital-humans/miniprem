@@ -43,16 +43,13 @@ spec:
       - name: docker-config
 {{- end }}
       {{- if .Values.renderer.gpuLockPath }}
-      # kubelet creates the hostPath root:root 0755 and fsGroup is a no-op on
-      # hostPath, so uid 1000 cannot create the lock file without this chown.
+      # kubelet creates the hostPath root:root 0755 and fsGroup is a no-op there,
+      # so uid 1000 cannot create the lock file without this chown.
       initContainers:
       - name: gpu-lock-dir-owner
         image: {{ .Values.image }}
-        # IfNotPresent per the APPLIANCE RULE — an offline kiosk must still boot.
         imagePullPolicy: {{ .Values.imagePullPolicy | default "IfNotPresent" }}
         command: ["/bin/sh", "-c"]
-        # Exits 0 on failure: degrades to unserialized rather than crash-looping
-        # the renderer out and putting the CVar kill switch out of reach.
         args:
         - chown 1000:1000 {{ .Values.renderer.gpuLockPath | quote }} && chmod 0700 {{ .Values.renderer.gpuLockPath | quote }} || echo "WARN: could not take ownership of {{ .Values.renderer.gpuLockPath }}; GPU serialization will stay disabled"
         securityContext:

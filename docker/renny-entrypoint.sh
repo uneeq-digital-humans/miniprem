@@ -20,8 +20,7 @@ else
     echo "[$(date)] Telemetry disabled by MINIPREM_TELEMETRY_DISABLED flag"
 fi
 
-# Cross-process GPU submission serialization. Only worth enabling with 2+ Rennys
-# sharing one GPU; unset RENNY_GPU_LOCK_PATH leaves the CVar at its default 0.
+# No RENNY_GPU_LOCK_PATH leaves the CVar at its default 0 (off).
 if [ -n "${RENNY_GPU_LOCK_PATH:-}" ]; then
     echo "[$(date)] GPU submission serialization on (lock dir: ${RENNY_GPU_LOCK_PATH})"
     set -- "$@" "-ExecCmds=r.Renny.GpuSerialization.Enabled 2"

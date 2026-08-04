@@ -66,8 +66,7 @@ renderer:
   launchDarkly:
     key: ""                        # Optional - feature flags
 
-  # Cross-process GPU submission serialization; blank = off. Set to
-  # /run/renny-gpu-lock when replicasPerGpu > 1 — see docs/guides/kubernetes-overview.md.
+  # GPU submission serialization; blank = off. See docs/guides/kubernetes-overview.md.
   gpuLockPath: ""
 
   # ===== REQUIRED: DHOP Configuration =====
