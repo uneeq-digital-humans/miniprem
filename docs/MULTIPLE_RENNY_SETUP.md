@@ -147,6 +147,66 @@ Watch for these warning signs:
 - Restart containers to clear GPU memory leaks
 - Consider upgrading GPU hardware
 
+### GPU Submission Serialization
+
+A GPU cannot actually run several processes at once — the driver time-slices
+between them, and every swap costs a full pipeline flush. Past two instances this
+turns into thrashing: measured at **36-40% of all GPU time spent context switching
+rather than rendering** at 3 instances, with frame rate collapsing from 30 to 20
+FPS. This is the most common cause of "I added a third Renny and they all got
+slower".
+
+Renny can serialize its GPU submissions across containers so the driver never has
+to interleave them, making the ceiling real compute saturation instead of wasted
+flush time. Switching overhead dropped to 2.5-5% when measured on the Kubernetes
+and bare-metal multi-process configurations; the mechanism is identical here
+(same host, same shared lock file), but it has not yet been measured in the
+Docker container configuration specifically.
+
+**Enabling it:**
+
+1. Uncomment the setting in `docker/docker-compose.env`:
+
+   ```bash
+   RENNY_GPU_LOCK_PATH=/run/renny-gpu-lock
+   ```
+
+2. Re-run the setup script so it creates and owns the lock directory:
+
+   ```bash
+   ./docker/scripts/setup_multiple_rennys.sh -n <instances>
+   ```
+
+Every instance shares the one lock directory, so the setting only needs to exist
+once — the script copies `docker-compose.env` to each per-instance env file.
+
+**Notes:**
+
+| Item | Detail |
+|---|---|
+| Image | Requires `renny-renderer` >= `0.1401-fe051`. Older tags ignore the setting. |
+| Single instance | Leave it off. There is nothing to serialize against. |
+| Path | Keep `/run/renny-gpu-lock` — the compose bind mount uses that literal path, and `/run` is tmpfs so a reboot clears the lock. |
+| Scope | Serializes Renny against Renny only. vLLM, Whisper and RIME are not covered. |
+| VRAM | Unchanged. This fixes scheduling waste, not memory — the capacity table above still applies. |
+
+**Verifying it took effect:**
+
+```bash
+docker logs renny 2>&1 | grep -i "gpu.*serializ"
+```
+
+`GPU submission serialization enabled (mode 2)` means it is active. `Failed to open
+GPU lock shared memory; serialization disabled` means the directory is not writable
+by uid 1000 — Renny keeps running unserialized rather than failing. Fix with:
+
+```bash
+sudo mkdir -p /run/renny-gpu-lock
+sudo chown 1000:1000 /run/renny-gpu-lock && sudo chmod 0700 /run/renny-gpu-lock
+```
+
+To turn it off, comment the variable out again and restart.
+
 ## Quick Start
 
 ### Running the Setup Script

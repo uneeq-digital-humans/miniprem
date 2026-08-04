@@ -234,6 +234,41 @@ NC16as_T4_v3 Node
 Reason: 16GB VRAM best used by single pod
 ```
 
+### GPU Submission Serialization
+
+Time-slicing has a hard limit: the GPU cannot run multiple processes in parallel,
+so the driver round-robins between them and each swap costs a full pipeline flush.
+Measured on renny, **3 pods per GPU burns 36-40% of all GPU time on context
+switching alone**, and frame rate falls from 30 to 20 FPS.
+
+Renny can serialize its own GPU submissions across pods so the driver never has to
+interleave them. In-cluster this dropped GPU `sm%` from 98% to ~43% at 3 pods per
+GPU. Enable it with one value:
+
+```yaml
+renderer:
+  gpuLockPath: /run/renny-gpu-lock   # blank (default) = off
+```
+
+The chart then adds a `hostPath` volume, `RENNY_GPU_LOCK_PATH`, the enabling
+`-ExecCmds` argument, and a root `initContainer` that gives the lock directory to
+uid 1000. Blank renders a manifest identical to one built without the feature.
+
+**Before enabling:**
+
+| Requirement | Detail |
+|---|---|
+| Image | `renny-renderer` >= `0.1401-fe051`. Older tags ignore the setting. |
+| Worth it? | Only when `replicasPerGpu` > 1. With one pod per GPU it is a no-op. |
+| Path | Must be node-local tmpfs (so a reboot clears the lock) and not under `/dev/shm`. |
+
+**It only serializes Renny against Renny.** Co-resident NIM/Gemma, Riva and vLLM
+are not covered, so it does not resolve Renny-vs-LLM GPU contention and is not a
+licence to raise `totalReplicas` on a box that shares its GPU with an LLM.
+
+To turn it off: set `gpuLockPath: ""` and redeploy, or without a redeploy run
+`r.Renny.GpuSerialization.Enabled 0` on the renderer console.
+
 ### Network Architecture
 
 All deployments use similar networking:
