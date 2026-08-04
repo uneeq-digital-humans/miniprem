@@ -146,8 +146,8 @@ The `deploy-local.sh` script automatically installs:
 
 ```bash
 cd ~
-git clone https://gitlab.com/tgmerritt/miniprem-2025.git
-cd miniprem-2025
+git clone https://github.com/uneeq-digital-humans/miniprem.git
+cd miniprem
 ```
 
 ### Step 2: Verify Prerequisites
