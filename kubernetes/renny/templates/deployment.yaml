@@ -156,17 +156,23 @@ spec:
           mountPath: /opt/renny/Renny/Binaries/Linux/GoogleAuth.json
           subPath: GoogleAuth.json
         {{- end }}
+        # Probe budgets sized for the UE 5.8 line (0.1378+): the engine can take
+        # >60s to boot cold, and scene loading at session start stalls /health past
+        # 1s. Tighter settings make kubelet kill renderers mid-session-start and the
+        # pool crash-loops (clients see "session already in queue"). Verified on
+        # RTX PRO 6000 / renny 0.1400-8ce39; harmless on the 5.6 line.
         livenessProbe:
           httpGet:
             path: /health
             port: 8082
-          timeoutSeconds: 1
+          timeoutSeconds: 5
+          failureThreshold: 6
         startupProbe:
           httpGet:
             path: /health
             port: 8082
           periodSeconds: 10
-          failureThreshold: 6
+          failureThreshold: 30
           timeoutSeconds: 2
         tty: true
 {{- if .Values.telemetry.enabled }}
