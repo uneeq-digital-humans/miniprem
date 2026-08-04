@@ -474,20 +474,6 @@ cd miniprem-deployment-2
 
 ## Integration with CI/CD
 
-### GitLab CI/CD Example
-
-```yaml
-deploy_multiple_rennys:
-  stage: deploy
-  script:
-    - cd docker/scripts
-    - ./setup_multiple_rennys.sh -n $RENNY_INSTANCE_COUNT
-  variables:
-    RENNY_INSTANCE_COUNT: 4
-  only:
-    - main
-```
-
 ### GitHub Actions Example
 
 ```yaml
