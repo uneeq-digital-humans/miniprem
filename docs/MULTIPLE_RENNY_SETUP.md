@@ -184,7 +184,7 @@ once — the script copies `docker-compose.env` to each per-instance env file.
 
 | Item | Detail |
 |---|---|
-| Image | Requires `renny-renderer` >= `0.1401-fe051`. Older tags ignore the setting. |
+| Image | Needs a `renny-renderer` build that supports it. Older images ignore the setting and run unserialized. |
 | Single instance | Leave it off. There is nothing to serialize against. |
 | Path | Keep `/run/renny-gpu-lock` — the compose bind mount uses that literal path, and `/run` is tmpfs so a reboot clears the lock. |
 | Scope | Serializes Renny against Renny only. vLLM, Whisper and RIME are not covered. |

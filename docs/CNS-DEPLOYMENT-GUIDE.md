@@ -447,8 +447,9 @@ Then `helm upgrade` as usual. The chart adds the `hostPath` volume,
 `initContainer` that gives the lock directory to uid 1000 (kubelet creates it
 `root:root`, and `fsGroup` does not apply to `hostPath`).
 
-**Requires `renny-renderer` >= `0.1401-fe051`** — the pinned `0.1332-decd6`
-predates the feature and will silently ignore the setting.
+**Needs a `renny-renderer` build that supports it.** Older images silently ignore
+the setting and keep running unserialized; check the renderer log below to confirm
+it took effect before assuming it did.
 
 **It serializes Renny against Renny only.** The co-resident Gemma NIM, Magpie/Riva
 and any local vLLM are not covered. This does **not** make it safe to raise
