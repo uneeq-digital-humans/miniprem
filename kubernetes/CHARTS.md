@@ -44,10 +44,12 @@ The chart template defaults `RENNY_QUALITY_LEVEL` to `web`, so an appliance MUST
 
 **Multiple Rennys per GPU — `renderer.gpuLockPath`.** When 2+ Renny pods time-slice one
 GPU, the driver context-switches between them and burns 36-40% of the card on pipeline
-flushes rather than rendering. Set `renderer.gpuLockPath=/run/renny-gpu-lock` to serialize
-GPU submission across pods (measured in-cluster: GPU `sm%` 98% → ~43% at 3 pods/GPU). Blank
-(the default) is off and renders a manifest identical to one built without the feature.
-Needs a `renny-renderer` build that supports it, and serializes Renny against Renny only —
+flushes rather than rendering. `renderer.gpuLockPath=/run/renny-gpu-lock` serializes
+GPU submission across pods (measured in-cluster: GPU `sm%` 98% → ~43% at 3 pods/GPU).
+**The `-cns` overlay sets it by default** since CNS always shares a GPU; the base chart
+and other overlays leave it blank (off), which renders a manifest identical to one built
+without the feature. Set `""` in the CNS overlay to opt out. Needs `renny-renderer`
+0.1428-6654b or newer, and serializes Renny against Renny only —
 a co-resident Gemma/Riva/vLLM on the same GPU is not covered. See
 `docs/CNS-DEPLOYMENT-GUIDE.md`.
 
