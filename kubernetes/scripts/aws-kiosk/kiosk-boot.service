@@ -1,0 +1,25 @@
+# Installed at /etc/systemd/system/kiosk-boot.service on the AMI.
+# Runs kiosk-boot.sh (kubeadm reset+reinit+redeploy) on every boot, since the
+# box no longer boots at a fixed private IP — see kiosk-boot.sh for why.
+[Unit]
+Description=MiniPrem kiosk: reset+reinit k8s and redeploy the stack for this boot's IP
+After=network-online.target containerd.service
+Wants=network-online.target
+ConditionPathExists=/home/admin/migration/creds.conf
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/kiosk-boot.sh
+StandardOutput=append:/var/log/kiosk-boot.log
+StandardError=append:/var/log/kiosk-boot.log
+# 90 min, NOT the typical 10-15 min boot: worst case is a cold Gemma cache
+# (35-90 GB NGC pull at NGC's mercy). 1800s SIGTERM'd exactly that case
+# mid-deploy. Keep this >= the waiter budget in kiosk-instance.sh.example.
+# (No Restart=: systemd disallows it with Type=oneshot + RemainAfterExit=yes;
+# recovery is `systemctl restart kiosk-boot` or an instance reboot — the
+# script is safe to re-run.)
+TimeoutStartSec=5400
+
+[Install]
+WantedBy=multi-user.target
