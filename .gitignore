@@ -125,3 +125,8 @@ CNS_Deployment_Installation_Guide.pdf
 DEMO_SCRIPT_*.md
 ISSUE_9_*.md
 LOCALE_FIX_*.md
+
+# AWS kiosk launch script — contains private infra (account ID, AMI/subnet/SG/EIP
+# IDs, target-group ARN). Keep local only; never commit. See kiosk-instance.sh.example
+# for a sanitized template.
+kubernetes/scripts/aws-kiosk/kiosk-instance.sh

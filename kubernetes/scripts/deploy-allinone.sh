@@ -48,6 +48,10 @@ DEPLOY_RENNY="${DEPLOY_RENNY:-yes}"
 DEPLOY_KIOSK="${DEPLOY_KIOSK:-yes}"
 
 # Models / images
+# NOTE: defaults here MUST match manifests/nim-gemma.yaml's checked-in image
+# tag. They drifted once already — a stale 31b default here got sed'd over the
+# 26b manifest at deploy time and nobody noticed until the AMI shipped 31b.
+# Keep these two files in sync.
 GEMMA_MODEL="${GEMMA_MODEL:-google/gemma-4-26B-A4B-it}"  # served model name (kiosk sends this; adapter also auto-discovers). MoE ~4B active + NV-FP4 — fits the shared GPU. Do NOT default to a dense 31B/27B: too big to co-reside with Renny+Riva.
 GEMMA_BACKEND="${GEMMA_BACKEND:-nim}"             # nim (NIM operator, NV-FP4 — Dell default) | vllm
 # vLLM template knobs (set by the VRAM-based template in install-allinone.sh).
@@ -74,6 +78,12 @@ ADAPTER_LLM_URL="${ADAPTER_LLM_URL:-$([ "$GEMMA_BACKEND" = nim ] && echo "$NIM_G
 # rag-adapter image: override to a locally-built image (e.g. on a kubeadm box that
 # can't pull from cr.uneeq.io) — set RAG_ADAPTER_IMAGE=rag-adapter:local.
 RAG_ADAPTER_IMAGE="${RAG_ADAPTER_IMAGE:-}"
+# rag-adapter /data StorageClass. Default "" = cluster default (dynamic
+# local-path — correct on the on-prem Dell appliance where etcd persists).
+# The reset-on-boot AWS kiosk sets this to "static-local" so the PVC binds to
+# the fixed hostPath PV (manifests/rag-adapter-data-pv.yaml) and operator
+# config survives the per-boot etcd wipe.
+RAG_DATA_STORAGE_CLASS="${RAG_DATA_STORAGE_CLASS:-}"
 PHOENIX_OTLP_ENDPOINT="${PHOENIX_OTLP_ENDPOINT:-http://phoenix.${NAMESPACE}.svc.cluster.local:6006/v1/traces}"
 PHOENIX_PROJECT="${PHOENIX_PROJECT:-kiosk-conversations}"
 
@@ -81,6 +91,11 @@ PHOENIX_PROJECT="${PHOENIX_PROJECT:-kiosk-conversations}"
 NGC_API_KEY="${NGC_API_KEY:-}"
 HARBOR_USERNAME="${HARBOR_USERNAME:-}"
 HARBOR_PASSWORD="${HARBOR_PASSWORD:-}"
+# Cloud TTS/STT (used when Riva is disabled). Populate via creds.conf, same as
+# the other secrets above — never pass these as literal --set args on the CLI.
+ELEVENLABS_API_KEY="${ELEVENLABS_API_KEY:-}"
+ELEVENLABS_MODEL_ID="${ELEVENLABS_MODEL_ID:-}"
+DEEPGRAM_API_KEY="${DEEPGRAM_API_KEY:-}"
 # UneeQ DHOP platform creds — Renny authenticates to the UneeQ signalling service
 # with these (seed PLATFORM_KEY/TENANT_ID). Without them Renny can't start
 # (CreateContainerConfigError: missing dhop-api-key in the renny secret).
@@ -166,9 +181,23 @@ stage_nim() {
     # image was ignored and only the bare `tag:` got rewritten onto the wrong repo).
     local _repo="${NIM_LLM_IMAGE%:*}" _tag="${NIM_LLM_IMAGE##*:}"
     if [ "$_repo" = "$NIM_LLM_IMAGE" ] || [ -z "$_tag" ]; then _repo="$NIM_LLM_IMAGE"; _tag="latest"; fi
+    # The manifest's pinned profile hashes are tied to the DEFAULT image's
+    # manifest content. If the seed chose a different image (other model OR
+    # other tag), those hashes don't exist there and the NIM crash-loops with
+    # NIMProfileIDNotFound — strip the pins and let the operator auto-select.
+    local _default_img _strip_profiles=()
+    _default_img=$(sed -n 's/^[[:space:]]*modelPuller:[[:space:]]*//p' "$K8S_DIR/manifests/nim-gemma.yaml" | head -1)
+    if [ "${_repo}:${_tag}" != "$_default_img" ]; then
+      log "NIM image differs from manifest default ($_default_img) — dropping pinned profile hashes (operator auto-select)"
+      _strip_profiles=(-e '/^[[:space:]]*model:[[:space:]]*$/d' \
+                       -e '/^[[:space:]]*profiles:[[:space:]]*$/d' \
+                       -e '/^[[:space:]]*profile:[[:space:]]/d' \
+                       -e '/^[[:space:]]*- "[0-9a-f]\{64\}"[[:space:]]*$/d')
+    fi
     sed -e "s#^\([[:space:]]*\)modelPuller: .*#\1modelPuller: ${_repo}:${_tag}#" \
         -e "s#^\([[:space:]]*\)repository: .*#\1repository: ${_repo}#" \
         -e "s#^\([[:space:]]*\)tag: .*#\1tag: ${_tag}#" \
+        ${_strip_profiles[@]+"${_strip_profiles[@]}"} \
         "$K8S_DIR/manifests/nim-gemma.yaml" | $KUBECTL apply -n "$NIM_NAMESPACE" -f -
   else
     log "Deploying Gemma via vLLM (model=$GEMMA_MODEL gpu-util=$VLLM_GPU_UTIL max-len=$VLLM_MAX_LEN)"
@@ -246,6 +275,7 @@ stage_rag_adapter() {
     --set phoenix.project="$PHOENIX_PROJECT" \
     --set ingress.host="${KIOSK_INGRESS_HOST:-digitalhuman.miniprem}" \
     ${RAG_ADAPTER_IMAGE:+--set image.repository="${RAG_ADAPTER_IMAGE%%:*}" --set image.tag="${RAG_ADAPTER_IMAGE##*:}" --set image.pullPolicy=IfNotPresent} \
+    ${RAG_DATA_STORAGE_CLASS:+--set persistence.storageClass="$RAG_DATA_STORAGE_CLASS"} \
     ${RAG_ADMIN_KEY:+--set admin.apiKey="$RAG_ADMIN_KEY"}
 }
 
@@ -261,17 +291,28 @@ stage_renny() {
   # Pass the DHOP platform creds (seed PLATFORM_KEY/TENANT_ID) so the renny secret
   # gets a real dhop-api-key + the deployment a real tenantId — otherwise Renny
   # fails with CreateContainerConfigError (missing dhop-api-key).
+  # When Riva TTS isn't deployed, blank the CNS values' rivaServerAddr so Renny
+  # doesn't carry a RIVA_SERVER_ADDR pointing at a nonexistent service —
+  # host-helper's /tts-config uses that env's presence to decide the renderer is
+  # "wired for Riva", which makes the kiosk status panel report "Riva TTS:
+  # Offline" forever on ElevenLabs-only boxes (cosmetic but alarming).
+  local riva_addr_override=()
+  [ "$DEPLOY_RIVA_TTS" = yes ] || riva_addr_override=(--set-string renderer.tts.rivaServerAddr="")
   helm_install renny "$NAMESPACE" "$K8S_DIR/renny" \
     -f "$K8S_DIR/values/renny-values-cns.yaml" \
     --set renderer.dhop.apiKey="$PLATFORM_KEY" \
-    --set renderer.dhop.tenantId="$TENANT_ID"
+    --set renderer.dhop.tenantId="$TENANT_ID" \
+    "${riva_addr_override[@]}" \
+    ${ELEVENLABS_API_KEY:+--set-string renderer.tts.elevenlabsApiKey="$ELEVENLABS_API_KEY"} \
+    ${ELEVENLABS_MODEL_ID:+--set-string renderer.tts.elevenlabsModelId="$ELEVENLABS_MODEL_ID"}
 }
 
 stage_kiosk() {
   [ "$DEPLOY_KIOSK" = yes ] || { log "skip kiosk"; return; }
   log "Deploying websocket-api + Dell kiosk (STT provider: $STT_PROVIDER)"
   helm_install digitalhuman-websocket-api "$NAMESPACE" "$K8S_DIR/digitalhuman-websocket-api" \
-    -f "$K8S_DIR/values/digitalhuman-websocket-api-values-cns.yaml"
+    -f "$K8S_DIR/values/digitalhuman-websocket-api-values-cns.yaml" \
+    ${DEEPGRAM_API_KEY:+--set-string secrets.deepgramApiKey="$DEEPGRAM_API_KEY"}
   # The kiosk's stt.provider/rivaUrl come from its values (config.stt.*),
   # rendered into the runtime config.yaml ConfigMap the SPA fetches.
   helm_install digitalhuman-interface "$NAMESPACE" "$K8S_DIR/digitalhuman-interface" \

@@ -1,0 +1,49 @@
+# Static PV for the rag-adapter's /data, so live operator state survives a
+# kubeadm reset.
+#
+# Why: the AWS kiosk box re-inits its k8s control plane on every boot (see
+# kubernetes/scripts/aws-kiosk/kiosk-boot.sh), wiping etcd — including the
+# digitalhuman-rag-adapter-data PVC. With the chart's default dynamic
+# local-path PVC, every boot provisioned a brand-new empty directory and
+# orphaned the old one: server-side kiosk-config.json (persona IDs, languages,
+# FAQs), the persona prompt override, standby videos, the Settings password,
+# and the local knowledge base were silently lost per boot. (The chart's
+# helm.sh/resource-policy:keep only guards `helm uninstall`, not an etcd wipe.)
+# This is the opposite of the on-prem Dell appliance, where /data persists
+# across reboots — the two deployment models must behave the same.
+#
+# Same pattern as nim-gemma-cache-pv.yaml: a FIXED host directory + a
+# non-default StorageClass so the chart's PVC binds here instead of being
+# dynamically provisioned by local-path (the cluster default).
+#
+# Apply this BEFORE deploy-allinone.sh, and deploy the rag-adapter chart with
+# persistence.storageClass=static-local (kiosk-boot.sh exports
+# RAG_DATA_STORAGE_CLASS=static-local for this). The host directory must exist
+# first:
+#   sudo mkdir -p /data/rag-adapter
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: static-local
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: rag-adapter-data-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: static-local
+  hostPath:
+    path: /data/rag-adapter
+  claimRef:
+    # Must match the chart's PVC: {{ .Release.Name }}-data in the release
+    # namespace (deploy-allinone.sh installs release "rag-adapter" into ns
+    # "uneeq").
+    namespace: uneeq
+    name: rag-adapter-data
