@@ -426,6 +426,44 @@ gpuTimeSlicing:
   replicasPerGpu: 5  # Should match or exceed totalReplicas / GPU count
 ```
 
+### GPU Submission Serialization
+
+When several Rennys time-slice one GPU, the driver context-switches between them
+and wastes a large share of the card doing pipeline flushes rather than rendering
+— measured at 36-40% of GPU time at 3 instances, with FPS dropping 30 → 20. Renny
+can serialize its own GPU submissions across pods so those switches stop; in a
+cluster this took GPU `sm%` from 98% down to ~43% at 3 pods per GPU.
+
+CNS is the strongest case for this in the product: a single GPU with
+`replicasPerGpu: 4`. Enable it in `kubernetes/values/renny-values-cns.yaml`:
+
+```yaml
+renderer:
+  gpuLockPath: /run/renny-gpu-lock   # blank (default) = off
+```
+
+Then `helm upgrade` as usual. The chart adds the `hostPath` volume,
+`RENNY_GPU_LOCK_PATH`, the enabling `-ExecCmds` argument, and a root
+`initContainer` that gives the lock directory to uid 1000 (kubelet creates it
+`root:root`, and `fsGroup` does not apply to `hostPath`).
+
+**Needs a `renny-renderer` build that supports it.** Older images silently ignore
+the setting and keep running unserialized; check the renderer log below to confirm
+it took effect before assuming it did.
+
+**It serializes Renny against Renny only.** The co-resident Gemma NIM, Magpie/Riva
+and any local vLLM are not covered. This does **not** make it safe to raise
+`totalReplicas` back to 4 on a shared-GPU box — that is what starved Gemma's
+warmup into a CUDA OOM crash-loop, and that constraint is unchanged.
+
+If the renderer logs `Failed to open GPU lock shared memory; serialization
+disabled`, the directory ownership did not take; Renny keeps running unserialized
+rather than failing. Verify with:
+
+```bash
+kubectl logs <renny-pod> -n uneeq-renderer | grep -i "gpu.*serializ"
+```
+
 ### Sizer Tool: Plan vs. Apply
 
 `kubernetes/scripts/cns/sizer.sh` has two modes: it can either *show you what a configuration would look like*, or it can *apply that configuration directly to the cluster* (ConfigMap + deployment scale in one shot).

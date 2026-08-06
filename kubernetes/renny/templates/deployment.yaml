@@ -42,6 +42,26 @@ spec:
 {{- else }}
       - name: docker-config
 {{- end }}
+      {{- if .Values.renderer.gpuLockPath }}
+      # kubelet creates the hostPath root:root 0755 and fsGroup is a no-op there,
+      # so uid 1000 cannot create the lock file without this chown.
+      initContainers:
+      - name: gpu-lock-dir-owner
+        image: {{ .Values.image }}
+        imagePullPolicy: {{ .Values.imagePullPolicy | default "IfNotPresent" }}
+        command: ["/bin/sh", "-c"]
+        args:
+        - chown 1000:1000 {{ .Values.renderer.gpuLockPath | quote }} && chmod 0700 {{ .Values.renderer.gpuLockPath | quote }} || echo "WARN: could not take ownership of {{ .Values.renderer.gpuLockPath }}; GPU serialization will stay disabled"
+        securityContext:
+          runAsUser: 0
+        resources:
+          requests:
+            cpu: 10m
+            memory: 16Mi
+        volumeMounts:
+        - name: gpu-lock-dir
+          mountPath: {{ .Values.renderer.gpuLockPath | quote }}
+      {{- end }}
       containers:
       - name: renny
         image: {{ .Values.image }}
@@ -61,7 +81,7 @@ spec:
             memory: {{ .Values.resources.limits.memory }}
             nvidia.com/gpu: {{ .Values.resources.limits.gpu | default 1 }}
         command: ["/opt/renny/entrypoint.sh"]
-        args: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "{{ .Values.renderer.extraCmdArgs }}"]
+        args: ["/Game/Live_Levels/BlankScene", "-RenderOffScreen", "-ResX=1920", "-ResY=1080", "{{ .Values.renderer.extraCmdArgs }}"{{- if .Values.renderer.gpuLockPath }}, "-ExecCmds=r.Renny.GpuSerialization.Enabled 2"{{ end }}]
         env:
         - name: AZURE_REGION
           value: {{ .Values.renderer.tts.azureRegion }}
@@ -143,6 +163,10 @@ spec:
           value: {{ .Values.renderer.nvidia.visibleDevices | default "all" | quote }}
         - name: NVIDIA_DRIVER_CAPABILITIES
           value: {{ .Values.renderer.nvidia.driverCapabilities | default "all" | quote }}
+        {{- if .Values.renderer.gpuLockPath }}
+        - name: RENNY_GPU_LOCK_PATH
+          value: {{ .Values.renderer.gpuLockPath | quote }}
+        {{- end }}
         {{- if .Values.env }}
         {{- range .Values.env }}
         - name: {{ .name }}
@@ -156,11 +180,10 @@ spec:
           mountPath: /opt/renny/Renny/Binaries/Linux/GoogleAuth.json
           subPath: GoogleAuth.json
         {{- end }}
-        # Probe budgets sized for the UE 5.8 line (0.1378+): the engine can take
-        # >60s to boot cold, and scene loading at session start stalls /health past
-        # 1s. Tighter settings make kubelet kill renderers mid-session-start and the
-        # pool crash-loops (clients see "session already in queue"). Verified on
-        # RTX PRO 6000 / renny 0.1400-8ce39; harmless on the 5.6 line.
+        {{- if .Values.renderer.gpuLockPath }}
+        - name: gpu-lock-dir
+          mountPath: {{ .Values.renderer.gpuLockPath | quote }}
+        {{- end }}
         livenessProbe:
           httpGet:
             path: /health
@@ -218,6 +241,12 @@ spec:
             items:
             - path: GoogleAuth.json
               key: tts-gcp-creds
+        {{- end }}
+        {{- if .Values.renderer.gpuLockPath }}
+        - name: gpu-lock-dir
+          hostPath:
+            path: {{ .Values.renderer.gpuLockPath | quote }}
+            type: DirectoryOrCreate
         {{- end }}
 {{- if .Values.telemetry.enabled }}
         - name: telemetry-script

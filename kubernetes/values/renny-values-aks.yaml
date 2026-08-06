@@ -24,7 +24,7 @@
 # Image is pulled from UneeQ's Harbor registry (cr.uneeq.io)
 # Contact help@uneeq.com for Harbor robot account credentials
 # Rolling enterprise build; imagePullPolicy: Always re-pulls each rollout.
-# To freeze a known-good build, pin e.g. 0.1332-decd6 + imagePullPolicy: IfNotPresent.
+# To freeze a known-good build, pin e.g. 0.1428-6654b + imagePullPolicy: IfNotPresent.
 image: cr.uneeq.io/uneeq/renny-renderer:enterprise-latest
 imagePullPolicy: Always
 
@@ -65,6 +65,9 @@ resources:
 renderer:
   launchDarkly:
     key: ""                        # Optional - feature flags
+
+  # GPU submission serialization; blank = off. See docs/guides/kubernetes-overview.md.
+  gpuLockPath: ""
 
   # ===== REQUIRED: DHOP Configuration =====
   # These MUST be set in my-renny-values.yml for Renny to run

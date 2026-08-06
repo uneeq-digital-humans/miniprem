@@ -33,7 +33,7 @@ grafana_version: "10.2.0"
 containerd_version: "1.7.0"
 
 # Helm Charts
-renny_chart_version: "0.1332-decd6"
+renny_chart_version: "0.1428-6654b"
 
 # CNI
 calico_version: "v3.29.3"

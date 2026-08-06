@@ -219,11 +219,8 @@ HTTP 401 on ElevenLabs' voices API at session start.
 ### Helm Values (renny-values-cns.yaml)
 
 ```yaml
-# Core settings — ALWAYS pin an exact version (never a moving tag like enterprise-latest;
-# verify what a tag resolves to against the registry before recording results against it)
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"   # UE 5.6 line (chart default)
-# UE 5.8 line (0.1378-8910a and later, e.g. 0.1400-8ce39): read the
-# "Renny UE 5.8 line — operational changes" section below BEFORE bumping.
+# Core settings
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b"
 
 deployment:
   totalReplicas: 4        # Number of Renny pods

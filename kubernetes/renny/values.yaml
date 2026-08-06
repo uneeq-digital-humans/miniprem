@@ -7,7 +7,7 @@
 # PINNED release build. Do NOT default to `enterprise-latest` — external
 # (ref-architecture) deploys must be reproducible; the rolling tag is for
 # UneeQ-managed appliances that pin via the platform overlay instead.
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b"
 imagePullPolicy: IfNotPresent
 
 deployment:
@@ -45,6 +45,9 @@ renderer:
     visibleDevices: "all"
     driverCapabilities: "all"
   extraCmdArgs: ""
+  # GPU submission serialization; blank = off. A node-local tmpfs path
+  # (/run/renny-gpu-lock) turns it on. See docs/CNS-DEPLOYMENT-GUIDE.md.
+  gpuLockPath: ""
   inactivityTimeoutSecs: ""   # empty -> template default (600.0)
   qualityLevel: ""            # empty -> template default ("web")
   sdlAudioDriver: ""          # empty -> template default ("pulse")

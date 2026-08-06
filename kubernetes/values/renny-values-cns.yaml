@@ -17,7 +17,7 @@
 # reachability (with Always, a reboot after kubelet image-GC forced a 12 GB
 # re-download — or bricked the kiosk offline). To track the rolling build on a
 # CONNECTED dev box, override with enterprise-latest + imagePullPolicy: Always.
-image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"
+image: "cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b"
 imagePullPolicy: IfNotPresent
 
 # Image pull secret for Harbor registry authentication
@@ -125,6 +125,9 @@ renderer:
   # sessions at ~10s with EEndReason::UserInactivity when negative). Use a large
   # POSITIVE value (24h) instead — positive values are honored (cloud uses 600.0).
   inactivityTimeoutSecs: 86400.0
+
+  # GPU submission serialization; blank = off. See docs/CNS-DEPLOYMENT-GUIDE.md.
+  gpuLockPath: ""
 
   # CNS-specific: Headless audio driver (prevents SIGSEGV in audio subsystem)
   sdlAudioDriver: "dummy"

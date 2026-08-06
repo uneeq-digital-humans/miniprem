@@ -42,6 +42,15 @@ profile — this sets render quality:**
 The chart template defaults `RENNY_QUALITY_LEVEL` to `web`, so an appliance MUST use the
 `-cns` overlay (or `--set renderer.qualityLevel=miniprem`) or it will render at web quality.
 
+**Multiple Rennys per GPU — `renderer.gpuLockPath`.** When 2+ Renny pods time-slice one
+GPU, the driver context-switches between them and burns 36-40% of the card on pipeline
+flushes rather than rendering. Set `renderer.gpuLockPath=/run/renny-gpu-lock` to serialize
+GPU submission across pods (measured in-cluster: GPU `sm%` 98% → ~43% at 3 pods/GPU). Blank
+(the default) is off and renders a manifest identical to one built without the feature.
+Needs a `renny-renderer` build that supports it, and serializes Renny against Renny only —
+a co-resident Gemma/Riva/vLLM on the same GPU is not covered. See
+`docs/CNS-DEPLOYMENT-GUIDE.md`.
+
 ---
 
 ## Endpoint substitution map (Bring-Your-Own services)

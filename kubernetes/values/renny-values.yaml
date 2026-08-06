@@ -7,7 +7,7 @@
 # from DHOP based on persona configuration.
 
 # Rolling UneeQ enterprise build. imagePullPolicy: Always ensures each rollout
-# re-pulls the newest enterprise-latest. To freeze, pin e.g. 0.1332-decd6 +
+# re-pulls the newest enterprise-latest. To freeze, pin e.g. 0.1428-6654b +
 # set imagePullPolicy: IfNotPresent.
 image: "cr.uneeq.io/uneeq/renny-renderer:enterprise-latest"
 imagePullPolicy: Always
@@ -94,6 +94,9 @@ renderer:
   # sessions release the GPU. The all-in-one kiosk OVERRIDES this to -1.0 (never
   # time out) in its own values so an idle walk-up Renny doesn't blank the screen.
   inactivityTimeoutSecs: 600.0
+
+  # GPU submission serialization; blank = off. See docs/guides/kubernetes-overview.md.
+  gpuLockPath: ""
 
   # Sleep timer configuration
   sleepTimer:

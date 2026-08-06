@@ -117,8 +117,8 @@ Cluster topology defaults: single control-plane node; pod CIDR `192.168.0.0/16`;
 
 | Component | Version | Source | License | Role |
 |---|---|---|---|---|
-| Renny Helm chart | 0.1332-decd6 | Internal registry `cr.uneeq.io` | Commercial (UneeQ) | Digital human renderer deployment |
-| Renny renderer image | `cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6` | Internal registry | Commercial (UneeQ) | Renderer container |
+| Renny Helm chart | 0.1428-6654b | Internal registry `cr.uneeq.io` | Commercial (UneeQ) | Digital human renderer deployment |
+| Renny renderer image | `cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b` | Internal registry | Commercial (UneeQ) | Renderer container |
 | Digital Human Interface chart | Floating `:latest` tag in default values | Internal registry | Commercial (UneeQ) | Kiosk UI. Pin to a numbered tag before regulated-environment deployment. |
 | Digital Human WebSocket API chart | Floating `:latest` tag in default values | Internal registry | Commercial (UneeQ) | Edge WebSocket gateway. Pin before regulated-environment deployment. |
 | Digital Human ASR chart | Floating `:latest` tag in default values | Internal registry / NVIDIA NGC | Commercial (UneeQ / NVIDIA) | Speech recognition. Includes `nvcr.io/nim/nvidia/nemotron-asr-streaming:latest`. Pin before regulated-environment deployment. |
@@ -153,7 +153,7 @@ The following combination is the reference baseline for partner validation:
 | NVIDIA GPU Operator | v24.9.0 |
 | NIM Operator | 1.0.0 |
 | Helm | 3.x |
-| Renny chart | 0.1332-decd6 |
+| Renny chart | 0.1428-6654b |
 
 Known incompatibilities enforced by the installer:
 
