@@ -1118,7 +1118,7 @@ spec:
   serviceAccountName: renny-sa  # Links to GCP SA via Workload Identity
   containers:
   - name: renny
-    image: cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6
+    image: cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b
 ```
 
 ### 5.2 Node Service Accounts

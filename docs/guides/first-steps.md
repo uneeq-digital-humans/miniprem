@@ -267,7 +267,7 @@ kubectl exec -n uneeq-renderer <pod-name> -- curl -s http://localhost:8081/healt
 ```json
 {
   "status": "healthy",
-  "version": "0.1332-decd6",
+  "version": "0.1428-6654b",
   "uptime": "2h 15m 30s",
   "connections": {
     "platform": "connected",
@@ -280,7 +280,7 @@ kubectl exec -n uneeq-renderer <pod-name> -- curl -s http://localhost:8081/healt
 ```json
 {
   "status": "unhealthy",
-  "version": "0.1332-decd6",
+  "version": "0.1428-6654b",
   "uptime": "0h 5m 12s",
   "connections": {
     "platform": "disconnected",
