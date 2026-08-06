@@ -51,7 +51,7 @@ spec:
         imagePullPolicy: {{ .Values.imagePullPolicy | default "IfNotPresent" }}
         command: ["/bin/sh", "-c"]
         args:
-        - chown 1000:1000 {{ .Values.renderer.gpuLockPath | quote }} && chmod 0700 {{ .Values.renderer.gpuLockPath | quote }} || echo "WARN: could not take ownership of {{ .Values.renderer.gpuLockPath }}; GPU serialization will stay disabled"
+        - 'chown 1000:1000 {{ .Values.renderer.gpuLockPath | quote }} && chmod 0700 {{ .Values.renderer.gpuLockPath | quote }} || echo "WARN: could not take ownership of {{ .Values.renderer.gpuLockPath }}; GPU serialization will stay disabled"'
         securityContext:
           runAsUser: 0
         resources:
