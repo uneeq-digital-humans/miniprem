@@ -435,14 +435,17 @@ can serialize its own GPU submissions across pods so those switches stop; in a
 cluster this took GPU `sm%` from 98% down to ~43% at 3 pods per GPU.
 
 CNS is the strongest case for this in the product: a single GPU with
-`replicasPerGpu: 4`. Enable it in `kubernetes/values/renny-values-cns.yaml`:
+`replicasPerGpu: 4`. It is therefore **enabled by default** in
+`kubernetes/values/renny-values-cns.yaml`:
 
 ```yaml
 renderer:
-  gpuLockPath: /run/renny-gpu-lock   # blank (default) = off
+  gpuLockPath: "/run/renny-gpu-lock"   # CNS default; set "" to disable
 ```
 
-Then `helm upgrade` as usual. The chart adds the `hostPath` volume,
+Requires `renny-renderer` 0.1428-6654b or newer (the version this repo pins).
+Nothing to do on install; on upgrade from an older chart it takes effect on the
+next `helm upgrade`. The chart adds the `hostPath` volume,
 `RENNY_GPU_LOCK_PATH`, the enabling `-ExecCmds` argument, and a root
 `initContainer` that gives the lock directory to uid 1000 (kubelet creates it
 `root:root`, and `fsGroup` does not apply to `hostPath`).

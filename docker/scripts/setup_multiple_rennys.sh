@@ -550,6 +550,22 @@ EOF
 ################################################################################
 function prepare_gpu_lock_dir() {
     local env_file="$DOCKER_DIR/docker-compose.env"
+
+    # Multiple Rennys on one GPU thrash the driver with context switches, so
+    # serialization is required here: default it on unless the customer has
+    # already made a choice (any existing RENNY_GPU_LOCK_PATH line, including
+    # an explicitly blank one, is left alone).
+    if [ -f "$env_file" ] && ! grep -q "^RENNY_GPU_LOCK_PATH=" "$env_file" 2>/dev/null; then
+        {
+            echo ""
+            echo "# Added by setup_multiple_rennys.sh: serializes GPU submission across"
+            echo "# Renny instances sharing one GPU. Requires renny-renderer 0.1428-6654b"
+            echo "# or newer. Set blank (RENNY_GPU_LOCK_PATH=) to disable."
+            echo "RENNY_GPU_LOCK_PATH=$GPU_LOCK_DIR"
+        } >> "$env_file"
+        info "GPU submission serialization: enabled by default for multi-Renny (RENNY_GPU_LOCK_PATH=$GPU_LOCK_DIR)"
+    fi
+
     local configured
     configured=$(grep "^RENNY_GPU_LOCK_PATH=" "$env_file" 2>/dev/null | cut -d'=' -f2- || true)
 
@@ -576,6 +592,20 @@ function prepare_gpu_lock_dir() {
         || ! sudo chmod 0700 "$GPU_LOCK_DIR" 2>/dev/null; then
         warning "Could not take ownership of $GPU_LOCK_DIR; Rennys will run unserialized"
         return 0
+    fi
+
+    # /run is tmpfs, so the directory and its ownership vanish on reboot and
+    # dockerd would recreate it root-owned, silently disabling serialization.
+    # A tmpfiles.d entry makes systemd recreate it correctly every boot.
+    if [ -d /etc/tmpfiles.d ]; then
+        if echo "d $GPU_LOCK_DIR 0700 $RENNY_UID $RENNY_UID -" \
+            | sudo tee /etc/tmpfiles.d/renny-gpu-lock.conf > /dev/null 2>&1; then
+            info "Lock dir will be recreated on boot (/etc/tmpfiles.d/renny-gpu-lock.conf)"
+        else
+            warning "Could not write /etc/tmpfiles.d/renny-gpu-lock.conf; re-run this script after a reboot to restore serialization"
+        fi
+    else
+        warning "/etc/tmpfiles.d not found; re-run this script after a reboot to restore serialization"
     fi
 
     success "$CHECKMARK GPU submission serialization enabled ($GPU_LOCK_DIR)"
