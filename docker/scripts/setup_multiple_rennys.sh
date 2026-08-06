@@ -26,6 +26,9 @@ readonly MAX_INSTANCES=30
 readonly BASE_HEALTH_PORT=8081
 readonly BASE_METRICS_PORT=8080
 readonly PORT_INCREMENT=10
+# Must be tmpfs so a reboot clears the lock rather than wedging it.
+readonly GPU_LOCK_DIR=/run/renny-gpu-lock
+readonly RENNY_UID=1000
 
 # Ordinal names for instances
 declare -a ORDINALS=(
@@ -509,7 +512,7 @@ function generate_service_definition() {
       - HEARTBEAT_INTERVAL_SECONDS=900
       - PLATFORM=docker
       - INSTALLATION_ID_FILE=/app/data/installation_id
-    image: "cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6"
+    image: "cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b"
     network_mode: "host"
     runtime: nvidia
     privileged: true
@@ -520,6 +523,7 @@ function generate_service_definition() {
       - ./renny-telemetry-client.sh:/opt/renny/telemetry-client.sh:ro
       - /var/lib/miniprem/installation_id:/app/data/installation_id
       - /tmp/miniprem_telemetry_state:/app/telemetry_state
+      - ${GPU_LOCK_DIR}:${GPU_LOCK_DIR}
     healthcheck:
       test: "curl -f http://localhost:${health_port}/health"
       interval: 10s
@@ -537,6 +541,45 @@ function generate_service_definition() {
       - no-new-privileges:true
 
 EOF
+}
+
+################################################################################
+# Function: prepare_gpu_lock_dir
+# Description: Create and own the GPU lock dir. No-op unless RENNY_GPU_LOCK_PATH
+#              is set; never fatal — Renny falls back to unserialized rendering.
+################################################################################
+function prepare_gpu_lock_dir() {
+    local env_file="$DOCKER_DIR/docker-compose.env"
+    local configured
+    configured=$(grep "^RENNY_GPU_LOCK_PATH=" "$env_file" 2>/dev/null | cut -d'=' -f2- || true)
+
+    if [ -z "$configured" ]; then
+        info "GPU submission serialization: off (RENNY_GPU_LOCK_PATH unset)"
+        return 0
+    fi
+
+    # The bind mount is a literal, so a custom path would never be mounted.
+    if [ "$configured" != "$GPU_LOCK_DIR" ]; then
+        warning "RENNY_GPU_LOCK_PATH is '$configured' but the compose mount is '$GPU_LOCK_DIR'"
+        warning "Set RENNY_GPU_LOCK_PATH=$GPU_LOCK_DIR in docker-compose.env, or serialization stays off"
+        return 0
+    fi
+
+    log_section "Preparing GPU Submission Lock"
+
+    if ! sudo mkdir -p "$GPU_LOCK_DIR" 2>/dev/null; then
+        warning "Could not create $GPU_LOCK_DIR; Rennys will run unserialized"
+        return 0
+    fi
+
+    if ! sudo chown "${RENNY_UID}:${RENNY_UID}" "$GPU_LOCK_DIR" 2>/dev/null \
+        || ! sudo chmod 0700 "$GPU_LOCK_DIR" 2>/dev/null; then
+        warning "Could not take ownership of $GPU_LOCK_DIR; Rennys will run unserialized"
+        return 0
+    fi
+
+    success "$CHECKMARK GPU submission serialization enabled ($GPU_LOCK_DIR)"
+    return 0
 }
 
 ################################################################################
@@ -879,6 +922,8 @@ function main() {
         restore_on_error "Failed to create service definitions"
         exit 1
     }
+
+    prepare_gpu_lock_dir
 
     # Restart services
     manage_docker_services || {

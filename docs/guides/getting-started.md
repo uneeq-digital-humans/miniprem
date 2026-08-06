@@ -66,7 +66,7 @@ You'll need the following information during installation:
 | Tenant ID             | Your UneeQ tenant identifier                | your_tenant_id_here                          |
 | Azure Region          | Azure region for speech services            | your_azure_region                            |
 | Azure Speech Key      | Azure speech service API key                | your_azure_speech_key_here                   |
-| Renny Image           | Docker image for Renny digital human        | cr.uneeq.io/uneeq/renny-renderer:0.1332-decd6 |
+| Renny Image           | Docker image for Renny digital human        | cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b |
 | RIME API Key          | Docker image for RIME text-to-speech        | your_rime_api_key                            |
 | Huggingface Token     | Token for access to Huggingface             | your_huggingface_token                       |
 | UneeQ Harbor Token | Token for access to UneeQ's image repo     | your_personal_access_token                   |
