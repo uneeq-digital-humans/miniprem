@@ -188,13 +188,14 @@ spec:
           httpGet:
             path: /health
             port: 8082
-          timeoutSeconds: 1
+          timeoutSeconds: 5
+          failureThreshold: 6
         startupProbe:
           httpGet:
             path: /health
             port: 8082
           periodSeconds: 10
-          failureThreshold: 6
+          failureThreshold: 30
           timeoutSeconds: 2
         tty: true
 {{- if .Values.telemetry.enabled }}

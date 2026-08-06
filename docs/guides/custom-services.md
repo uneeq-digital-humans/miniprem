@@ -1794,7 +1794,7 @@ Create `docker/CUSTOM_SERVICES_TEAM.md`:
 ```bash
 # New team member setup
 git clone <your-repo>
-cd miniprem-2025/docker
+cd <your-repo>/docker
 cp .env.example .env
 # Edit .env with credentials from team secrets manager
 ./miniprem.sh start
