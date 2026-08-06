@@ -165,17 +165,18 @@ Docker container configuration specifically.
 
 **Enabling it:**
 
-1. Uncomment the setting in `docker/docker-compose.env`:
+Nothing to do. `setup_multiple_rennys.sh` enables it automatically: if
+`docker-compose.env` has no `RENNY_GPU_LOCK_PATH` line, the script adds
+`RENNY_GPU_LOCK_PATH=/run/renny-gpu-lock`, creates and owns the lock directory,
+and installs a tmpfiles.d entry so the directory survives host reboots.
 
-   ```bash
-   RENNY_GPU_LOCK_PATH=/run/renny-gpu-lock
-   ```
+To opt out, set the variable explicitly blank in `docker/docker-compose.env`
+and re-run the script (the script never overrides an existing line, blank or
+otherwise):
 
-2. Re-run the setup script so it creates and owns the lock directory:
-
-   ```bash
-   ./docker/scripts/setup_multiple_rennys.sh -n <instances>
-   ```
+```bash
+RENNY_GPU_LOCK_PATH=
+```
 
 Every instance shares the one lock directory, so the setting only needs to exist
 once — the script copies `docker-compose.env` to each per-instance env file.
@@ -184,8 +185,8 @@ once — the script copies `docker-compose.env` to each per-instance env file.
 
 | Item | Detail |
 |---|---|
-| Image | Needs a `renny-renderer` build that supports it. Older images ignore the setting and run unserialized. |
-| Single instance | Leave it off. There is nothing to serialize against. |
+| Image | Needs `renny-renderer` 0.1428-6654b or newer (the version this repo pins). Older images ignore the setting and run unserialized. |
+| Single instance | Leave it off. There is nothing to serialize against. The single-Renny compose files do not set it, and this script is multi-instance only. |
 | Path | Keep `/run/renny-gpu-lock` — the compose bind mount uses that literal path, and `/run` is tmpfs so a reboot clears the lock. |
 | Scope | Serializes Renny against Renny only. vLLM, Whisper and RIME are not covered. |
 | VRAM | Unchanged. This fixes scheduling waste, not memory — the capacity table above still applies. |

@@ -243,12 +243,16 @@ switching alone**, and frame rate falls from 30 to 20 FPS.
 
 Renny can serialize its own GPU submissions across pods so the driver never has to
 interleave them. In-cluster this dropped GPU `sm%` from 98% to ~43% at 3 pods per
-GPU. Enable it with one value:
+GPU. One value controls it:
 
 ```yaml
 renderer:
-  gpuLockPath: /run/renny-gpu-lock   # blank (default) = off
+  gpuLockPath: /run/renny-gpu-lock   # blank = off
 ```
+
+**The CNS overlay (`renny-values-cns.yaml`) sets this by default**, because CNS
+always runs multiple Rennys per GPU. The base chart and the AKS overlay leave it
+blank; set it yourself on any deployment where more than one Renny shares a GPU.
 
 The chart then adds a `hostPath` volume, `RENNY_GPU_LOCK_PATH`, the enabling
 `-ExecCmds` argument, and a root `initContainer` that gives the lock directory to
@@ -258,7 +262,7 @@ uid 1000. Blank renders a manifest identical to one built without the feature.
 
 | Requirement | Detail |
 |---|---|
-| Image | Needs a `renny-renderer` build that supports it. Older images ignore the setting and run unserialized. |
+| Image | Needs `renny-renderer` 0.1428-6654b or newer (the version this repo pins). Older images ignore the setting and run unserialized. |
 | Worth it? | Only when `replicasPerGpu` > 1. With one pod per GPU it is a no-op. |
 | Path | Must be node-local tmpfs (so a reboot clears the lock) and not under `/dev/shm`. |
 
