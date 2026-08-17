@@ -18,6 +18,7 @@ Env: UNEEQ_VLLM_DEV_ENDPOINT / UNEEQ_VLLM_DEV_KEY
 
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -86,6 +87,9 @@ def main():
 
     print("[uneeq-review] Gathering PR diff...", flush=True)
     diff = cmd("gh", "pr", "diff", pr_number)
+    if not diff:
+        print("[FAIL] Could not retrieve PR diff — aborting.", flush=True)
+        sys.exit(1)
     max_diff = 22000
     if len(diff) > max_diff:
         diff = (
@@ -129,13 +133,10 @@ def main():
         print("[FAIL] All UneeQ endpoints failed.", flush=True)
         sys.exit(1)
 
-    upper = content.upper()
-    if "REQUEST_CHANGES" in upper:
-        event = "REQUEST_CHANGES"
-    elif "APPROVE" in upper:
-        event = "APPROVE"
-    else:
-        event = "COMMENT"
+    verdict = re.search(
+        r"OVERALL VERDICT:\s*(APPROVE|REQUEST_CHANGES|COMMENT)", content, re.IGNORECASE
+    )
+    event = verdict.group(1).upper() if verdict else "COMMENT"
 
     print(f"[uneeq-review] Verdict: {event}", flush=True)
 
