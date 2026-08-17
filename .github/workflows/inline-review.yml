@@ -1,8 +1,11 @@
+# Self-contained PR review: UneeQ Dev vLLM → UneeQ Prod vLLM → Claude.
+# miniprem is PUBLIC, so it cannot call reusable workflows in the private
+# claude-code-marketplace repo — the helper scripts are vendored into
+# .github/scripts/ instead. Keep them in sync with the marketplace manually.
 name: Inline Review
 on:
   pull_request:
     types: [opened, reopened, ready_for_review]
-# Reusable workflows can't exceed the caller's token scopes; grant what the review needs.
 permissions:
   contents: read
   pull-requests: write
@@ -10,10 +13,68 @@ permissions:
   actions: read
 jobs:
   review:
-    uses: uneeq-digital-humans/claude-code-marketplace/.github/workflows/inline-review.yml@main
-    secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      # Sovereign AI first: marketplace probes these and routes through
-      # UneeQ Dev (Qwen3.8) before falling back to Claude Sonnet.
-      UNEEQ_VLLM_ENDPOINT: ${{ secrets.UNEEQ_VLLM_ENDPOINT }}
-      UNEEQ_VLLM_KEY: ${{ secrets.UNEEQ_VLLM_KEY }}
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # ── Are any UneeQ vLLM endpoints configured for this repo? ──
+      - name: Probe UneeQ configuration
+        id: probe
+        env:
+          DEV_EP: ${{ secrets.UNEEQ_VLLM_DEV_ENDPOINT }}
+          DEV_KEY: ${{ secrets.UNEEQ_VLLM_DEV_KEY }}
+          PROD_EP: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
+          PROD_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
+        run: |
+          if [[ ( -n "$DEV_EP" && -n "$DEV_KEY" ) || ( -n "$PROD_EP" && -n "$PROD_KEY" ) ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Phase 1: self-hosted vLLM (Dev first, Prod fallback) ────
+      - name: UneeQ Review (Dev → Prod)
+        id: uneeq
+        if: steps.probe.outputs.available == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UNEEQ_VLLM_DEV_ENDPOINT: ${{ secrets.UNEEQ_VLLM_DEV_ENDPOINT }}
+          UNEEQ_VLLM_DEV_KEY: ${{ secrets.UNEEQ_VLLM_DEV_KEY }}
+          UNEEQ_VLLM_PROD_ENDPOINT: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
+          UNEEQ_VLLM_PROD_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: python3 .github/scripts/uneeq-review.py
+
+      # ── Phase 2: Claude fallback (only if UneeQ absent or failed)
+      - name: Claude Code Review (fallback)
+        if: steps.probe.outputs.available == 'false' || steps.uneeq.outcome == 'failure'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          track_progress: true
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request. Only flag real problems: correctness bugs,
+            races, security issues, broken error handling, and changes that
+            contradict how the surrounding code works. Skip anything a linter already catches.
+
+            Post every finding as an inline comment on the exact diff line using
+            mcp__github_inline_comment__create_inline_comment. Do not repeat
+            findings in a summary comment.
+
+            When finished, submit a formal review with a body of at most two
+            sentences:
+            gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews -f event=<EVENT> -f body=<BODY>
+            - REQUEST_CHANGES if any finding should block merging
+            - APPROVE otherwise; if APPROVE is rejected by repo settings, fall
+              back to COMMENT with a body starting "Passed review"
+          claude_args: |
+            --model claude-sonnet-4-6
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh api repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/reviews:*)"

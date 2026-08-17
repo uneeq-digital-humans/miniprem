@@ -1,11 +1,13 @@
+# Self-contained @claude handler: UneeQ Dev vLLM → UneeQ Prod vLLM → Claude.
+# miniprem is PUBLIC, so it cannot call reusable workflows in the private
+# claude-code-marketplace repo — the helper scripts are vendored into
+# .github/scripts/ instead. Keep them in sync with the marketplace manually.
 name: Claude Code
 on:
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
-# A reusable workflow can't be granted more than the caller's token scopes,
-# and the repo default is read-only. Grant what the marketplace workflow needs.
 permissions:
   contents: write
   issues: write
@@ -14,10 +16,49 @@ permissions:
   actions: read
 jobs:
   claude:
-    uses: uneeq-digital-humans/claude-code-marketplace/.github/workflows/claude.yml@main
-    secrets:
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-      # Sovereign AI first: marketplace probes these and responds via
-      # UneeQ Dev (Qwen3.8) before falling back to Claude Sonnet.
-      UNEEQ_VLLM_ENDPOINT: ${{ secrets.UNEEQ_VLLM_ENDPOINT }}
-      UNEEQ_VLLM_KEY: ${{ secrets.UNEEQ_VLLM_KEY }}
+    if: contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      # ── Are any UneeQ vLLM endpoints configured for this repo? ──
+      - name: Probe UneeQ configuration
+        id: probe
+        env:
+          DEV_EP: ${{ secrets.UNEEQ_VLLM_DEV_ENDPOINT }}
+          DEV_KEY: ${{ secrets.UNEEQ_VLLM_DEV_KEY }}
+          PROD_EP: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
+          PROD_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
+        run: |
+          if [[ ( -n "$DEV_EP" && -n "$DEV_KEY" ) || ( -n "$PROD_EP" && -n "$PROD_KEY" ) ]]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Phase 1: self-hosted vLLM (Dev first, Prod fallback) ────
+      - name: UneeQ Response (Dev → Prod)
+        id: uneeq
+        if: steps.probe.outputs.available == 'true'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UNEEQ_VLLM_DEV_ENDPOINT: ${{ secrets.UNEEQ_VLLM_DEV_ENDPOINT }}
+          UNEEQ_VLLM_DEV_KEY: ${{ secrets.UNEEQ_VLLM_DEV_KEY }}
+          UNEEQ_VLLM_PROD_ENDPOINT: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
+          UNEEQ_VLLM_PROD_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
+          GITHUB_COMMENT_TEXT: ${{ github.event.comment.body }}
+        run: python3 .github/scripts/uneeq-comment.py
+
+      # ── Phase 2: Claude fallback (only if UneeQ absent or failed)
+      - name: Claude Code Response (fallback)
+        if: steps.probe.outputs.available == 'false' || steps.uneeq.outcome == 'failure'
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: "--model claude-sonnet-4-6"
+          plugin_marketplaces: "https://github.com/anthropics/claude-code.git"
+          plugins: "pr-review-toolkit@claude-code-plugins"
