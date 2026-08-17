@@ -1,0 +1,19 @@
+name: Inline Review
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review]
+# Reusable workflows can't exceed the caller's token scopes; grant what the review needs.
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+  actions: read
+jobs:
+  review:
+    uses: uneeq-digital-humans/claude-code-marketplace/.github/workflows/inline-review.yml@main
+    secrets:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Sovereign AI first: marketplace probes these and routes through
+      # UneeQ Dev (Qwen3.8) before falling back to Claude Sonnet.
+      UNEEQ_VLLM_ENDPOINT: ${{ secrets.UNEEQ_VLLM_ENDPOINT }}
+      UNEEQ_VLLM_KEY: ${{ secrets.UNEEQ_VLLM_KEY }}
