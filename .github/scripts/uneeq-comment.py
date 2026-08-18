@@ -5,9 +5,10 @@ Reply to an @claude mention via UneeQ's self-hosted vLLM endpoints.
 Vendored from uneeq-digital-humans/claude-code-marketplace (private repo;
 miniprem is public so it cannot call the marketplace's reusable workflows).
 
-Endpoint order: Dev first, then Prod, model auto-discovered from /v1/models.
-Exits non-zero if every configured endpoint fails so the workflow can fall
-through to the Claude step.
+Endpoint order: Dev (deepseek) first, then Prod (qwen); the model is discovered
+from /v1/models and filtered to the deepseek/qwen allowlist. Exits non-zero if
+every configured endpoint fails so the workflow can fall through to the Claude
+step.
 
 Env: UNEEQ_VLLM_DEV_ENDPOINT / UNEEQ_VLLM_DEV_KEY
      UNEEQ_VLLM_PROD_ENDPOINT / UNEEQ_VLLM_PROD_KEY
@@ -22,24 +23,52 @@ import urllib.error
 import urllib.request
 
 
-def discover_model(ep: str, key: str) -> str:
+# Only these two families are eligible. Both endpoints also serve gemma and (on
+# Dev) the whole eval matrix, and /v1/models order is arbitrary — every
+# comma-separated served_model_name alias registers as its own id — so the old
+# data[0] pick could silently review a PR with gemma-e4b.
+MODEL_FAMILIES = ("deepseek", "qwen")
+
+
+def discover_model(ep: str, key: str, prefer: str) -> str:
+    """Pick an allowlisted model from the endpoint, preferring `prefer`'s family.
+
+    Dev is asked for deepseek and Prod for qwen, so the two hops of the failover
+    chain don't both land on the same model. Preference is soft (Prod serving
+    deepseek is fine); the deepseek/qwen allowlist is hard. An endpoint offering
+    neither raises, and the caller falls through to the next one.
+    """
     req = urllib.request.Request(
         f"{ep}/v1/models",
         headers={"Authorization": f"Bearer {key}"},
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
         models = json.loads(resp.read())
-    data = models.get("data", [])
-    if not data:
+    ids = [m["id"] for m in models.get("data", []) if m.get("id")]
+    if not ids:
         raise RuntimeError("no models reported by endpoint")
-    return data[0]["id"]
+
+    eligible = [i for i in ids if any(f in i.lower() for f in MODEL_FAMILIES)]
+    if not eligible:
+        raise RuntimeError(
+            "endpoint serves no deepseek/qwen model "
+            f"(offered: {', '.join(sorted(ids))})"
+        )
+    preferred = [i for i in eligible if prefer in i.lower()]
+    # sorted() so a model with several served_model_name aliases resolves to the
+    # same id on every run.
+    return sorted(preferred or eligible)[0]
 
 
 def chat(ep: str, key: str, model: str, comment: str) -> str:
     payload = json.dumps({
+        # top_p 1 is qwen3.8's documented sampling recommendation; temperature drops
+        # 0.3 -> 0.2 to match the review path. max_tokens is the OUTPUT ceiling only
+        # — 4500 was truncating longer answers.
         "model": model,
-        "temperature": 0.3,
-        "max_tokens": 4500,
+        "temperature": 0.2,
+        "top_p": 1,
+        "max_tokens": 16000,
         "messages": [
             {
                 "role": "system",
@@ -70,6 +99,10 @@ def main():
     if not comment:
         print("[uneeq-comment] No comment text — exiting.", flush=True)
         sys.exit(1)
+    # Input cap, and it is load-bearing: prompt + max_tokens must fit inside the
+    # engine's max_model_len or vLLM rejects the request with a 400 — it does not
+    # compact or slide the window. Raising max_tokens to 16000 spends part of that
+    # same budget, so this stays.
     max_input = 30000
     if len(comment) > max_input:
         comment = comment[:max_input] + "\n…(truncated)"
@@ -87,14 +120,16 @@ def main():
     repo = os.environ.get("GITHUB_REPOSITORY", "")
 
     endpoints = []
-    for label, ep_var, key_var in (
-        ("UneeQ Dev", "UNEEQ_VLLM_DEV_ENDPOINT", "UNEEQ_VLLM_DEV_KEY"),
-        ("UneeQ Prod", "UNEEQ_VLLM_PROD_ENDPOINT", "UNEEQ_VLLM_PROD_KEY"),
+    # Dev first: it serves deepseek, which is the preferred reviewer. Prod is the
+    # always-on qwen fallback for when Dev is scaled to zero or down.
+    for label, ep_var, key_var, prefer in (
+        ("UneeQ Dev", "UNEEQ_VLLM_DEV_ENDPOINT", "UNEEQ_VLLM_DEV_KEY", "deepseek"),
+        ("UneeQ Prod", "UNEEQ_VLLM_PROD_ENDPOINT", "UNEEQ_VLLM_PROD_KEY", "qwen"),
     ):
         ep = os.environ.get(ep_var, "").strip().rstrip("/")
         key = os.environ.get(key_var, "").strip()
         if ep and key:
-            endpoints.append((label, ep, key))
+            endpoints.append((label, ep, key, prefer))
 
     if not endpoints:
         print("[FAIL] No UneeQ endpoints configured.", flush=True)
@@ -102,9 +137,9 @@ def main():
 
     content = None
     used_label = None
-    for label, ep, key in endpoints:
+    for label, ep, key, prefer in endpoints:
         try:
-            model = discover_model(ep, key)
+            model = discover_model(ep, key, prefer)
             print(f"[uneeq-comment] Asking {label} ({model})...", flush=True)
             content = chat(ep, key, model, comment)
             used_label = label
