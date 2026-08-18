@@ -40,7 +40,10 @@ def discover_model(ep: str, key: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
         models = json.loads(resp.read())
-    return models["data"][0]["id"]
+    data = models.get("data", [])
+    if not data:
+        raise RuntimeError("no models reported by endpoint")
+    return data[0]["id"]
 
 
 def chat(ep: str, key: str, model: str, system: str, user: str) -> str:
@@ -68,7 +71,10 @@ def chat(ep: str, key: str, model: str, system: str, user: str) -> str:
 
 
 def main():
-    pr_number = os.environ["PR_NUMBER"]
+    pr_number = os.environ.get("PR_NUMBER", "")
+    if not pr_number:
+        print("[FAIL] PR_NUMBER not set.", flush=True)
+        sys.exit(1)
     repo = os.environ.get("GITHUB_REPOSITORY", "")
 
     endpoints = []
