@@ -29,7 +29,10 @@ def discover_model(ep: str, key: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=20) as resp:
         models = json.loads(resp.read())
-    return models["data"][0]["id"]
+    data = models.get("data", [])
+    if not data:
+        raise RuntimeError("no models reported by endpoint")
+    return data[0]["id"]
 
 
 def chat(ep: str, key: str, model: str, comment: str) -> str:
@@ -63,9 +66,13 @@ def chat(ep: str, key: str, model: str, comment: str) -> str:
 
 def main():
     comment = os.environ.get("GITHUB_COMMENT_TEXT", "").strip()
+    comment = comment.replace("@claude", "", 1).strip()
     if not comment:
         print("[uneeq-comment] No comment text — exiting.", flush=True)
         sys.exit(1)
+    max_input = 30000
+    if len(comment) > max_input:
+        comment = comment[:max_input] + "\n…(truncated)"
 
     event_path = os.environ.get("GITHUB_EVENT_PATH", "")
     issue_num = None
