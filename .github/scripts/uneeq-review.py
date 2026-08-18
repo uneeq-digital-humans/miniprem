@@ -181,17 +181,42 @@ def main():
 
     print(f"[uneeq-review] Verdict: {event}", flush=True)
 
-    review_payload = json.dumps({
-        "event": event,
-        "body": f"_🧑‍💻 Reviewed via {used_label} ({used_model})_\n\n{content[:44000]}",
-    }).encode()
+    body = f"_🧑‍💻 Reviewed via {used_label} ({used_model})_\n\n{content[:44000]}"
 
-    subprocess.run(
-        ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--input", "-"],
-        input=review_payload,
-        check=True,
-    )
-    print("[uneeq-review] Posted.", flush=True)
+    def post(ev: str, text: str) -> bool:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--input", "-"],
+            input=json.dumps({"event": ev, "body": text}).encode(),
+            capture_output=True,
+        )
+        if result.returncode == 0:
+            return True
+        print(
+            f"[WARN] posting {ev} failed: "
+            f"{result.stderr.decode(errors='replace')[:500]}",
+            flush=True,
+        )
+        return False
+
+    if post(event, body):
+        print(f"[uneeq-review] Posted ({event}).", flush=True)
+    elif event == "APPROVE":
+        # GITHUB_TOKEN cannot approve PRs — the API 422s with "GitHub Actions is
+        # not permitted to approve pull requests". Without this branch a finished
+        # review is discarded on an unhandled CalledProcessError and the workflow
+        # burns a Claude fallback run, which is why the vLLM path looked broken
+        # whenever the model was happy with the diff. Downgrade to COMMENT, the
+        # same escape hatch the Claude step's prompt already uses.
+        if post("COMMENT", f"Passed review.\n\n{body}"):
+            print(
+                "[uneeq-review] Posted (COMMENT — APPROVE is not permitted for "
+                "GitHub Actions).",
+                flush=True,
+            )
+        else:
+            sys.exit(1)
+    else:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
