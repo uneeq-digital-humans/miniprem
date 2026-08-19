@@ -67,7 +67,20 @@ def chat(ep: str, key: str, model: str, system: str, user: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=180) as resp:
         result = json.loads(resp.read())
-    return result["choices"][0]["message"]["content"]
+    choice = result["choices"][0]
+    content = choice["message"].get("content")
+    # Reasoning models (deepseek) that exhaust max_tokens mid-think return a
+    # 200 with content=null and the partial chain-of-thought in
+    # reasoning_content. Raise instead of returning it so the caller's loop
+    # fails over to the next endpoint rather than posting nothing.
+    if not (content and content.strip()):
+        reasoning = choice["message"].get("reasoning_content") or ""
+        raise RuntimeError(
+            "empty completion content "
+            f"(finish_reason={choice.get('finish_reason')}, "
+            f"{len(reasoning)} chars of reasoning_content)"
+        )
+    return content
 
 
 def main():
