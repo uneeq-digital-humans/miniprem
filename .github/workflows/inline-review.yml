@@ -24,8 +24,8 @@ jobs:
       - name: Probe UneeQ configuration
         id: probe
         env:
-          DEV_EP: ${{ secrets.UNEEQ_VLLM_DEV_ENDPOINT }}
-          DEV_KEY: ${{ secrets.UNEEQ_VLLM_DEV_KEY }}
+          DEV_EP: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
+          DEV_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
           PROD_EP: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
           PROD_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
         run: |
@@ -42,8 +42,8 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          UNEEQ_VLLM_DEV_ENDPOINT: ${{ secrets.UNEEQ_VLLM_DEV_ENDPOINT }}
-          UNEEQ_VLLM_DEV_KEY: ${{ secrets.UNEEQ_VLLM_DEV_KEY }}
+          UNEEQ_VLLM_DEV_ENDPOINT: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
+          UNEEQ_VLLM_DEV_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
           UNEEQ_VLLM_PROD_ENDPOINT: ${{ secrets.UNEEQ_VLLM_PROD_ENDPOINT }}
           UNEEQ_VLLM_PROD_KEY: ${{ secrets.UNEEQ_VLLM_PROD_KEY }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
