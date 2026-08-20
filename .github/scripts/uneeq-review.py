@@ -177,13 +177,35 @@ def main():
     user = f"Pull Request #{pr_number} in {repo}\n\nDiff:\n{diff}"
 
     content = None
+    parsed = None
     used_label = None
     used_model = None
-    for label, ep, key, prefer in endpoints:
+    for idx, (label, ep, key, prefer) in enumerate(endpoints):
+        final_vllm = idx == len(endpoints) - 1
         try:
             model = discover_model(ep, key, prefer)
             print(f"[uneeq-review] Trying {label} ({model})...", flush=True)
-            content = chat(ep, key, model, system, user)
+            text = chat(ep, key, model, system, user)
+            candidate = None
+            try:
+                candidate = json.loads(text[text.index("{"):text.rindex("}") + 1])
+            except ValueError:
+                candidate = None
+            if isinstance(candidate, dict) and "verdict" in candidate:
+                parsed = candidate
+            elif not final_vllm:
+                # Format is part of the quality bar: a model that can't emit
+                # the findings JSON hands off to the next FREE endpoint. Only
+                # the last vLLM attempt may post prose — its alternative is
+                # paying Claude to reformat a review we already have.
+                raise RuntimeError("response is not findings JSON")
+            else:
+                print(
+                    f"[WARN] {label} response is not findings JSON; "
+                    "posting as one comment.",
+                    flush=True,
+                )
+            content = text
             used_label, used_model = label, model
             break
         except urllib.error.HTTPError as exc:
@@ -198,18 +220,9 @@ def main():
 
     header = f"_🧑‍💻 Reviewed via {used_label} ({used_model})_"
 
-    parsed = None
-    try:
-        candidate = json.loads(content[content.index("{"):content.rindex("}") + 1])
-        if isinstance(candidate, dict) and "verdict" in candidate:
-            parsed = candidate
-    except ValueError:
-        pass
-
     if parsed is None:
-        # Model ignored the JSON contract: post its raw text as one review
-        # body, exactly like the pre-findings versions of this script.
-        print("[WARN] response is not findings JSON; posting as one comment.", flush=True)
+        # Last vLLM endpoint ignored the JSON contract: post its raw text as
+        # one review body, exactly like the pre-findings versions did.
         match = re.search(
             r"OVERALL VERDICT:\s*(APPROVE|REQUEST_CHANGES|COMMENT)", content, re.IGNORECASE
         )
