@@ -288,6 +288,31 @@ these apply:
    settings, kubelet kills renderers mid-session-start and the pool crash-loops — the
    client-side symptom is `"session already in queue"` errors. Required: startup budget
    ≥300s (`failureThreshold: 30`), liveness `timeoutSeconds: 5`, `failureThreshold: 6`.
+   **After an NVIDIA driver update these are still not enough** — see the driver-update
+   item below; the chart now defaults to startup `failureThreshold: 120` and liveness
+   `failureThreshold: 40` (overridable via `renderer.startupFailureThreshold` /
+   `renderer.livenessFailureThreshold`).
+1a. **NVIDIA driver updates invalidate all shader/PSO caches.** Consequences and required
+   steps:
+   - The first cold roll after the update recompiles every pipeline uncached, so each
+     renderer's first boot takes several times longer than normal — and the more pods
+     cold-boot on one node, the slower each one gets. With tight probes, kubelet kills
+     renderers mid-compile and the pool crash-loops into a machine-wide thrash. The
+     relaxed chart defaults above absorb this.
+   - **Verify GPU capacity after the update**: the device plugin can stay bound to the
+     old driver's NVML and report **0 allocatable GPUs** (pods sit Pending,
+     "Insufficient nvidia.com/gpu"). Check
+     `kubectl get node -o jsonpath='{.items[0].status.allocatable.nvidia\.com/gpu}'`
+     and restart the `gpu-operator` pods (device-plugin, dcgm-exporter,
+     gpu-feature-discovery) if it reads 0. Same root cause shows as NVML
+     "Driver/library version mismatch" in containerized tooling.
+   - **Wedged GPU lock**: renderer pods killed mid-boot (probe kills, evictions) can
+     leave stale tickets in the shared GPU serialization lock
+     (`renderer.gpuLockPath`, default `/run/renny-gpu-lock`). Every renderer then hangs
+     before its first frame (alive pods, idle GPU, log spam
+     "Game thread has not ticked a frame yet"). Recovery: scale renny to 0, delete the
+     files in the lock dir, scale back up — they are recreated on next boot. Reported
+     upstream; no self-recovery exists today.
 2. **Renderers wait 60 seconds before accepting sessions** — after boot AND after every
    session ends. Plan queueing/capacity around a renderer being unavailable for ~1 minute
    after each session. Renderer readiness shows in logs as `Waiting for session`.

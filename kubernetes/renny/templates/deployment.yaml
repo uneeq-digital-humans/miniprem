@@ -184,18 +184,24 @@ spec:
         - name: gpu-lock-dir
           mountPath: {{ .Values.renderer.gpuLockPath | quote }}
         {{- end }}
+        # Thresholds sized for the first boot after an NVIDIA driver update: the PSO/shader
+        # caches are invalidated and every renderer recompiles them on first boot, which
+        # takes several times longer than a normal boot (worse the more pods cold-boot on
+        # one node). With tighter values kubelet kills renderers mid-compile and the pool
+        # crash-loops; killed pods can also wedge the shared GPU lock segment
+        # (renderer.gpuLockPath) — recovery: scale to 0 and delete the lock files.
         livenessProbe:
           httpGet:
             path: /health
             port: 8082
           timeoutSeconds: 5
-          failureThreshold: 6
+          failureThreshold: {{ .Values.renderer.livenessFailureThreshold | default 40 }}
         startupProbe:
           httpGet:
             path: /health
             port: 8082
           periodSeconds: 10
-          failureThreshold: 30
+          failureThreshold: {{ .Values.renderer.startupFailureThreshold | default 120 }}
           timeoutSeconds: 2
         tty: true
 {{- if .Values.telemetry.enabled }}
