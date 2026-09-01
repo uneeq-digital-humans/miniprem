@@ -65,6 +65,15 @@ jobs:
             races, security issues, broken error handling, and changes that
             contradict how the surrounding code works. Skip anything a linter already catches.
 
+            When a finding quotes code, copy the lines verbatim from the diff,
+            including every surrounding line of the construct — never
+            paraphrase, and never drop or add lines to make the point cleaner.
+            If you cannot reproduce the exact lines, cite path:line and
+            describe instead. A finding whose quote does not match the diff
+            must be retracted. If the diff you fetched was truncated, content
+            past the cut was not shown to you — it is not absent from the PR;
+            never claim something is missing from a region you did not see.
+
             Post every finding as an inline comment on the exact diff line using
             mcp__github_inline_comment__create_inline_comment. Do not repeat
             findings in a summary comment.
