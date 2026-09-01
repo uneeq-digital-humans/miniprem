@@ -147,7 +147,8 @@ def main():
     max_diff = 22000
     if len(diff) > max_diff:
         diff = (
-            f"(Truncated from {len(diff)} to {max_diff} chars.)\n"
+            f"(Truncated from {len(diff)} to {max_diff} chars: content past "
+            "this point was not shown to you, it is not absent from the PR.)\n"
         ) + diff[:max_diff]
 
     system = (
@@ -158,6 +159,23 @@ def main():
         "- Broken error-handling (silenced exceptions, unchecked returns)\n"
         "- Contradictions with surrounding code patterns\n\n"
         "Ignore cosmetics a linter catches.\n\n"
+        "Quote fidelity (a fabricated quote invalidates the entire review): "
+        "when a finding quotes code, copy the lines verbatim from the diff "
+        "you were given, including every surrounding line of the construct — "
+        "a terraform for-expression's `if` sits after the closing brace on "
+        "its own line, and that line is part of the expression. Never "
+        "paraphrase code into a quote, never drop or add lines to make the "
+        "point cleaner. If you cannot reproduce the exact lines, do not "
+        "quote: cite path:line and describe instead. Before calling code "
+        "'missing' a guard, filter, or argument, re-read the exact construct "
+        "in the diff hunk, not your memory of it. A finding whose quote does "
+        "not match the diff is a defect worse than the bug it reports: "
+        "retract it.\n\n"
+        "Truncated input: the diff may start with a '(Truncated from N to M "
+        "chars...)' marker. Content past the cut was not shown to you; it is "
+        "not absent from the PR. Never claim a file, block, or entry is "
+        "'missing' solely because you cannot see it — either scope the claim "
+        "('absent from the portion shown') or raise it as a question.\n\n"
         "Respond with ONLY a JSON object (no markdown fences, no prose "
         "around it) in exactly this shape:\n"
         '{"summary": "2-4 sentence overall assessment",\n'
