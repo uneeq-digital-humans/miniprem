@@ -1,0 +1,40 @@
+### UneeQ RTX PRO 6000 — Flux TTS engine (Aura-3 / /v2/speak).
+### Serves the Flux TTS .dgv2 package from /models (host: ./models-tts).
+### The [flux_tts] uuid below MUST match the deployed model package or TTS
+### fails to initialize while the rest of the stack starts normally.
+###
+### {DEEPGRAM_API_KEY} = self-hosted API key, substituted by render-configs.sh
+### (see DEEPGRAM-LOCAL.md §3). Missing [license] key => engine exits at boot
+### with "Missing license configuration" (verified on t2, 2026-09-01).
+
+[license]
+server_url = ["https://license.deepgram.com"]
+key = "{DEEPGRAM_API_KEY}"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[metrics_server]
+host = "0.0.0.0"
+port = 9992
+
+[model_manager]
+search_paths = ["/models"]
+
+[flux]
+enabled = false        # Flux STT off; the Listen stage is Nova-3
+
+[flux_tts]
+enabled = true
+uuid = "f94b1bd5-5f6d-4e41-bbda-b326273386c0"
+max_batch_size = 128   # No default — the Engine refuses to start at 0.
+
+[chunking.batch]
+[chunking.streaming]
+
+[preload_models]
+blocking = false
+
+[health]
+gpu_required = true
