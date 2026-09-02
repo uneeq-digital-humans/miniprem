@@ -130,3 +130,11 @@ LOCALE_FIX_*.md
 # IDs, target-group ARN). Keep local only; never commit. See kiosk-instance.sh.example
 # for a sanitized template.
 kubernetes/scripts/aws-kiosk/kiosk-instance.sh
+
+# Deepgram rendered license configs — contain the self-hosted API key
+# ([license] key). Generated from *.toml.template by docker/allinone/
+# render-configs.sh at deploy time; templates ARE committed.
+docker/allinone/deepgram/config/api.toml
+docker/allinone/deepgram/config/engine-stt.toml
+docker/allinone/deepgram/config/engine-tts.toml
+docker/allinone/.env
