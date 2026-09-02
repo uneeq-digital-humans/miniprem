@@ -1,3 +1,8 @@
+# NOTE: tags built AFTER uneeq-digital-humans/kiosk-interface#10 (non-root
+# nginx-unprivileged) listen on 8080, which is what this chart's containerPort/
+# probes/Service targetPort now expect. Tags built BEFORE that PR still listen
+# on 80 — deploying this chart against an old tag yields an unready pod. Bump to
+# a post-#10 tag in the same rollout that ships the hardened image.
 image: "cr.uneeq.io/dell-isg-containers/digitalhuman-interface:0.244-ca717"
 
 imagePullSecrets:
