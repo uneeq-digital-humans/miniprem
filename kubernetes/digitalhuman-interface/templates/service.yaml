@@ -9,6 +9,8 @@ spec:
     app: digitalhuman-interface
   ports:
   - port: {{ .Values.service.port }}
-    targetPort: 80
+    # Hardened kiosk image (kiosk-interface#10) listens on 8080 as uid 101.
+    # Service port stays 80 — the ingress and all in-cluster callers are unaffected.
+    targetPort: 8080
     protocol: TCP
     name: http
