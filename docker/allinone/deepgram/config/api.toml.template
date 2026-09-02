@@ -1,0 +1,48 @@
+### UneeQ RTX PRO 6000 — API (stem) config TEMPLATE.
+### {DEEPGRAM_API_KEY} is substituted at deploy time (see DEEPGRAM-LOCAL.md §3).
+### Do NOT commit a file with a real key in it.
+
+[license]
+server_url = ["https://license.deepgram.com"]
+key = "{DEEPGRAM_API_KEY}"
+
+[server]
+base_url = "/v1"
+host = "0.0.0.0"
+port = 8080
+callback_conn_timeout = "1s"
+callback_timeout = "10s"
+fetch_conn_timeout = "1s"
+fetch_timeout = "60s"
+
+[features]
+speak_streaming = true
+speak_v2 = true           # Flux TTS batch synthesis on /v2/speak
+speak_v2_streaming = true  # Flux TTS streaming synthesis
+listen_v2 = true           # Flux STT on /v2/listen
+
+### --- Nova-3 + end-of-turn Engine ---
+[[driver_pool.standard]]
+url = "https://engine-stt:8080/v2"
+batch_stt = true
+streaming_stt = true
+listen_v2 = true
+tts = false
+eot = true
+timeout_backoff = 1.2
+retry_sleep = "2s"
+retry_backoff = 1.6
+max_response_size = 1073741824 # 1GB
+
+### --- Flux TTS Engine (same GPU, separate Engine) ---
+[[driver_pool.standard]]
+url = "https://engine-tts:8080/v2"
+batch_stt = false
+streaming_stt = false
+listen_v2 = false
+tts = true
+eot = false
+timeout_backoff = 1.2
+retry_sleep = "2s"
+retry_backoff = 1.6
+max_response_size = 1073741824

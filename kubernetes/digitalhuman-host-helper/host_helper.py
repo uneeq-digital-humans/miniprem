@@ -549,6 +549,94 @@ def renny_restart():
         raise HTTPException(404, f"Renny renderer not found: {exc}")
 
 
+@app.get("/renny/state")
+def renny_state():
+    """READ-ONLY renderer inventory for the kiosk's fleet telemetry: how many
+    Renny renderers this box runs and whether they're ready. Same ready/total
+    shape as /rag/state; per-pod stage/restarts so the kiosk's HealthWatcher can
+    raise renny_offline / renny_critical_error events. Never mutates anything.
+
+    Docker (incl. the multi-renny setup): one entry per renny-* container,
+    healthy = docker healthcheck (falls back to running state when the image has
+    no healthcheck). Kubernetes: deploy/renny replicas + per-pod ready/restarts,
+    with CrashLoopBackOff/ImagePullBackOff classified as stage 'error'.
+    """
+    # --- Docker path: enumerate EVERY renny container (setup_multiple_rennys) ---
+    names = []
+    try:
+        r = _docker("ps", "--format", "{{.Names}}")
+        names = [n for n in r.stdout.split() if "renny" in n.lower()]
+    except Exception:
+        pass
+    if names:
+        pods, ready = [], 0
+        for n in names:
+            ok = False
+            try:
+                hr = _docker("inspect", "-f", "{{.State.Health.Status}}", n)
+                status = (hr.stdout or "").strip()
+                if hr.returncode == 0 and status and status != "<no value>":
+                    ok = status == "healthy"
+                else:  # image ships no HEALTHCHECK — running is the best signal
+                    sr = _docker("inspect", "-f", "{{.State.Running}}", n)
+                    ok = (sr.stdout or "").strip() == "true"
+            except Exception:
+                ok = False
+            restarts = 0
+            try:
+                rr = _docker("inspect", "-f", "{{.RestartCount}}", n)
+                restarts = int((rr.stdout or "0").strip() or 0)
+            except Exception:
+                pass
+            pods.append({"stage": "ready" if ok else "error",
+                         "restarts": restarts, "elapsed_s": None})
+            ready += 1 if ok else 0
+        return {"ready": ready, "total": len(pods), "pods": pods, "runtime": "docker"}
+
+    # --- Kubernetes path: deploy/renny + per-pod detail (same ns convention as
+    #     renny_logs: the helper's own namespace, where renny is installed) -----
+    try:
+        dr = _kubectl("get", "deploy", "renny", "-o",
+                      "jsonpath={.spec.replicas} {.status.readyReplicas}")
+        if dr.returncode != 0:
+            raise HTTPException(404, "Renny deployment not found.")
+        parts = dr.stdout.split()
+        total = int(parts[0]) if parts and parts[0].isdigit() else 0
+        ready = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+        import calendar
+        pods = []
+        pr = _kubectl("get", "pods", "-l", "app=renny", "-o", "json", timeout=15)
+        if pr.returncode == 0:
+            for p in json.loads(pr.stdout).get("items", []):
+                if p["metadata"].get("deletionTimestamp"):
+                    continue
+                cs = (p["status"].get("containerStatuses") or [{}])[0]
+                waiting = ((cs.get("state") or {}).get("waiting") or {}).get("reason", "")
+                pod_ready = bool(cs.get("ready"))
+                if pod_ready:
+                    stage = "ready"
+                elif waiting in ("CrashLoopBackOff", "ImagePullBackOff", "ErrImagePull", "Error"):
+                    stage = "error"
+                else:
+                    stage = "starting"
+                elapsed = None
+                try:
+                    created = p["metadata"].get("creationTimestamp")
+                    if created and not pod_ready:
+                        elapsed = int(time.time() - calendar.timegm(
+                            time.strptime(created, "%Y-%m-%dT%H:%M:%SZ")))
+                except Exception:
+                    pass
+                pods.append({"stage": stage,
+                             "restarts": int(cs.get("restartCount") or 0),
+                             "elapsed_s": elapsed})
+        return {"ready": ready, "total": total, "pods": pods, "runtime": _runtime()}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(404, f"Renny state unavailable: {exc}")
+
+
 @app.get("/tts-config")
 def tts_config():
     """Which TTS provider is the renderer (Renny) wired for? Lets the kiosk tell
@@ -1033,6 +1121,27 @@ def _gpu_proc_util() -> dict:
         return {}
 
 
+def _friendly_gpu_label(name: str, owner: str) -> str:
+    """Operator-readable identity for a GPU process. Pod owner first (it
+    disambiguates the two Deepgram impellers and the two Triton NIMs), then
+    well-known binary names, then the raw name."""
+    o = (owner or "").lower()
+    if "deepgram-engine-stt" in o: return "Deepgram STT engine"
+    if "deepgram-engine-tts" in o: return "Deepgram TTS engine"
+    if "magpie" in o: return "Riva TTS (Magpie NIM)"
+    if "digitalhuman-asr" in o or "parakeet" in o: return "Riva STT (ASR NIM)"
+    if "gemma" in o or "vllm" in o: return "LLM (vLLM)"
+    if "renny" in o: return "Renny renderer"
+    if "rag" in o or "nim-llama" in o or "milvus" in o: return f"RAG ({o.split('-')[0] or 'stack'})"
+    n = (name or "").lower()
+    if "impeller" in n: return "Deepgram engine"
+    if "triton" in n: return "NIM (Triton)"
+    if "vllm" in n: return "LLM (vLLM)"
+    if "renny" in n: return "Renny renderer"
+    if "xorg" in n or "gnome" in n: return "Desktop (X11/GNOME)"
+    return name
+
+
 def _gpu_procs(total_gb: float) -> list:
     """ALL GPU processes (compute AND graphics) from nvidia-smi's full process
     table — not just CUDA compute-apps. `--query-compute-apps` omits graphics
@@ -1072,8 +1181,10 @@ def _gpu_procs(total_gb: float) -> list:
             mem_mib = int(m.group(1))
             gb = round(mem_mib / 1024, 1)
             pct = round(mem_mib / 1024 / total_gb * 100) if total_gb else 0
+            owner = _pod_for_pid(pid, pods)
             procs.append({"pid": pid, "name": name, "type": ptype,
-                          "owner": _pod_for_pid(pid, pods),
+                          "owner": owner,
+                          "label": _friendly_gpu_label(name, owner),
                           "vram_gb": gb, "vram_pct": pct,
                           "gpu_pct": util.get(pid, 0)})
         return procs
@@ -1250,6 +1361,57 @@ def tts_health():
     return _with_vram(out)
 
 
+# ---- STT service logs (Settings ▸ Advanced status-board hover) ----------------
+# The kiosk shows last-N container logs on hover so an admin can see WHY an
+# engine is offline/error without leaving the kiosk. Whitelisted read-only
+# targets only — no arbitrary workload names, no namespaces beyond these.
+_SERVICE_LOG_TARGETS = {
+    # key          k8s (ns, label-selector)                 docker container
+    "riva-asr":   (("uneeq", "app=digitalhuman-asr"),         "riva-asr"),
+    "riva-tts":   (("nim-models", "app=magpie-tts"),          "riva-tts"),
+    "dg-engine-stt": (("deepgram", "app=deepgram-engine-stt"), "deepgram-engine-stt"),
+    "dg-api":     (("deepgram", "app=deepgram-api"),           "deepgram-api"),
+    "dg-engine-tts": (("deepgram", "app=deepgram-engine-tts"), "deepgram-engine-tts"),
+    "dg-tts-adapter": (("deepgram", "app=deepgram-tts-adapter"), "deepgram-tts-adapter"),
+    "renny":      (("uneeq", "app=renny"),                     "renny"),
+}
+
+
+@app.get("/service-logs")
+def service_logs(service: str, lines: int = 50):
+    """Last N log lines for a whitelisted STT service. Runtime-aware: kubeadm ->
+    kubectl logs (all containers in the newest ready pod), docker -> docker logs."""
+    tgt = _SERVICE_LOG_TARGETS.get(service)
+    if not tgt:
+        return {"error": f"unknown service (allowed: {sorted(_SERVICE_LOG_TARGETS)})", "logs": ""}
+    ns, sel = tgt[0]
+    lines = max(1, min(200, int(lines)))
+    if _runtime() == "docker":
+        r = _docker("logs", "--tail", str(lines), tgt[1])
+        return {"service": service, "source": f"docker:{tgt[1]}",
+                "logs": ((r.stdout or "") + (r.stderr or ""))[-20000:]}
+    try:
+        pr = _kubectl("get", "pods", "-n", ns, "-l", sel, "-o", "json", timeout=15)
+        pods = [p for p in json.loads(pr.stdout).get("items", [])
+                if not p["metadata"].get("deletionTimestamp")]
+    except Exception as exc:
+        return {"service": service, "source": f"kubectl:{ns}/{sel}",
+                "error": f"pod list failed: {exc}", "logs": ""}
+    if not pods:
+        return {"service": service, "source": f"kubectl:{ns}/{sel}",
+                "error": "no pods", "logs": ""}
+    # Newest pod first; include previous container logs when it crash-looped.
+    pods.sort(key=lambda p: p["metadata"].get("creationTimestamp", ""), reverse=True)
+    pod = pods[0][ "metadata"]["name"]
+    args = ["logs", "-n", ns, pod, f"--tail={lines}", "--all-containers=true", "--prefix=true"]
+    r = _kubectl(*args, timeout=15)
+    out = r.stdout or ""
+    if not out.strip():
+        rp = _kubectl(*args, "--previous", timeout=15)
+        out = rp.stdout or (rp.stderr or "")
+    return {"service": service, "source": f"kubectl:{ns}/{pod}", "logs": out[-20000:]}
+
+
 @app.get("/runtime")
 def runtime():
     """How the stack runs — 'kubeadm' or 'docker'. Lets the kiosk show the runtime
@@ -1418,6 +1580,110 @@ def tts_test(text: str = "Hello. This is a test. One. Two. Three.",
         raise
     except Exception as exc:
         raise HTTPException(502, f"Riva TTS not reachable: {exc}")
+
+
+# ---- Speech engine control (Settings ▸ Advanced toggles) -----------------------
+# Fixed whitelist of engine groups the kiosk may start/stop; scaling is the only
+# verb (kubectl scale to 0/1), so nothing is ever uninstalled.
+_SPEECH_ENGINES = {
+    "riva-stt": [("uneeq", "digitalhuman-asr")],
+    "riva-tts": [("nim-models", "magpie-tts")],
+    "deepgram-stt": [("deepgram", "deepgram-engine-stt")],
+    "deepgram-tts": [("deepgram", "deepgram-engine-tts"), ("deepgram", "deepgram-tts-adapter")],
+}
+# The Deepgram stem (api) fronts BOTH engines: kept up while either is up,
+# scaled down only when both are off.
+_DG_STEM = ("deepgram", "deepgram-api")
+
+
+def _deploy_counts(ns: str, name: str) -> dict:
+    r = _kubectl("get", "deploy", name, "-n", ns,
+                 "-o", "jsonpath={.spec.replicas} {.status.readyReplicas}", timeout=15)
+    if r.returncode != 0:
+        return {"exists": False, "desired": 0, "ready": 0}
+    parts = (r.stdout or "").split()
+    desired = int(parts[0]) if parts and parts[0].isdigit() else 0
+    ready = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+    return {"exists": True, "desired": desired, "ready": ready}
+
+
+@app.get("/speech/engines")
+def speech_engines():
+    """Live state of every toggleable speech engine group. phase: online (all
+    ready), starting (desired>ready), stopping (desired==0, pods draining),
+    off (desired==0, none left), absent (not installed)."""
+    if _runtime() in ("docker", "unknown"):
+        raise HTTPException(400, "engine toggles are only supported on the kubeadm runtime")
+    out = {}
+    for key, deps in _SPEECH_ENGINES.items():
+        # A group's phase is its OWN engine deploys only — the shared Deepgram
+        # stem is infra (auto-managed), never counted toward a half's readiness.
+        counts = [_deploy_counts(ns, n) for ns, n in deps]
+        if not any(c["exists"] for c in counts):
+            out[key] = {"phase": "absent", "desired": 0, "ready": 0}
+            continue
+        desired = sum(c["desired"] for c in counts)
+        ready = sum(c["ready"] for c in counts)
+        want = sum(1 for c in counts if c["exists"])   # 1 replica per deploy when on
+        if desired == 0:
+            phase = "off" if ready == 0 else "stopping"
+        elif ready >= want and ready >= desired:
+            phase = "online"
+        else:
+            phase = "starting"
+        out[key] = {"phase": phase, "desired": desired, "ready": ready}
+    return out
+
+
+@app.post("/speech/scale")
+def speech_scale(engine: str, enabled: bool):
+    """Start/stop one speech engine group by scaling its deployments 1/0."""
+    if _runtime() in ("docker", "unknown"):
+        raise HTTPException(400, "engine toggles are only supported on the kubeadm runtime")
+    deps = _SPEECH_ENGINES.get(engine)
+    if not deps:
+        raise HTTPException(400, f"unknown engine '{engine}'")
+    rep = "1" if enabled else "0"
+    for ns, name in deps:
+        r = _kubectl("scale", "deploy", name, "-n", ns, f"--replicas={rep}", timeout=30)
+        if r.returncode != 0:
+            raise HTTPException(502, f"scale {ns}/{name} failed: {(r.stderr or r.stdout).strip()[:200]}")
+    # Stem lifecycle: needed by either Deepgram half; drop it only when both are off.
+    if engine.startswith("deepgram-"):
+        other = "deepgram-tts" if engine == "deepgram-stt" else "deepgram-stt"
+        other_on = _deploy_counts(*_SPEECH_ENGINES[other][0])["desired"] > 0
+        stem_rep = "1" if (enabled or other_on) else "0"
+        _kubectl("scale", "deploy", _DG_STEM[1], "-n", _DG_STEM[0], f"--replicas={stem_rep}", timeout=30)
+    return {"ok": True, "engine": engine, "enabled": enabled, "scaled": len(deps)}
+
+
+@app.get("/tts-voices")
+def tts_voices(engine: str = "riva"):
+    """Voice list for the Conversation ▸ Voice picker. riva -> Magpie's own
+    list_voices (flattened, base voices only — style variants like .Angry are
+    kept for completeness). deepgram -> the stem's TTS model names."""
+    if engine == "riva":
+        base = "http://127.0.0.1:9000" if _runtime() == "docker" else "http://magpie-tts.nim-models:9000"
+        r = subprocess.run(["curl", "-s", "-m", "10", base + "/v1/audio/list_voices"],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0 or not r.stdout.strip():
+            raise HTTPException(502, "Riva TTS not reachable")
+        try:
+            data = json.loads(r.stdout)
+            voices = sorted({v for grp in data.values() for v in grp.get("voices", [])})
+            return {"engine": "riva", "voices": voices}
+        except Exception as exc:
+            raise HTTPException(502, f"unexpected voices payload: {exc}")
+    if engine == "deepgram":
+        # The stem's /v1/models never lists TTS voices (Flux rides /v2/speak), but
+        # the TTS engine prints the loaded model's full voice inventory at load
+        # time — parse it from the pod log (source of truth for THIS model file).
+        r = _kubectl("logs", "deploy/deepgram-engine-tts", "-n", "deepgram", timeout=25)
+        if r.returncode != 0:
+            raise HTTPException(502, "Deepgram TTS engine not reachable")
+        voices = sorted(set(re.findall(r'Voice \{ name: "([a-z0-9-]+)"', r.stdout or "")))
+        return {"engine": "deepgram", "voices": voices or ["flux-hannah-en"]}
+    raise HTTPException(400, f"unknown engine '{engine}'")
 
 
 _GPU_ID = None

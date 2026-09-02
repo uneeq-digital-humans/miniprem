@@ -24,6 +24,7 @@
   * [Renny](guides/renny.md)
   * [RIME AI Integration](guides/rime.md)
   * [RIVA TTS (NVIDIA)](guides/riva-tts.md)
+  * [Deepgram (Self-Hosted) STT & TTS](guides/deepgram-local.md)
   * [Whisper Speech Recognition](guides/whisper.md)
 * [Custom Integrations](#)
   * [Direct Speak Integration](integrations/direct-speak.md)

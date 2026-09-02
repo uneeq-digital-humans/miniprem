@@ -1,0 +1,50 @@
+### UneeQ RTX PRO 6000 — STT engine config (Flux STT /v2/listen + Nova-3 /v1/listen).
+### Shares the whole RTX PRO 6000 with engine-tts. Serves
+### nova-3-general.en.streaming.40bd3654 (formatted: false) + end-of-turn.4e9dbd96
+### from /models (host: ~/deepgram/models-stt).
+###
+### {DEEPGRAM_API_KEY} is the self-hosted API key — the deploy step substitutes
+### it (see DEEPGRAM-LOCAL.md §3). Without a [license] key the engine exits at
+### boot with "Missing license configuration" (verified on t2, 2026-09-01).
+### The DEEPGRAM_API_KEY env var is NOT read by the engine for licensing in
+### build 3.128.0 — only this field works.
+
+[license]
+server_url = ["https://license.deepgram.com"]
+key = "{DEEPGRAM_API_KEY}"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[metrics_server]
+host = "0.0.0.0"
+port = 9991
+
+[model_manager]
+search_paths = ["/models"]
+
+[features]
+multichannel = true
+language_detection = false
+streaming_ner = false
+use_v2_language_detection = false
+
+[flux]
+enabled = true
+# max_streams is the ONLY bound on the Flux subprocess GPU appetite (Python-side
+# default is 128; it preallocs per-stream state). Smoke-test sizing.
+max_streams = 4        # raise with load data, not speculatively
+model_name = "flux-general-en"
+
+[flux_tts]
+enabled = false        # Flux TTS lives in engine-tts, not here
+
+[chunking.batch]
+[chunking.streaming]
+
+[preload_models]
+blocking = false
+
+[health]
+gpu_required = true

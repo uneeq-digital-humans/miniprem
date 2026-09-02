@@ -11,6 +11,11 @@
 #   --profile rag     adds the NVIDIA RAG blueprint (rag-server + nv-ingest +
 #                        milvus + elasticsearch + embed + rerank) for grounded
 #                        answers over uploaded documents.
+#   --profile deepgram adds the self-hosted Deepgram stack (uneeq-kit): api +
+#                     STT engine (Nova-3/Flux) + TTS engine (Flux) + the TTS
+#                     adapter. Enables Deepgram (local) STT in the kiosk and
+#                     Deepgram TTS for Renny (BYO adapter on :8086). Needs
+#                     DEEPGRAM_API_KEY in .env + model files under deepgram/.
 #
 # Secrets/keys come from .env (copy .env.example). Bring up with ./up.sh.
 #
@@ -24,6 +29,8 @@
 #   Reranker NIM                 :8004   [rag profile]
 #   Riva TTS (http/grpc)         :9000 / :50051
 #   Riva STT ws-proxy            :8009
+#   Deepgram stem (STT+TTS WS)   :8080   [deepgram profile]
+#   Deepgram TTS adapter (BYO)   :8086   [deepgram profile]
 #   Kiosk (nginx)                :80
 #   Renny: no published ports — dials OUT to UneeQ DHOP (cloud signalling)
 #
@@ -39,6 +46,12 @@ x-gpu: &gpu
           - driver: nvidia
             count: all
             capabilities: [gpu]
+
+# Self-hosted Deepgram (uneeq-kit) license key — same key for api + both engines.
+# Unset = "" (the deepgram services aren't started without their profile, so the
+# key is only ever read when the profile is active; up.sh enforces it there).
+x-deepgram-env: &dgenv
+  DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
 
 networks:
   uneeq:
@@ -115,6 +128,77 @@ services:
     restart: unless-stopped
 
   # ----------------------------------------------------------------------- #
+  # Deepgram self-hosted stack (profile: deepgram) — uneeq-kit on-prem.
+  # Customer-facing "api" (stem) on :8080; two GPU engines (STT + TTS) that
+  # share the whole card, mirroring the kit's validated layout. Models are
+  # mounted read-only from ./deepgram/models-{stt,tts} (filenames must match
+  # exactly — see DEEPGRAM-LOCAL.md). The TTS adapter bridges Renny's BYO v1
+  # HTTP contract to the stem's /v2/speak so Renny needs no code change.
+  # ----------------------------------------------------------------------- #
+  deepgram-api:
+    image: ${DEEPGRAM_REGISTRY:-cr.uneeq.io/deepgram}/api-uneeq:${DEEPGRAM_API_TAG:-1.192.31-6-gea727c0b2845}
+    container_name: deepgram-api
+    profiles: [deepgram]
+    networks: [uneeq]
+    ports: ["8080:8080"]
+    environment:
+      <<: *dgenv
+    volumes:
+      - ./deepgram/config/api.toml:/api.toml:ro
+    command: -v serve /api.toml
+    restart: unless-stopped
+
+  deepgram-engine-stt:
+    image: ${DEEPGRAM_REGISTRY:-cr.uneeq.io/deepgram}/engine-uneeq:${DEEPGRAM_ENGINE_TAG:-3.128.0-35-g32f578ac8bdd}
+    container_name: deepgram-engine-stt
+    profiles: [deepgram]
+    <<: *gpu
+    networks:
+      uneeq:
+        # api.toml routes to "https://engine-stt:8080/v2" — the vendor compose
+        # names this service "engine-stt"; keep that name resolvable here.
+        aliases: [engine-stt]
+    environment:
+      <<: *dgenv
+      CUDA_VISIBLE_DEVICES: "0"
+    volumes:
+      - ./deepgram/models-stt:/models:ro
+      - ./deepgram/config/engine-stt.toml:/engine.toml:ro
+    command: -v serve /engine.toml
+    restart: unless-stopped
+
+  deepgram-engine-tts:
+    image: ${DEEPGRAM_REGISTRY:-cr.uneeq.io/deepgram}/engine-uneeq:${DEEPGRAM_ENGINE_TAG:-3.128.0-35-g32f578ac8bdd}
+    container_name: deepgram-engine-tts
+    profiles: [deepgram]
+    <<: *gpu
+    networks:
+      uneeq:
+        # api.toml routes to "https://engine-tts:8080/v2" (see engine-stt note).
+        aliases: [engine-tts]
+    environment:
+      <<: *dgenv
+      CUDA_VISIBLE_DEVICES: "0"
+    volumes:
+      - ./deepgram/models-tts:/models:ro
+      - ./deepgram/config/engine-tts.toml:/engine.toml:ro
+    command: -v serve /engine.toml
+    restart: unless-stopped
+
+  deepgram-tts-adapter:
+    build: ./deepgram-adapter
+    image: deepgram-tts-adapter:local
+    container_name: deepgram-tts-adapter
+    profiles: [deepgram]
+    networks: [uneeq]
+    ports: ["8086:8086"]
+    environment:
+      - DEEPGRAM_STEM_URL=${DEEPGRAM_STEM_URL:-http://deepgram-api:8080}
+      - DEEPGRAM_TTS_MODEL=${DEEPGRAM_TTS_MODEL:-flux-hannah-en}
+    depends_on: [deepgram-api]
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------- #
   # Renny — UneeQ digital-human renderer. Dials OUT to DHOP (cloud), so no
   # published ports. GPU + host IPC for Unreal pixel-streaming.
   # ----------------------------------------------------------------------- #
@@ -152,6 +236,11 @@ services:
     container_name: kiosk
     networks: [uneeq]
     ports: ["80:80"]
+    environment:
+      # Built-in /api/dg stem proxy (STT "Deepgram (local)"). Compose service
+      # name — the image default is the k8s cross-ns FQDN. When the deepgram
+      # profile is off, resolution fails per-request and ONLY that route 502s.
+      - KIOSK_DG_URL=http://deepgram-api:8080
     # Override the SPA's runtime config.yaml with localhost endpoints + the
     # conversation wiring (zero-config on the box). Edit kiosk/config.yaml to
     # set the persona ID + brand specifics.
