@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run ON the T2. Deploys the NVIDIA Riva TTS NIM (magpie multilingual) as a
 # Docker container on host network (gRPC :50051, http :9000) so that, when
-# persona 114962fb's TTS is set to Riva in the UneeQ Admin Portal, the local
+# a persona's TTS is set to Riva in the UneeQ Admin Portal, the local
 # Renny can reach it. Sources NGC_API_KEY from the box .env (never prints it).
 set -u
 ENVF=/home/admin/uneeq-llm-infra-dell/.env
