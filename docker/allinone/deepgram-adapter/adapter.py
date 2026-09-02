@@ -144,6 +144,43 @@ def synthesize(text: str, voice: str, api_key: str, sample_rate: int = 0) -> byt
             pass
 
 
+def synthesize_stream(text: str, voice: str, api_key: str, sample_rate: int = 0):
+    """Streaming variant: yield each PCM frame the stem emits, as it arrives.
+    Near-instant first audio (no full-utterance buffering) — used by the kiosk
+    live voice path. Same protocol as synthesize(), just yields instead of
+    collecting."""
+    ws_url = stem_ws_url(voice, sample_rate)
+    log.info("streaming %d chars, voice=%s, sr=%s", len(text), voice, sample_rate or SAMPLE_RATE)
+    subprotocols = ["token", api_key] if api_key else None
+    ws = websocket.create_connection(ws_url, subprotocols=subprotocols, timeout=TIMEOUT_S)
+    try:
+        ws.send(json.dumps({"type": "Speak", "text": text}))
+        ws.send(json.dumps({"type": "Flush"}))
+        deadline = time.monotonic() + TIMEOUT_S
+        while time.monotonic() < deadline:
+            ws.settimeout(max(1.0, deadline - time.monotonic()))
+            raw = ws.recv()
+            if isinstance(raw, bytes):
+                if raw:
+                    yield raw
+            else:
+                try:
+                    msg = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                mtype = msg.get("type", "")
+                if mtype == "SpeechMetadata":
+                    break
+                if mtype == "Error":
+                    raise RuntimeError(f"Deepgram TTS error: {msg}")
+        else:
+            raise TimeoutError(f"timed out after {TIMEOUT_S}s waiting for SpeechMetadata")
+    finally:
+        try:
+            ws.close()
+        except Exception:
+            pass
+
 
 class AdapterHandler(BaseHTTPRequestHandler):
     """Minimal HTTP handler implementing the BYO v1 contract."""
@@ -179,6 +216,27 @@ class AdapterHandler(BaseHTTPRequestHandler):
             req_sr = 0
         if req_sr and not (8000 <= req_sr <= 48000):
             self._json(400, {"error": "sample_rate must be 8000-48000"})
+            return
+
+        # Streaming mode: raw PCM frames flushed as the stem emits them (chunked
+        # transfer, no Content-Length). Near-instant first audio for the kiosk
+        # live voice. Consumer knows the rate it asked for (defaults 16k).
+        if body.get("stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "audio/L16")
+            self.send_header("X-Sample-Rate", str(req_sr or SAMPLE_RATE))
+            self.send_header("Transfer-Encoding", "chunked")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            try:
+                for frame in synthesize_stream(text, voice, key, req_sr):
+                    self.wfile.write(b"%X\r\n" % len(frame))
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+                    self.wfile.flush()
+                self.wfile.write(b"0\r\n\r\n")  # terminating chunk
+            except Exception as e:
+                log.warning("stream aborted: %s", e)
             return
 
         log.info("request: %d chars, voice=%s, sr=%s", len(text), voice, req_sr or SAMPLE_RATE)
