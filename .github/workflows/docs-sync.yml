@@ -1,0 +1,28 @@
+# On every merge to the default branch, ask customer-documentation to decide
+# whether the change needs customer-facing docs (docs-sync worker). The whole
+# pipeline — gate, generation, PR — lives there; this stub only forwards the
+# merge SHAs. See .hermes plans / docs-sync in customer-documentation.
+name: Docs Sync
+on:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+  actions: write
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch docs-sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BEFORE: ${{ github.event.before }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh workflow run docs-sync.yml \
+            --repo uneeq-digital-humans/customer-documentation \
+            -f source_repo="$GITHUB_REPOSITORY" \
+            -f before_sha="$BEFORE" \
+            -f after_sha="${{ github.sha }}" \
+            -f actor="$GITHUB_ACTOR" \
+            -f source_run_url="$RUN_URL"
