@@ -16,6 +16,8 @@ spa:
 # is pullable. Override image.* to a mirror in the `uneeq` project if needed.
 image:
   repository: cr.uneeq.io/dell-isg-containers/digitalhuman-interface
+  # Tags built AFTER kiosk-interface#10 (non-root nginx-unprivileged) listen on
+  # 8080, matching this chart's ports/probes/targetPort; older tags listen on 80.
   tag: 0.244-ca717
   pullPolicy: IfNotPresent
 imagePullSecrets:
