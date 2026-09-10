@@ -2,18 +2,24 @@
 """
 Post a PR review via UneeQ's self-hosted vLLM endpoints.
 
-Vendored from uneeq-digital-humans/claude-code-marketplace (the marketplace
-repo is private, and miniprem is public, so the reusable-workflow pin cannot
-be used here — see GitHub's reusable-workflow access rules).
+Canonical copy — used by this repo's reusable CI workflows. Public repos
+(e.g. miniprem) cannot call this private marketplace's reusable workflows,
+so they vendor these scripts instead; keep vendored copies in sync.
 
-Endpoint order: Dev (deepseek) first, then Prod (qwen). The model is discovered
-from each endpoint's /v1/models and filtered to the deepseek/qwen allowlist —
+Endpoint order: Dev (qwen38-flash-next) first, then Prod (qwen). The model is
+discovered from each endpoint's /v1/models and filtered to the qwen allowlist —
 both endpoints also serve gemma, which must never review a PR. Exits non-zero
 only if every configured endpoint fails, which lets the workflow fall through
 to the Claude step.
 
+Every posted review body is prefixed with REVIEW_MARKER. On each run we grep
+past reviews on the PR for that marker (from either this script or the Claude
+fallback) to tell a first review from a recheck of one already in progress.
+
 Env: UNEEQ_VLLM_DEV_ENDPOINT / UNEEQ_VLLM_DEV_KEY
      UNEEQ_VLLM_PROD_ENDPOINT / UNEEQ_VLLM_PROD_KEY
+     UNEEQ_HOUSE_RULES (optional — the calling repo's own documented
+       conventions, gathered by the review-policy action; empty if none)
      PR_NUMBER
 """
 
@@ -25,6 +31,60 @@ import sys
 import urllib.error
 import urllib.request
 
+REVIEW_MARKER = "<!-- uneeq-review:v1 -->"
+
+# Generated/lockfile artifacts: reviewing them wastes the tight diff budget and
+# starves the hand-written code the model actually needs to see.
+GENERATED_PATTERNS = re.compile(
+    r"(^|/)(docs/(docs\.go|swagger\.json|swagger\.yaml)"
+    r"|[^/]*\.sql\.go"
+    r"|[^/]*\.pb\.go"
+    r"|mocks?/[^/]+"
+    r"|[^/]*_mock\.go"
+    r"|package-lock\.json"
+    r"|yarn\.lock"
+    r"|go\.sum)$"
+)
+
+
+def strip_generated(diff: str) -> str:
+    """Drop generated-file hunks from a unified diff, noting what was removed."""
+    kept, dropped = [], []
+    for chunk in re.split(r"(?m)^(?=diff --git )", diff):
+        if not chunk:
+            continue
+        m = re.match(r"diff --git a/(\S+) b/(\S+)", chunk)
+        path = m.group(2) if m else ""
+        if path and GENERATED_PATTERNS.search(path):
+            dropped.append(f"{path} ({len(chunk)} chars)")
+        else:
+            kept.append(chunk)
+    if dropped:
+        kept.append(
+            "\n(Generated files omitted from this diff to preserve review "
+            "budget: " + ", ".join(dropped) + ")\n"
+        )
+    return "".join(kept)
+
+POLICY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "review-policy")
+
+
+def load_policy(name: str) -> str:
+    """Read shared policy text. Vendored copies must ship review-policy/ too."""
+    with open(os.path.join(POLICY_DIR, f"{name}.txt")) as f:
+        return f.read().strip()
+
+
+def load_house_rules() -> str:
+    """Return the calling repo's own documented conventions, or ''.
+
+    This script ships with the action, so it cannot know which convention files
+    a repo keeps; the caller-side review-policy step discovers them from the
+    checkout it already made and passes the concatenation through. Empty is the
+    normal case for a repo that documents nothing, and is not an error.
+    """
+    return os.environ.get("UNEEQ_HOUSE_RULES", "").strip()
+
 
 def cmd(*args: str) -> str:
     result = subprocess.run(args, capture_output=True, text=True, check=False)
@@ -34,20 +94,20 @@ def cmd(*args: str) -> str:
     return result.stdout.strip()
 
 
-# Only these two families are eligible. Both endpoints also serve gemma and (on
-# Dev) the whole eval matrix, and /v1/models order is arbitrary — every
-# comma-separated served_model_name alias registers as its own id — so the old
-# data[0] pick could silently review a PR with gemma-e4b.
-MODEL_FAMILIES = ("deepseek", "qwen")
+# Model id order is arbitrary and gemma is always served — never pick data[0];
+# only the qwen family is an eligible reviewer (Dev's deepseek was replaced by
+# qwen38-flash-next, so the deepseek allowlist entry is gone).
+MODEL_FAMILIES = ("qwen",)
 
 
 def discover_model(ep: str, key: str, prefer: str) -> str:
     """Pick an allowlisted model from the endpoint, preferring `prefer`'s family.
 
-    Dev is asked for deepseek and Prod for qwen, so the two hops of the failover
-    chain don't both land on the same model. Preference is soft (Prod serving
-    deepseek is fine); the deepseek/qwen allowlist is hard. An endpoint offering
-    neither raises, and the caller falls through to the next one.
+    Dev is asked for qwen38-flash-next and Prod for qwen, so the two hops of the
+    failover chain don't both land on the same model. Preference is soft (Dev
+    falling back to its qwen38-27b is fine); the qwen allowlist is hard. An
+    endpoint offering no qwen model raises, and the caller falls through to the
+    next one.
     """
     req = urllib.request.Request(
         f"{ep}/v1/models",
@@ -62,7 +122,7 @@ def discover_model(ep: str, key: str, prefer: str) -> str:
     eligible = [i for i in ids if any(f in i.lower() for f in MODEL_FAMILIES)]
     if not eligible:
         raise RuntimeError(
-            "endpoint serves no deepseek/qwen model "
+            "endpoint serves no qwen model "
             f"(offered: {', '.join(sorted(ids))})"
         )
     preferred = [i for i in eligible if prefer in i.lower()]
@@ -73,10 +133,8 @@ def discover_model(ep: str, key: str, prefer: str) -> str:
 
 def chat(ep: str, key: str, model: str, system: str, user: str) -> str:
     payload = json.dumps({
-        # top_p 1 is qwen3.8's documented sampling recommendation (0.93 clipped the
-        # tail for no measured benefit); temperature stays low because review output
-        # should be reproducible. max_tokens is the OUTPUT ceiling only — 8096 was
-        # cutting long reviews off mid-finding.
+        # top_p 1 is qwen3.8's documented recommendation; temperature stays 0.2
+        # for reproducibility. max_tokens is the OUTPUT ceiling — 8096 truncated.
         "model": model,
         "temperature": 0.2,
         "top_p": 1,
@@ -98,10 +156,9 @@ def chat(ep: str, key: str, model: str, system: str, user: str) -> str:
         result = json.loads(resp.read())
     choice = result["choices"][0]
     content = choice["message"].get("content")
-    # Reasoning models (deepseek) that exhaust max_tokens mid-think return a
-    # 200 with content=null and the partial chain-of-thought in
-    # reasoning_content. Raise instead of returning it so the caller's loop
-    # fails over to the next endpoint rather than posting nothing.
+    # A reasoning model exhausting max_tokens mid-think returns content=null
+    # (trail in reasoning_content) — raise so the caller fails over to the next
+    # endpoint.
     if not (content and content.strip()):
         reasoning = choice["message"].get("reasoning_content") or ""
         raise RuntimeError(
@@ -112,6 +169,27 @@ def chat(ep: str, key: str, model: str, system: str, user: str) -> str:
     return content
 
 
+def find_previous_review(pr_number: str) -> str:
+    """Return the most recent past review body carrying REVIEW_MARKER, or ''.
+
+    Its presence means this PR already went through an automated review
+    (vLLM or Claude) and this run is a recheck, not a first pass.
+    """
+    raw = cmd(
+        "gh", "pr", "view", pr_number,
+        "--json", "reviews",
+        "--jq", ".reviews",
+    )
+    if not raw:
+        return ""
+    try:
+        reviews = json.loads(raw)
+    except json.JSONDecodeError:
+        return ""
+    marked = [r for r in reviews if REVIEW_MARKER in (r.get("body") or "")]
+    return marked[-1]["body"] if marked else ""
+
+
 def main():
     pr_number = os.environ.get("PR_NUMBER", "")
     if not pr_number:
@@ -120,10 +198,10 @@ def main():
     repo = os.environ.get("GITHUB_REPOSITORY", "")
 
     endpoints = []
-    # Dev first: it serves deepseek, which is the preferred reviewer. Prod is the
-    # always-on qwen fallback for when Dev is scaled to zero or down.
+    # Dev first: it serves qwen38-flash-next, which is the preferred reviewer.
+    # Prod is the always-on qwen fallback for when Dev is scaled to zero or down.
     for label, ep_var, key_var, prefer in (
-        ("UneeQ Dev", "UNEEQ_VLLM_DEV_ENDPOINT", "UNEEQ_VLLM_DEV_KEY", "deepseek"),
+        ("UneeQ Dev", "UNEEQ_VLLM_DEV_ENDPOINT", "UNEEQ_VLLM_DEV_KEY", "qwen38-flash-next"),
         ("UneeQ Prod", "UNEEQ_VLLM_PROD_ENDPOINT", "UNEEQ_VLLM_PROD_KEY", "qwen"),
     ):
         ep = os.environ.get(ep_var, "").strip().rstrip("/")
@@ -135,95 +213,86 @@ def main():
         print("[FAIL] No UneeQ endpoints configured.", flush=True)
         sys.exit(1)
 
+    previous_review = find_previous_review(pr_number)
+    recheck = bool(previous_review)
+
     print("[uneeq-review] Gathering PR diff...", flush=True)
     diff = cmd("gh", "pr", "diff", pr_number)
     if not diff:
         print("[FAIL] Could not retrieve PR diff — aborting.", flush=True)
         sys.exit(1)
-    # Input cap, and it is load-bearing: prompt + max_tokens must fit inside the
-    # engine's max_model_len or vLLM rejects the request with a 400 — it does not
-    # compact or slide the window. Raising max_tokens to 16000 spends part of that
-    # same budget, so this stays.
-    max_diff = 22000
+    diff = strip_generated(diff)
+    # Input cap: prompt + max_tokens must fit max_model_len or vLLM 400s (it does
+    # not slide; an over-budget 400 fails over to the Claude step, so the worst
+    # case is a fallback review, not a lost one). A recheck spends budget on the
+    # prior review, shrinking the diff.
+    total_budget = 500000
+    max_prev = 6000 if recheck else 0
+    if recheck and len(previous_review) > max_prev:
+        previous_review = (
+            f"(Truncated from {len(previous_review)} to {max_prev} chars.)\n"
+        ) + previous_review[:max_prev]
+    max_diff = total_budget - max_prev
     if len(diff) > max_diff:
         diff = (
-            f"(Truncated from {len(diff)} to {max_diff} chars: content past "
-            "this point was not shown to you, it is not absent from the PR.)\n"
+            f"(Truncated from {len(diff)} to {max_diff} chars.)\n"
         ) + diff[:max_diff]
 
+    print(f"[uneeq-review] Mode: {'recheck' if recheck else 'first review'}", flush=True)
+
+    review_policy = load_policy("review-policy")
+    pre_mortem_policy = load_policy("pre-mortem-policy")
+    house_rules = load_house_rules()
+
     system = (
-        "You are a senior engineer performing a Pull-Request code review. "
-        "Flag only REAL problems:\n"
-        "- Correctness bugs (logic errors, off-by-one, concurrency hazards)\n"
-        "- Security vulnerabilities (credential leaks, injection flaws)\n"
-        "- Broken error-handling (silenced exceptions, unchecked returns)\n"
-        "- Contradictions with surrounding code patterns\n\n"
-        "Ignore cosmetics a linter catches.\n\n"
-        "Quote fidelity (a fabricated quote invalidates the entire review): "
-        "when a finding quotes code, copy the lines verbatim from the diff "
-        "you were given, including every surrounding line of the construct — "
-        "a terraform for-expression's `if` sits after the closing brace on "
-        "its own line, and that line is part of the expression. Never "
-        "paraphrase code into a quote, never drop or add lines to make the "
-        "point cleaner. If you cannot reproduce the exact lines, do not "
-        "quote: cite path:line and describe instead. Before calling code "
-        "'missing' a guard, filter, or argument, re-read the exact construct "
-        "in the diff hunk, not your memory of it. A finding whose quote does "
-        "not match the diff is a defect worse than the bug it reports: "
-        "retract it.\n\n"
-        "Truncated input: the diff may start with a '(Truncated from N to M "
-        "chars...)' marker. Content past the cut was not shown to you; it is "
-        "not absent from the PR. Never claim a file, block, or entry is "
-        "'missing' solely because you cannot see it — either scope the claim "
-        "('absent from the portion shown') or raise it as a question.\n\n"
-        "Respond with ONLY a JSON object (no markdown fences, no prose "
-        "around it) in exactly this shape:\n"
-        '{"summary": "2-4 sentence overall assessment",\n'
-        ' "verdict": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",\n'
-        ' "findings": [{"path": "file path exactly as in the diff",\n'
-        '               "line": 123,\n'
-        '               "severity": "HIGH" | "MEDIUM" | "LOW",\n'
-        '               "comment": "one actionable finding"}]}\n\n'
-        '"findings" may be empty. "line" is the line number in the NEW '
-        "version of the file and MUST be a line visible in the diff (count "
-        "from each hunk header, @@ -old +new,count @@). If a finding cannot "
-        "be tied to one diff line, set line to null.\n"
-        "Verdict rules: REQUEST_CHANGES if any finding should block merging; "
-        "APPROVE otherwise; COMMENT only for non-blocking observations."
+        "You are a senior engineer performing a Pull-Request code review.\n\n"
+        + review_policy
+        + "\n\n"
+        + pre_mortem_policy
+        + "\n\n"
+    )
+    # This is the section the policy's house-rules exception refers to. Only
+    # present when the calling repo actually documents conventions.
+    if house_rules:
+        system += (
+            "HOUSE RULES — the documented conventions of this repository. The "
+            "house-rules exception in the policy above applies to this PR:\n\n"
+            + house_rules
+            + "\n\n"
+        )
+    if recheck:
+        system += (
+            "This PR already has a prior automated review (below). The author "
+            "has since pushed changes. Add a section titled RECHECK: for each "
+            "HIGH or MEDIUM item the prior review raised, state RESOLVED or "
+            "STILL OPEN with a one-line reason, judged against the current "
+            "diff, not the old one. Then list any new findings using the same "
+            "severity rules.\n\n"
+        )
+    system += (
+        "End with exactly one of:\n"
+        "OVERALL VERDICT: APPROVE\n"
+        "OVERALL VERDICT: REQUEST_CHANGES\n"
+        "OVERALL VERDICT: COMMENT\n"
+        "REQUEST_CHANGES requires at least one confirmed HIGH or MEDIUM finding: "
+        "one whose mechanism you read the code for and named, per the grounding "
+        "rules. If every finding you have is a HYPOTHESIS — a concern whose "
+        "mechanism lives in code outside the diff — or you have no findings, the "
+        "verdict is COMMENT. Do not let a hypothesis carry a blocking verdict."
     )
 
     user = f"Pull Request #{pr_number} in {repo}\n\nDiff:\n{diff}"
+    if recheck:
+        user += f"\n\nPrior automated review:\n{previous_review}"
 
     content = None
-    parsed = None
     used_label = None
     used_model = None
-    for idx, (label, ep, key, prefer) in enumerate(endpoints):
-        final_vllm = idx == len(endpoints) - 1
+    for label, ep, key, prefer in endpoints:
         try:
             model = discover_model(ep, key, prefer)
             print(f"[uneeq-review] Trying {label} ({model})...", flush=True)
-            text = chat(ep, key, model, system, user)
-            candidate = None
-            try:
-                candidate = json.loads(text[text.index("{"):text.rindex("}") + 1])
-            except ValueError:
-                candidate = None
-            if isinstance(candidate, dict) and "verdict" in candidate:
-                parsed = candidate
-            elif not final_vllm:
-                # Format is part of the quality bar: a model that can't emit
-                # the findings JSON hands off to the next FREE endpoint. Only
-                # the last vLLM attempt may post prose — its alternative is
-                # paying Claude to reformat a review we already have.
-                raise RuntimeError("response is not findings JSON")
-            else:
-                print(
-                    f"[WARN] {label} response is not findings JSON; "
-                    "posting as one comment.",
-                    flush=True,
-                )
-            content = text
+            content = chat(ep, key, model, system, user)
             used_label, used_model = label, model
             break
         except urllib.error.HTTPError as exc:
@@ -236,83 +305,50 @@ def main():
         print("[FAIL] All UneeQ endpoints failed.", flush=True)
         sys.exit(1)
 
-    header = f"_🧑‍💻 Reviewed via {used_label} ({used_model})_"
+    verdict = re.search(
+        r"OVERALL VERDICT:\s*(APPROVE|REQUEST_CHANGES|COMMENT)", content, re.IGNORECASE
+    )
+    event = verdict.group(1).upper() if verdict else "COMMENT"
 
-    if parsed is None:
-        # Last vLLM endpoint ignored the JSON contract: post its raw text as
-        # one review body, exactly like the pre-findings versions did.
-        match = re.search(
-            r"OVERALL VERDICT:\s*(APPROVE|REQUEST_CHANGES|COMMENT)", content, re.IGNORECASE
-        )
-        event = match.group(1).upper() if match else "COMMENT"
-        summary = content[:44000]
-        findings = []
-    else:
-        event = str(parsed.get("verdict", "COMMENT")).upper()
-        if event not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
-            event = "COMMENT"
-        summary = str(parsed.get("summary", "")).strip()[:44000]
-        findings = [f for f in parsed.get("findings") or [] if isinstance(f, dict)][:30]
+    print(f"[uneeq-review] Verdict: {event}", flush=True)
 
-    print(f"[uneeq-review] Verdict: {event} ({len(findings)} findings)", flush=True)
+    body = (
+        f"{REVIEW_MARKER}\n"
+        f"_🧑‍💻 Reviewed via {used_label} ({used_model})_\n\n{content[:44000]}"
+    )
 
-    inline, unanchored = [], []
-    for f in findings:
-        note = f"**{str(f.get('severity', 'NOTE')).upper()}**: {str(f.get('comment', '')).strip()}"
-        path, line = f.get("path"), f.get("line")
-        if path and isinstance(line, int) and line > 0:
-            inline.append({"path": str(path), "line": line, "side": "RIGHT", "body": note})
-        else:
-            unanchored.append(f"- {'`' + str(path) + '`: ' if path else ''}{note}")
-
-    body = header + (f"\n\n{summary}" if summary else "")
-    if unanchored:
-        body += "\n\n" + "\n".join(unanchored)
-    folded = body
-    if inline:
-        folded += "\n\n" + "\n".join(f"- `{c['path']}:{c['line']}` {c['body']}" for c in inline)
-
-    def post(ev: str, text: str, comments: list) -> bool:
-        payload = {"event": ev, "body": text}
-        if comments:
-            payload["comments"] = comments
+    def post(ev: str, text: str) -> bool:
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--input", "-"],
-            input=json.dumps(payload).encode(),
+            input=json.dumps({"event": ev, "body": text}).encode(),
             capture_output=True,
         )
         if result.returncode == 0:
-            print(f"[uneeq-review] Posted ({ev}, {len(comments)} inline).", flush=True)
             return True
         print(
-            f"[WARN] posting {ev} with {len(comments)} inline comments failed: "
+            f"[WARN] posting {ev} failed: "
             f"{result.stderr.decode(errors='replace')[:500]}",
             flush=True,
         )
         return False
 
-    # Posting ladder, because two distinct 422s exist: GITHUB_TOKEN cannot
-    # APPROVE ("GitHub Actions is not permitted to approve pull requests"),
-    # and any inline comment citing a line outside the diff rejects the whole
-    # review. Downgrade APPROVE to COMMENT first, then fold the inline
-    # findings into the body, before giving up.
-    if event == "APPROVE":
-        attempts = [
-            ("APPROVE", body, inline),
-            ("COMMENT", f"Passed review.\n\n{body}", inline),
-            ("COMMENT", f"Passed review.\n\n{folded}", []),
-        ]
-    else:
-        attempts = [(event, body, inline), (event, folded, [])]
-
-    seen = set()
-    for ev, text, comments in attempts:
-        key = (ev, text, len(comments))
-        if key in seen:
-            continue
-        seen.add(key)
-        if post(ev, text, comments):
-            break
+    if post(event, body):
+        print(f"[uneeq-review] Posted ({event}).", flush=True)
+    elif event == "APPROVE":
+        # GITHUB_TOKEN cannot approve PRs — the API 422s with "GitHub Actions is
+        # not permitted to approve pull requests". Without this branch a finished
+        # review is discarded on an unhandled CalledProcessError and the workflow
+        # burns a Claude fallback run, which is why the vLLM path looked broken
+        # whenever the model was happy with the diff. Downgrade to COMMENT, the
+        # same escape hatch the Claude step's prompt already uses.
+        if post("COMMENT", f"Passed review.\n\n{body}"):
+            print(
+                "[uneeq-review] Posted (COMMENT — APPROVE is not permitted for "
+                "GitHub Actions).",
+                flush=True,
+            )
+        else:
+            sys.exit(1)
     else:
         sys.exit(1)
 
