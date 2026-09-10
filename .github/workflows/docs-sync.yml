@@ -8,17 +8,24 @@ on:
     branches: [main, master]
 permissions:
   contents: read
-  actions: write
 jobs:
   dispatch:
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch docs-sync
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Cross-repo dispatch needs write access on customer-documentation;
+          # GITHUB_TOKEN is scoped to this repo only. Org-level PAT secret.
+          GH_TOKEN: ${{ secrets.GH_ORG_PAT }}
           BEFORE: ${{ github.event.before }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # github.event.before is the all-zeros sentinel on a branch's first
+          # push; fall back to the pushed SHA so the worker's diff stays valid.
+          ZERO="0000000000000000000000000000000000000000"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "$ZERO" ]; then
+            BEFORE="${{ github.sha }}"
+          fi
           gh workflow run docs-sync.yml \
             --repo uneeq-digital-humans/customer-documentation \
             -f source_repo="$GITHUB_REPOSITORY" \
