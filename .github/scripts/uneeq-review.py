@@ -96,7 +96,20 @@ def chat(ep: str, key: str, model: str, system: str, user: str) -> str:
     )
     with urllib.request.urlopen(req, timeout=180) as resp:
         result = json.loads(resp.read())
-    return result["choices"][0]["message"]["content"]
+    choice = result["choices"][0]
+    content = choice["message"].get("content")
+    # Reasoning models (deepseek) that exhaust max_tokens mid-think return a
+    # 200 with content=null and the partial chain-of-thought in
+    # reasoning_content. Raise instead of returning it so the caller's loop
+    # fails over to the next endpoint rather than posting nothing.
+    if not (content and content.strip()):
+        reasoning = choice["message"].get("reasoning_content") or ""
+        raise RuntimeError(
+            "empty completion content "
+            f"(finish_reason={choice.get('finish_reason')}, "
+            f"{len(reasoning)} chars of reasoning_content)"
+        )
+    return content
 
 
 def main():
@@ -134,7 +147,8 @@ def main():
     max_diff = 22000
     if len(diff) > max_diff:
         diff = (
-            f"(Truncated from {len(diff)} to {max_diff} chars.)\n"
+            f"(Truncated from {len(diff)} to {max_diff} chars: content past "
+            "this point was not shown to you, it is not absent from the PR.)\n"
         ) + diff[:max_diff]
 
     system = (
@@ -145,23 +159,71 @@ def main():
         "- Broken error-handling (silenced exceptions, unchecked returns)\n"
         "- Contradictions with surrounding code patterns\n\n"
         "Ignore cosmetics a linter catches.\n\n"
-        "Prefix each finding with SEVERITY: HIGH / MEDIUM / LOW.\n\n"
-        "End with exactly:\n"
-        "OVERALL VERDICT: APPROVE\n"
-        "OVERALL VERDICT: REQUEST_CHANGES\n"
-        "OVERALL VERDICT: COMMENT"
+        "Quote fidelity (a fabricated quote invalidates the entire review): "
+        "when a finding quotes code, copy the lines verbatim from the diff "
+        "you were given, including every surrounding line of the construct — "
+        "a terraform for-expression's `if` sits after the closing brace on "
+        "its own line, and that line is part of the expression. Never "
+        "paraphrase code into a quote, never drop or add lines to make the "
+        "point cleaner. If you cannot reproduce the exact lines, do not "
+        "quote: cite path:line and describe instead. Before calling code "
+        "'missing' a guard, filter, or argument, re-read the exact construct "
+        "in the diff hunk, not your memory of it. A finding whose quote does "
+        "not match the diff is a defect worse than the bug it reports: "
+        "retract it.\n\n"
+        "Truncated input: the diff may start with a '(Truncated from N to M "
+        "chars...)' marker. Content past the cut was not shown to you; it is "
+        "not absent from the PR. Never claim a file, block, or entry is "
+        "'missing' solely because you cannot see it — either scope the claim "
+        "('absent from the portion shown') or raise it as a question.\n\n"
+        "Respond with ONLY a JSON object (no markdown fences, no prose "
+        "around it) in exactly this shape:\n"
+        '{"summary": "2-4 sentence overall assessment",\n'
+        ' "verdict": "APPROVE" | "REQUEST_CHANGES" | "COMMENT",\n'
+        ' "findings": [{"path": "file path exactly as in the diff",\n'
+        '               "line": 123,\n'
+        '               "severity": "HIGH" | "MEDIUM" | "LOW",\n'
+        '               "comment": "one actionable finding"}]}\n\n'
+        '"findings" may be empty. "line" is the line number in the NEW '
+        "version of the file and MUST be a line visible in the diff (count "
+        "from each hunk header, @@ -old +new,count @@). If a finding cannot "
+        "be tied to one diff line, set line to null.\n"
+        "Verdict rules: REQUEST_CHANGES if any finding should block merging; "
+        "APPROVE otherwise; COMMENT only for non-blocking observations."
     )
 
     user = f"Pull Request #{pr_number} in {repo}\n\nDiff:\n{diff}"
 
     content = None
+    parsed = None
     used_label = None
     used_model = None
-    for label, ep, key, prefer in endpoints:
+    for idx, (label, ep, key, prefer) in enumerate(endpoints):
+        final_vllm = idx == len(endpoints) - 1
         try:
             model = discover_model(ep, key, prefer)
             print(f"[uneeq-review] Trying {label} ({model})...", flush=True)
-            content = chat(ep, key, model, system, user)
+            text = chat(ep, key, model, system, user)
+            candidate = None
+            try:
+                candidate = json.loads(text[text.index("{"):text.rindex("}") + 1])
+            except ValueError:
+                candidate = None
+            if isinstance(candidate, dict) and "verdict" in candidate:
+                parsed = candidate
+            elif not final_vllm:
+                # Format is part of the quality bar: a model that can't emit
+                # the findings JSON hands off to the next FREE endpoint. Only
+                # the last vLLM attempt may post prose — its alternative is
+                # paying Claude to reformat a review we already have.
+                raise RuntimeError("response is not findings JSON")
+            else:
+                print(
+                    f"[WARN] {label} response is not findings JSON; "
+                    "posting as one comment.",
+                    flush=True,
+                )
+            content = text
             used_label, used_model = label, model
             break
         except urllib.error.HTTPError as exc:
@@ -174,47 +236,83 @@ def main():
         print("[FAIL] All UneeQ endpoints failed.", flush=True)
         sys.exit(1)
 
-    verdict = re.search(
-        r"OVERALL VERDICT:\s*(APPROVE|REQUEST_CHANGES|COMMENT)", content, re.IGNORECASE
-    )
-    event = verdict.group(1).upper() if verdict else "COMMENT"
+    header = f"_🧑‍💻 Reviewed via {used_label} ({used_model})_"
 
-    print(f"[uneeq-review] Verdict: {event}", flush=True)
+    if parsed is None:
+        # Last vLLM endpoint ignored the JSON contract: post its raw text as
+        # one review body, exactly like the pre-findings versions did.
+        match = re.search(
+            r"OVERALL VERDICT:\s*(APPROVE|REQUEST_CHANGES|COMMENT)", content, re.IGNORECASE
+        )
+        event = match.group(1).upper() if match else "COMMENT"
+        summary = content[:44000]
+        findings = []
+    else:
+        event = str(parsed.get("verdict", "COMMENT")).upper()
+        if event not in ("APPROVE", "REQUEST_CHANGES", "COMMENT"):
+            event = "COMMENT"
+        summary = str(parsed.get("summary", "")).strip()[:44000]
+        findings = [f for f in parsed.get("findings") or [] if isinstance(f, dict)][:30]
 
-    body = f"_🧑‍💻 Reviewed via {used_label} ({used_model})_\n\n{content[:44000]}"
+    print(f"[uneeq-review] Verdict: {event} ({len(findings)} findings)", flush=True)
 
-    def post(ev: str, text: str) -> bool:
+    inline, unanchored = [], []
+    for f in findings:
+        note = f"**{str(f.get('severity', 'NOTE')).upper()}**: {str(f.get('comment', '')).strip()}"
+        path, line = f.get("path"), f.get("line")
+        if path and isinstance(line, int) and line > 0:
+            inline.append({"path": str(path), "line": line, "side": "RIGHT", "body": note})
+        else:
+            unanchored.append(f"- {'`' + str(path) + '`: ' if path else ''}{note}")
+
+    body = header + (f"\n\n{summary}" if summary else "")
+    if unanchored:
+        body += "\n\n" + "\n".join(unanchored)
+    folded = body
+    if inline:
+        folded += "\n\n" + "\n".join(f"- `{c['path']}:{c['line']}` {c['body']}" for c in inline)
+
+    def post(ev: str, text: str, comments: list) -> bool:
+        payload = {"event": ev, "body": text}
+        if comments:
+            payload["comments"] = comments
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--input", "-"],
-            input=json.dumps({"event": ev, "body": text}).encode(),
+            input=json.dumps(payload).encode(),
             capture_output=True,
         )
         if result.returncode == 0:
+            print(f"[uneeq-review] Posted ({ev}, {len(comments)} inline).", flush=True)
             return True
         print(
-            f"[WARN] posting {ev} failed: "
+            f"[WARN] posting {ev} with {len(comments)} inline comments failed: "
             f"{result.stderr.decode(errors='replace')[:500]}",
             flush=True,
         )
         return False
 
-    if post(event, body):
-        print(f"[uneeq-review] Posted ({event}).", flush=True)
-    elif event == "APPROVE":
-        # GITHUB_TOKEN cannot approve PRs — the API 422s with "GitHub Actions is
-        # not permitted to approve pull requests". Without this branch a finished
-        # review is discarded on an unhandled CalledProcessError and the workflow
-        # burns a Claude fallback run, which is why the vLLM path looked broken
-        # whenever the model was happy with the diff. Downgrade to COMMENT, the
-        # same escape hatch the Claude step's prompt already uses.
-        if post("COMMENT", f"Passed review.\n\n{body}"):
-            print(
-                "[uneeq-review] Posted (COMMENT — APPROVE is not permitted for "
-                "GitHub Actions).",
-                flush=True,
-            )
-        else:
-            sys.exit(1)
+    # Posting ladder, because two distinct 422s exist: GITHUB_TOKEN cannot
+    # APPROVE ("GitHub Actions is not permitted to approve pull requests"),
+    # and any inline comment citing a line outside the diff rejects the whole
+    # review. Downgrade APPROVE to COMMENT first, then fold the inline
+    # findings into the body, before giving up.
+    if event == "APPROVE":
+        attempts = [
+            ("APPROVE", body, inline),
+            ("COMMENT", f"Passed review.\n\n{body}", inline),
+            ("COMMENT", f"Passed review.\n\n{folded}", []),
+        ]
+    else:
+        attempts = [(event, body, inline), (event, folded, [])]
+
+    seen = set()
+    for ev, text, comments in attempts:
+        key = (ev, text, len(comments))
+        if key in seen:
+            continue
+        seen.add(key)
+        if post(ev, text, comments):
+            break
     else:
         sys.exit(1)
 

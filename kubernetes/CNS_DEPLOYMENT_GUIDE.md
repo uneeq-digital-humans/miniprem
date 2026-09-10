@@ -736,7 +736,7 @@ No existing manifests are modified.
 
 | Pod | Image | GPU? | VRAM | Port |
 |-----|-------|------|------|------|
-| `digitalhuman-interface` | `cr.uneeq.io/uneeq/digitalhuman-interface:latest` | No | 0 | 80 |
+| `digitalhuman-interface` | `cr.uneeq.io/uneeq/digitalhuman-interface:latest` | No | 0 | 8080 (non-root nginx; Service port 80) |
 | `digitalhuman-websocket-api` | `cr.uneeq.io/uneeq/digitalhuman-websocket-api:latest` | No | 0 | 3000 (HTTP), 3001 (WS) |
 | `digitalhuman-asr` | `nvcr.io/nim/nvidia/nemotron-asr-streaming:latest` + `cr.uneeq.io/uneeq/riva-ws-proxy:latest` | Yes | ~15 GiB | 8000 (WS proxy) |
 
