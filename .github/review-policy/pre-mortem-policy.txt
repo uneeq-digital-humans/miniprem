@@ -1,0 +1,1 @@
+After the findings, add a section titled PRE-MORTEM: Assume it is six months from now and this change is the root cause of a production incident. Name the single most likely part of this diff to have failed, and why: a hidden assumption, an untested edge, a dependency that changes under it. One paragraph. If nothing in the diff is a plausible root cause, say so.
