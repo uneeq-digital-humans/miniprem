@@ -2,6 +2,13 @@
 # miniprem is PUBLIC, so it cannot call reusable workflows in the private
 # claude-code-marketplace repo — the helper scripts are vendored into
 # .github/scripts/ instead. Keep them in sync with the marketplace manually.
+#
+# Layout contract: both scripts resolve POLICY_DIR as
+# <script dir>/../review-policy, so their policy text lives in
+# .github/review-policy/. Copy every vendored file verbatim — the scripts are
+# unmodified, so a re-sync is a clean copy rather than a merge.
+#
+# Vendored from claude-code-marketplace@6d03bc0 (AGENTS.md, "Vendoring contract").
 name: Inline Review
 on:
   pull_request:
