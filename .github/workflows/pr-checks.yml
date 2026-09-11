@@ -1,0 +1,14 @@
+# Caller shim: reproduces the `checks / PR sanity checks` status context that the
+# org "Minimal PR sanity checks" ruleset requires. Job key must stay `checks`.
+name: PR Checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/pr-checks-impl.yml

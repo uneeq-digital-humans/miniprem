@@ -1,0 +1,106 @@
+# Vendored from uneeq-digital-humans/reusable-workflows — miniprem is PUBLIC and a
+# public repo cannot call a private reusable workflow. Body kept verbatim to stay diffable.
+name: PR Checks (impl)
+
+on:
+  workflow_call: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  sanity:
+    name: PR sanity checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan added lines for merge conflict markers
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          if ! gh pr diff "$PR" --repo "$REPO" > /tmp/pr.diff 2>/dev/null; then
+            echo "::warning::Diff too large to scan; skipping conflict-marker check"
+            : > /tmp/pr.diff
+          fi
+          if grep -nE '^\+(<{7}|>{7})( |$)' /tmp/pr.diff; then
+            echo "::error::Merge conflict markers found in added lines"
+            exit 1
+          fi
+          echo "No conflict markers in added lines."
+
+      - name: Check out PR head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5
+
+      - name: Validate changed YAML/JSON and lint touched Helm charts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          rc=0
+
+          mapfile -t files < <(gh api "repos/$REPO/pulls/$PR/files" --paginate \
+            --jq '.[] | select(.status != "removed") | .filename')
+
+          # Helm templates are Go templates, not valid standalone YAML, so a raw
+          # parse always rejects them. Route any changed file that belongs to a
+          # chart (nearest ancestor with Chart.yaml) to `helm lint` instead, which
+          # renders the chart before validating. Everything else is parsed as-is.
+          declare -A charts
+          for f in "${files[@]}"; do
+            [ -f "$f" ] || continue
+            d=$(dirname "$f"); chart=""
+            while [ "$d" != "." ] && [ "$d" != "/" ]; do
+              if [ -f "$d/Chart.yaml" ]; then chart="$d"; break; fi
+              d=$(dirname "$d")
+            done
+            if [ -n "$chart" ]; then
+              charts["$chart"]=1
+              continue
+            fi
+            case "$f" in
+              *.json)
+                python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f" \
+                  || { echo "::error file=$f::Invalid JSON"; rc=1; } ;;
+              *.yml|*.yaml)
+                python3 -c 'import yaml,sys; list(yaml.safe_load_all(open(sys.argv[1])))' "$f" \
+                  || { echo "::error file=$f::Invalid YAML"; rc=1; } ;;
+            esac
+          done
+
+          for chart in "${!charts[@]}"; do
+            echo "::group::helm lint $chart"
+            if ! helm dependency update "$chart"; then
+              echo "::error file=$chart/Chart.yaml::helm dependency update failed for $chart"
+              rc=1; echo "::endgroup::"; continue
+            fi
+            # mageling/TeamCity injects "image.*" templates at image-build time, so
+            # stub any referenced-but-undefined ones or lint can never render the chart.
+            # grep exits 1 when a chart has no image.* references at all (legitimate:
+            # charts wrapping upstream images) — under pipefail that must not kill the
+            # step, but a real grep error (exit 2+) still should.
+            stub="$chart/templates/zz-ci-image-stubs.tpl"
+            refs=$(grep -rhoE '(include|template)[[:space:]]+"image\.[A-Za-z0-9_.-]+"' "$chart" 2>/dev/null) || [ $? -eq 1 ]
+            refs=$(grep -oE 'image\.[A-Za-z0-9_.-]+' <<<"$refs" | sort -u) || [ $? -eq 1 ]
+            for key in $refs; do
+              grep -rqE "define[[:space:]]+\"$key\"" "$chart" \
+                || printf '{{- define "%s" -}}stub.invalid/ci:0.0.0{{- end -}}\n' "$key" >> "$stub"
+            done
+            if ! helm lint "$chart"; then
+              echo "::error file=$chart/Chart.yaml::helm lint failed for $chart"
+              rc=1
+            fi
+            rm -f "$stub"
+            echo "::endgroup::"
+          done
+
+          exit $rc
