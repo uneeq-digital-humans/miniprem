@@ -40,6 +40,10 @@ renderer:
     elevenlabsApiKey: ""
     elevenlabsModelId: ""
     elevenlabsOptimizeLatencyLevel: ""
+    # TTS protobuf path ("1"/"0", default "1"). See templates/deployment.yaml:
+    # "0" reverts to the legacy path where portal ElevenLabs settings are ignored.
+    # Keep it a quoted string — an unquoted 0 is falsy and falls back to "1".
+    useProtoApi: "1"
     gcpCredentials: ""
   nvidia:
     visibleDevices: "all"

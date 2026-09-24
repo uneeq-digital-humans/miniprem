@@ -664,7 +664,7 @@ check_cloud_services() {
 
 # Enable protobuf API usage for TTS requests
 configure_protobuf_tts() {
-    update_env_variable "RENNY_TTS_USE_PROTO_API_KEY" "1"
+    update_env_variable "TTS_USE_PROTO_API" "1"
     success "$CHECKMARK Protobuf TTS API support enabled"
 }
 
