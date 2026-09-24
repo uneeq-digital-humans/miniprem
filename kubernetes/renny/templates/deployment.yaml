@@ -119,7 +119,7 @@ spec:
         # pronunciation dictionaries) in favour of container env defaults.
         # On by default; set renderer.tts.useProtoApi: "0" to opt out.
         - name: TTS_USE_PROTO_API
-          value: "{{ .Values.renderer.tts.useProtoApi | default \"1\" }}"
+          value: {{ .Values.renderer.tts.useProtoApi | default "1" | quote }}
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: GoogleAuth.json
         - name: INACTIVITY_TIMEOUT_SECS
