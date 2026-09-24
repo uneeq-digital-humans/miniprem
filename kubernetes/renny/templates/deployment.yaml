@@ -113,6 +113,13 @@ spec:
           value: {{ .Values.renderer.tts.elevenlabsModelId }}
         - name: ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL
           value: "{{ .Values.renderer.tts.elevenlabsOptimizeLatencyLevel }}"
+        # TTS protobuf path. Renny reads TTS_USE_PROTO_API; without it Renny
+        # uses the legacy TTS path, which silently drops every Admin-Portal
+        # ElevenLabs setting (model, voice settings, language code,
+        # pronunciation dictionaries) in favour of container env defaults.
+        # On by default; set renderer.tts.useProtoApi: "0" to opt out.
+        - name: TTS_USE_PROTO_API
+          value: "{{ .Values.renderer.tts.useProtoApi | default \"1\" }}"
         - name: GOOGLE_APPLICATION_CREDENTIALS
           value: GoogleAuth.json
         - name: INACTIVITY_TIMEOUT_SECS
