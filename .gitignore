@@ -130,3 +130,8 @@ LOCALE_FIX_*.md
 # IDs, target-group ARN). Keep local only; never commit. See kiosk-instance.sh.example
 # for a sanitized template.
 kubernetes/scripts/aws-kiosk/kiosk-instance.sh
+
+# Go port: built binaries and harness run output
+/bin/
+harness/bin/
+harness/out/

@@ -1,0 +1,1 @@
+merge-compose --prefer-official --output out.yml

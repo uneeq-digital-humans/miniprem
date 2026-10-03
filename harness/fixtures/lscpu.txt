@@ -1,0 +1,3 @@
+Architecture:                         x86_64
+Model name:                           Intel(R) Xeon(R) w5-2455X
+CPU(s):                               24

@@ -1,0 +1,58 @@
+# Common stub responses (applied AFTER the scenario's own rules).
+# cmd 	 argv-regex 	 exit 	 stdout(@fixture|literal) 	 stderr 	 max-uses
+# --- GPU
+nvidia-smi	^$	0	@nvidia-smi.txt
+nvidia-smi	query-gpu=driver_version	0	580.82.09\n
+nvidia-smi	query-gpu=count	0	1\n
+nvidia-smi	query-gpu=name	0	NVIDIA RTX 6000 Ada Generation\n
+nvidia-smi	query-gpu=memory.total,memory.used	0	49140, 1024\n
+nvidia-smi	query-gpu=utilization.gpu	0	3 %, 1024 MiB, 49140 MiB\n
+# --- host facts
+free	^-m$	0	@free-m.txt
+free	^-g$	0	@free-g.txt
+free	^$	0	@free.txt
+df	^-BG /$	0	@df-bg.txt
+df	^/$	0	@df.txt
+nproc	.*	0	24\n
+lscpu	.*	0	@lscpu.txt
+lsb_release	^-rs$	0	24.04\n
+lsb_release	^-is$	0	Ubuntu\n
+uname	^-r$	0	6.8.0-45-generic\n
+uname	^-s$	0	Linux\n
+uname	^-m$	0	x86_64\n
+google-chrome	^--version$	0	Google Chrome 130.0.6723.58 \n
+pactl	^info$	0	@pactl-info.txt
+pactl	^list sinks$	0	@pactl-sinks.txt
+pactl	^list sources$	0	@pactl-sources.txt
+hostname	.*	0	harness-host\n
+# --- randomness
+openssl	^rand -base64 16$	0	AAAAAAAAAAAAAAAAAAAAAA==\n
+openssl	^rand -hex 8$	0	0123456789abcdef\n
+openssl	^rand -hex 32$	0	0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n
+uuidgen	.*	0	AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE\n
+# --- packages / services
+dpkg-query	Status	0	install ok installed
+dpkg-query	Version	0	1.16.2-1
+systemctl	^is-enabled	1
+systemctl	^is-active	3
+# --- docker
+docker	^--version$	0	Docker version 27.3.1, build ce12230\n
+docker	^compose version$	0	Docker Compose version v2.29.7\n
+docker	^info$	0	Server Version: 27.3.1\n
+docker	^images$	0	@docker-images-empty.txt
+docker	^ps --format \{\{\.Names\}\}$	0	renny\nminiprem-monitor\n
+docker	^ps .*Names	0	@docker-ps.txt
+docker	^inspect --format=\{\{\.State\.Health\.Status\}\}	0	healthy\n
+docker	^inspect --format=\{\{\.State\.Status\}\}	0	running - healthy\n
+docker	^run .*nvidia-smi$	0	@nvidia-smi.txt
+docker	^exec vllm nvidia-smi	0	1024, 49140\n
+docker	^login 	0	Login Succeeded\n
+docker	^pull 	0	Status: Image is up to date\n
+docker	^compose .* ps$	0	@docker-compose-ps.txt
+docker	^compose .* config$	0	name: uneeq-miniprem\nservices:\n  renny:\n    image: cr.uneeq.io/uneeq/renny-renderer:0.1428-6654b\n
+# --- network
+curl	chat/completions	0	@chat-completions.json
+curl	-i --http1\.1 .* https://	0	HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n
+# --- git
+git	^log --oneline -5$	0	@git-log.txt
+git	^pull$	0	Already up to date.\n
