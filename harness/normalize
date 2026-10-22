@@ -1,0 +1,16 @@
+#!/usr/bin/perl
+# Usage: normalize [text|trace]  (stdin -> stdout).  Rules are justified in README.md.
+use strict; use warnings;
+my $kind = shift // 'text';
+local $/; binmode(STDIN); binmode(STDOUT);
+my $s = <STDIN> // '';
+# N1 ANSI CSI escapes (colour codes)
+$s =~ s/\e\[[0-9;?]*[A-Za-z]//g;
+# N2 show_spinner frames: " [x]  " followed by six backspaces; the number of frames depends on timing
+$s =~ s/ \[[|\/\\-]\]  \x08{6}//g;
+# N3 combined script hash (hash of the shim vs the real script)
+$s =~ s/(Combined script hash: )[0-9a-f]{64}/$1<HASH>/g;
+# N4 bash's "<script>: line N: " prefix on its own error messages (unbound variable, command not
+#    found, ...). Go cannot know bash line numbers; the rest of the message is still compared.
+$s =~ s/^[^\s:]*\.sh: line [0-9]+: //mg if $kind eq 'text';
+print $s;

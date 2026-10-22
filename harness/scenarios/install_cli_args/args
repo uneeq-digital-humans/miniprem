@@ -1,0 +1,1 @@
+install --platform-key pk_cli_0123456789abcdefghij --tenant-id tenant-cli --azure-region westus --azure-speech-key azcli0123456789abcdef --renny-image cr.uneeq.io/uneeq/renny-renderer:cli --region eu --deployment-target cloud

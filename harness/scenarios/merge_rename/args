@@ -1,0 +1,1 @@
+merge-compose --rename-custom x- --file docker-compose.custom.yml

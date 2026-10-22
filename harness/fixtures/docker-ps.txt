@@ -1,0 +1,12 @@
+NAMES
+vllm
+redis
+grafana
+prometheus
+flowise
+miniprem-monitor
+renny
+rime-model
+rime-api
+whisper
+fastwhisper

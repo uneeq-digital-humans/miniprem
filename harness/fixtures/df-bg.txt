@@ -1,0 +1,2 @@
+Filesystem     1G-blocks  Used Available Use% Mounted on
+/dev/nvme0n1p2      900G  100G      800G  11% /

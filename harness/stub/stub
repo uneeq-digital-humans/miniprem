@@ -1,0 +1,147 @@
+#!/bin/bash
+# Stub dispatcher. Every stubbed command is a symlink to this file; the command
+# name is basename($0) (or $STUB_CMD for recorder scripts).
+#
+# 1. append one JSON line to $TRACE_FILE
+# 2. built-in behaviour for sleep/date/mktemp/sudo
+# 3. otherwise answer from the rules files (scenario rules, then _common.rules):
+#      <cmd> TAB <argv-regex> TAB <exit> TAB <stdout> [TAB <stderr> [TAB <max-uses>]]
+#    first match wins; default = exit 0, empty stdout.
+#    argv-regex is a bash ERE matched against the space-joined argv ("^$" = no args).
+#    stdout/stderr: "@name" = file (scenario dir, then /h/fixtures), else a literal
+#    interpreted with printf %b (\n, \t, \r ...).
+#    max-uses N: the rule only fires its first N matches (stateful, per run).
+
+export LC_ALL=C
+NAME="${STUB_CMD:-${0##*/}}"
+TRACE="${TRACE_FILE:-/out/trace.jsonl}"
+STATE=/run/stub
+SCEN_DIR="${SCENARIO_DIR:-}"
+mkdir -p "$STATE" 2>/dev/null
+
+esc() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    s="${s//$'\t'/\\t}"
+    s="${s//$'\n'/\\n}"
+    s="${s//$'\r'/\\r}"
+    s="${s//[$'\001'-$'\037']/?}"
+    printf '%s' "$s"
+}
+
+# ---- 1. trace ---------------------------------------------------------------
+line="{\"cmd\":\"$(esc "$NAME")\",\"argv\":["
+sep=""
+for a in "$@"; do
+    line+="$sep\"$(esc "$a")\""
+    sep=","
+done
+line+="]"
+case " $* " in
+    *" --password-stdin "*)
+        sha=$(sha256sum | cut -d' ' -f1)
+        line+=",\"stdin_sha\":\"$sha\""
+        ;;
+esac
+case "$NAME" in
+    recorder:*)
+        # Replaced scripts (deploy-allinone.sh etc.): also record the env the
+        # caller handed over, since that is the whole point of those seams.
+        envj=""
+        sep=""
+        for k in NGC_API_KEY HARBOR_USERNAME HARBOR_PASSWORD PLATFORM_KEY TENANT_ID \
+                 GEMMA_MODEL GEMMA_BACKEND STT_PROVIDER KIOSK_BRAND RAG_ADMIN_KEY; do
+            if [ -n "${!k+x}" ]; then
+                envj+="$sep\"$k\":\"$(esc "${!k}")\""
+                sep=","
+            fi
+        done
+        line+=",\"env\":{$envj}"
+        ;;
+esac
+line+="}"
+{ flock 9; printf '%s\n' "$line" >&9; } 9>>"$TRACE"
+
+# ---- 2. built-ins -----------------------------------------------------------
+case "$NAME" in
+    sleep)
+        exit 0
+        ;;
+    date)
+        exec /usr/bin/date -d "@${MINIPREM_FAKE_EPOCH:-1767225600}" "$@"
+        ;;
+    mktemp)
+        # Scheme shared with the Go side (sh.MkTemp): files only (-d also supported but the
+        # reachable scripts never use it); counter in $MINIPREM_MKTEMP_COUNTER_FILE under flock.
+        isdir=0; tmpl=""
+        for a in "$@"; do
+            case "$a" in
+                -d) isdir=1 ;;
+                -*) ;;
+                *) tmpl="$a" ;;
+            esac
+        done
+        [ -n "$tmpl" ] || tmpl="${TMPDIR:-/tmp}/tmp.XXXXXXXXXX"
+        cf="${MINIPREM_MKTEMP_COUNTER_FILE:-/tmp/.mktemp_counter}"
+        exec 8>>"$cf"
+        flock 8
+        n=$(cat "$cf" 2>/dev/null); n=${n:-0}
+        n=$((n + 1))
+        printf '%s\n' "$n" > "$cf"
+        xs="${tmpl##*[!X]}"
+        width=${#xs}
+        base="${tmpl%"$xs"}"
+        path="${base}$(printf '%0*d' "$width" "$n")"
+        if [ "$isdir" = 1 ]; then (umask 077; mkdir "$path"); else (umask 077; set -o noclobber; : > "$path"); fi
+        printf '%s\n' "$path"
+        exit 0
+        ;;
+    sudo)
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                -u|-g|-U|-C|-p|-h|-r|-t|-D) shift 2 ;;
+                -*) shift ;;
+                *) break ;;
+            esac
+        done
+        [ $# -eq 0 ] && exit 0
+        exec env "$@"
+        ;;
+esac
+
+# ---- 3. rules ---------------------------------------------------------------
+joined="$*"
+emit() {  # $1 = "@file" or literal
+    local v="$1" f
+    [ -z "$v" ] && return 0
+    if [ "${v:0:1}" = "@" ]; then
+        f="${v:1}"
+        if [ -f "$SCEN_DIR/$f" ]; then cat "$SCEN_DIR/$f"
+        elif [ -f "/h/fixtures/$f" ]; then cat "/h/fixtures/$f"
+        else echo "stub: missing fixture $f" >&2; fi
+    else
+        printf '%b' "$v"
+    fi
+}
+
+for rf in "$SCEN_DIR/rules" /h/scenarios/_common.rules; do
+    [ -f "$rf" ] || continue
+    lineno=0
+    while IFS=$'\037' read -r rcmd rre rrc rout rerr rmax; do
+        lineno=$((lineno + 1))
+        case "$rcmd" in ''|'#'*) continue ;; esac
+        [ "$rcmd" = "*" ] || [ "$rcmd" = "$NAME" ] || continue
+        [[ "$joined" =~ $rre ]] || continue
+        if [ -n "${rmax:-}" ]; then
+            cf="$STATE/rule.$(printf '%s' "$rf" | tr '/' '_').$lineno"
+            used=$(cat "$cf" 2>/dev/null || echo 0)
+            [ "$used" -ge "$rmax" ] && continue
+            echo $((used + 1)) > "$cf"
+        fi
+        emit "${rout:-}"
+        [ -n "${rerr:-}" ] && emit "$rerr" >&2
+        exit "${rrc:-0}"
+    done < <(tr '\t' '\037' < "$rf")
+done
+exit 0

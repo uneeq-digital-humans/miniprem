@@ -1,0 +1,2 @@
+git	^diff-index	1
+git	^status --short$	0	 M docker/docker-compose.yml\n

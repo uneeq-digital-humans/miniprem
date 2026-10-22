@@ -1,0 +1,2 @@
+kubectl	get pods -n uneeq -l app=renny -o jsonpath	0	renny-0 renny-1
+kubectl	get pod renny-[01] 	0	Running

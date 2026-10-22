@@ -1,0 +1,2 @@
+export EDITOR=editor
+export XDG_CURRENT_DESKTOP=ubuntu:GNOME
