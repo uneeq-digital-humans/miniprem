@@ -138,7 +138,7 @@ services:
       - ELEVEN_LABS_MODEL_ID=${ELEVEN_LABS_MODEL_ID:-eleven_flash_v2_5}
       - AZURE_SPEECH_KEY=${AZURE_SPEECH_KEY:-}
       - AZURE_REGION=${AZURE_REGION:-}
-      - RENNY_TTS_USE_PROTO_API_KEY=${RENNY_TTS_USE_PROTO_API_KEY:-}
+      - TTS_USE_PROTO_API=${TTS_USE_PROTO_API:-1}
     restart: unless-stopped
 
   # ----------------------------------------------------------------------- #
