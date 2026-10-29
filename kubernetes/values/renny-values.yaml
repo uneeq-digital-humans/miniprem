@@ -96,6 +96,7 @@ renderer:
   inactivityTimeoutSecs: 600.0
 
   # GPU submission serialization; blank = off. See docs/guides/kubernetes-overview.md.
+  # To run more than two Rennys per GPU, set "/run/renny-gpu-lock"; see docs/GPU-DENSITY.md.
   gpuLockPath: ""
 
   # Sleep timer configuration

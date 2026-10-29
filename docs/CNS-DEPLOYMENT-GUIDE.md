@@ -241,6 +241,9 @@ gpuTimeSlicing:
 | `deployment.totalReplicas` | Total Renny pods to run | 4 |
 | `gpuTimeSlicing.replicasPerGpu` | GPU time-slices per physical GPU | 4 |
 
+To run more Rennys per GPU with renny-renderer 0.1704 or newer (GPU lock, CPU request, slice count and how to
+validate them), see [GPU-DENSITY.md](GPU-DENSITY.md).
+
 #### Renderer Settings
 
 ```yaml
