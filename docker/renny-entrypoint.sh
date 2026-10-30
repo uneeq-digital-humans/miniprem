@@ -31,7 +31,7 @@ fi
 if [ -n "${RENNY_EXTRA_ARGS:-}" ]; then
     echo "[$(date)] Extra Renny arguments: ${RENNY_EXTRA_ARGS}"
     # shellcheck disable=SC2086 # intentional word splitting into separate arguments
-    set -- "$@" ${RENNY_EXTRA_ARGS}
+    set -f; set -- "$@" ${RENNY_EXTRA_ARGS}; set +f  # SC2086: intentional word split; -f prevents glob on [...]
 fi
 
 # Start Renny application using the original container entrypoint
