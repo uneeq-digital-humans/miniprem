@@ -26,6 +26,14 @@ if [ -n "${RENNY_GPU_LOCK_PATH:-}" ]; then
     set -- "$@" "-ExecCmds=r.Renny.GpuSerialization.Enabled 2"
 fi
 
+# Extra engine arguments from docker-compose.env, e.g. a console variable override:
+# RENNY_EXTRA_ARGS=-ini:Engine:[ConsoleVariables]:r.Renny.GpuSerialization.SuspendDuringSessionStart=1
+if [ -n "${RENNY_EXTRA_ARGS:-}" ]; then
+    echo "[$(date)] Extra Renny arguments: ${RENNY_EXTRA_ARGS}"
+    # shellcheck disable=SC2086 # intentional word splitting into separate arguments
+    set -f; set -- "$@" ${RENNY_EXTRA_ARGS}; set +f  # SC2086: intentional word split; -f prevents glob on [...]
+fi
+
 # Start Renny application using the original container entrypoint
 # This ensures proper initialization (PulseAudio cleanup, etc.)
 echo "[$(date)] Starting Renny application via original entrypoint..."

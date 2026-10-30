@@ -178,6 +178,11 @@ otherwise):
 RENNY_GPU_LOCK_PATH=
 ```
 
+With renny-renderer 0.1704 or newer the lock hands over once per frame and keeps
+starting sessions serialized, which roughly doubles how many instances a
+datacenter GPU holds. See [GPU-DENSITY.md](GPU-DENSITY.md) for the measured
+numbers, how to find the right instance count, and how to roll back.
+
 Every instance shares the one lock directory, so the setting only needs to exist
 once — the script copies `docker-compose.env` to each per-instance env file.
 

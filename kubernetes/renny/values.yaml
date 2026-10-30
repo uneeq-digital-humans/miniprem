@@ -51,6 +51,7 @@ renderer:
   extraCmdArgs: ""
   # GPU submission serialization; blank = off. A node-local tmpfs path
   # (/run/renny-gpu-lock) turns it on. See docs/CNS-DEPLOYMENT-GUIDE.md.
+  # To run more than two Rennys per GPU, set "/run/renny-gpu-lock"; see docs/GPU-DENSITY.md.
   gpuLockPath: ""
   inactivityTimeoutSecs: ""   # empty -> template default (600.0)
   qualityLevel: ""            # empty -> template default ("web")
