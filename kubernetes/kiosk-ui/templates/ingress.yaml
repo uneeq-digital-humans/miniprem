@@ -15,8 +15,15 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: {{ $ing.proxyBodySize | quote }}
     nginx.ingress.kubernetes.io/proxy-read-timeout: {{ $ing.proxyReadTimeout | quote }}
+    {{- with $ing.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 spec:
   ingressClassName: {{ $ing.className }}
+  {{- with $ing.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   rules:
     {{- range $h := $ing.hosts }}
     - host: {{ $h | quote }}
@@ -51,6 +58,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: {{ $ing.proxyReadTimeout | quote }}
 spec:
   ingressClassName: {{ $ing.className }}
+  {{- with $ing.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   rules:
     {{- range $h := $ing.hosts }}
     - host: {{ $h | quote }}
@@ -91,6 +102,10 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
 spec:
   ingressClassName: {{ $ing.className }}
+  {{- with $ing.tls }}
+  tls:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   rules:
     {{- range $h := $ing.hosts }}
     - host: {{ $h | quote }}
