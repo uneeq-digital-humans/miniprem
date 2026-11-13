@@ -88,7 +88,7 @@ spec:
         - name: AZURE_SPEECH_KEY
           valueFrom:
             secretKeyRef:
-              name: renny
+              name: {{ include "renny.secretName" . }}
               key: tts-azure-speech-key
               optional: true
         - name: DHOP_ADDRESS
@@ -96,19 +96,27 @@ spec:
         - name: DHOP_APIKEY
           valueFrom:
             secretKeyRef:
-              name: renny
+              name: {{ include "renny.secretName" . }}
               key: dhop-api-key
         - name: DHOP_FIRST_READY_WAIT_TIME_SECS
           value: "60"
         - name: DHOP_PIXELSTREAMING_ADDRESS
           value: "{{ .Values.renderer.dhop.url }}/v1/ws/pixelstreaming"
         - name: DHOP_TENANTID
+          {{- if .Values.renderer.dhop.existingSecret }}
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "renny.secretName" . }}
+              key: dhop-tenant-id
+          {{- else }}
           value: {{ .Values.renderer.dhop.tenantId }}
+          {{- end }}
         - name: ELEVEN_LABS_API_KEY
           valueFrom:
             secretKeyRef:
-              name: renny
+              name: {{ include "renny.secretName" . }}
               key: tts-elevenlabs-api-key
+              optional: true
         - name: ELEVEN_LABS_MODEL_ID
           value: {{ .Values.renderer.tts.elevenlabsModelId }}
         - name: ELEVEN_LABS_OPTIMIZE_LATENCY_LEVEL
@@ -131,7 +139,7 @@ spec:
         - name: LAUNCH_DARKLY_KEY
           valueFrom:
             secretKeyRef:
-              name: renny
+              name: {{ include "renny.secretName" . }}
               key: launch-darkly-key
               optional: true
         - name: TTS_ADDRESS
@@ -146,7 +154,7 @@ spec:
         - name: VERITONE_API_KEY
           valueFrom:
             secretKeyRef:
-              name: renny
+              name: {{ include "renny.secretName" . }}
               key: tts-veritone-api-key
               optional: true
         - name: LOG_JSON_FORMAT
@@ -207,7 +215,7 @@ spec:
         tty: true
 {{- if .Values.telemetry.enabled }}
       - name: telemetry
-        image: curlimages/curl:8.1.0
+        image: {{ .Values.telemetry.image | default "curlimages/curl:8.1.0" }}
         command: ["/bin/sh", "/scripts/telemetry-client.sh"]
         lifecycle:
           preStop:
@@ -244,7 +252,7 @@ spec:
         {{- if .Values.renderer.tts.gcpCredentials }}
         - name: gcp-creds
           secret:
-            secretName: renny
+            secretName: {{ include "renny.secretName" . }}
             items:
             - path: GoogleAuth.json
               key: tts-gcp-creds

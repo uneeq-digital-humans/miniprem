@@ -49,3 +49,10 @@ Selector labels
 app.kubernetes.io/name: renny
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
+{{/*
+Name of the Secret holding the renderer credentials: renderer.dhop.existingSecret
+when set, otherwise the chart-managed "renny" Secret.
+*/}}
+{{- define "renny.secretName" -}}
+{{- .Values.renderer.dhop.existingSecret | default "renny" -}}
+{{- end -}}

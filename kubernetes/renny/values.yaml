@@ -23,6 +23,13 @@ renderer:
     apiKey: "" # The 'apiKey' parameter is required
     tenantId: "" # The 'tenantId' parameter is required
     url: "" # The 'url' parameter is required (e.g., wss://api.enterprise.uneeq.io:443/signalling-service)
+    # Name of a Secret, created outside this chart, in the release namespace.
+    # When set, the chart renders no Secret of its own and reads every
+    # credential from this one: dhop-api-key and dhop-tenant-id (required),
+    # launch-darkly-key, tts-azure-speech-key, tts-elevenlabs-api-key,
+    # tts-veritone-api-key and tts-gcp-creds (optional). apiKey and tenantId
+    # above are then ignored, so no credential is stored in the Helm release.
+    existingSecret: ""
   launchDarkly:
     key: "" # Optional - feature flags
   tts:
@@ -96,6 +103,8 @@ service:
 
 telemetry:
   enabled: true
+  # Sidecar image; override for a private registry mirror.
+  image: "docker.io/curlimages/curl:8.1.0@sha256:653fdca94099516719521aee776f94eccecce7fbb1266498df4a6d53093d6a43"
   backendUrl: "https://renny.services.uneeq.io"
   heartbeatInterval: 900
   platform: "k8s"      # eks | aks | gke | k8s (generic)

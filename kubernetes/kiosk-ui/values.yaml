@@ -45,6 +45,12 @@ ingress:
   # Large bodies for idle-video / document uploads through the adapter.
   proxyBodySize: "512m"
   proxyReadTimeout: "600"
+  # Extra annotations on the main kiosk-ui Ingress only, e.g.
+  # cert-manager.io/cluster-issuer: <issuer>. One Ingress owns the certificate;
+  # the proxy Ingresses reuse its secret through `tls`.
+  annotations: {}
+  # TLS for every kiosk Ingress, e.g. [{hosts: [kiosk.example.com], secretName: kiosk-tls}].
+  tls: []
   # Upstreams the proxy paths point at (service name : port in `namespace`).
   upstreams:
     ragAdapter:  { service: rag-adapter,      port: 8085 }   # /rag-admin + /v1
