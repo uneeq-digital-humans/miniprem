@@ -189,7 +189,7 @@ spec:
         {{- end }}
         {{- end }}
         volumeMounts:
-        {{- if .Values.renderer.tts.gcpCredentials }}
+        {{- if include "renny.gcpCredsEnabled" . }}
         - name: gcp-creds
           readOnly: true
           mountPath: /opt/renny/Renny/Binaries/Linux/GoogleAuth.json
@@ -249,7 +249,7 @@ spec:
           mountPath: /tmp
 {{- end }}
       volumes:
-        {{- if .Values.renderer.tts.gcpCredentials }}
+        {{- if include "renny.gcpCredsEnabled" . }}
         - name: gcp-creds
           secret:
             secretName: {{ include "renny.secretName" . }}

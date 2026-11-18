@@ -29,6 +29,8 @@ renderer:
     # launch-darkly-key, tts-azure-speech-key, tts-elevenlabs-api-key,
     # tts-veritone-api-key and tts-gcp-creds (optional). apiKey and tenantId
     # above are then ignored, so no credential is stored in the Helm release.
+    # To use tts-gcp-creds from this Secret, also set
+    # renderer.tts.gcpCredentialsInExistingSecret: true.
     existingSecret: ""
   launchDarkly:
     key: "" # Optional - feature flags
@@ -52,6 +54,10 @@ renderer:
     # Keep it a quoted string — an unquoted 0 is falsy and falls back to "1".
     useProtoApi: "1"
     gcpCredentials: ""
+    # Set true when renderer.dhop.existingSecret holds a tts-gcp-creds key, so
+    # GoogleAuth.json is mounted from it. Off by default: the mount is not
+    # optional, so turning it on without that key keeps the pod from starting.
+    gcpCredentialsInExistingSecret: false
   nvidia:
     visibleDevices: "all"
     driverCapabilities: "all"
