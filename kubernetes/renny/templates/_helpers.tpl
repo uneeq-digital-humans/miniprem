@@ -49,3 +49,20 @@ Selector labels
 app.kubernetes.io/name: renny
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
+{{/*
+Name of the Secret holding the renderer credentials: renderer.dhop.existingSecret
+when set, otherwise the chart-managed "renny" Secret.
+*/}}
+{{- define "renny.secretName" -}}
+{{- .Values.renderer.dhop.existingSecret | default "renny" -}}
+{{- end -}}
+{{/*
+Non-empty when the renderer should mount GoogleAuth.json from the tts-gcp-creds
+key: gcpCredentials is set in values, or existingSecret is set and
+gcpCredentialsInExistingSecret says that Secret holds tts-gcp-creds.
+*/}}
+{{- define "renny.gcpCredsEnabled" -}}
+{{- if or .Values.renderer.tts.gcpCredentials (and .Values.renderer.dhop.existingSecret .Values.renderer.tts.gcpCredentialsInExistingSecret) -}}
+true
+{{- end -}}
+{{- end -}}
